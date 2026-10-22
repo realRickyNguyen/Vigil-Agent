@@ -117,7 +117,8 @@ flowchart TD
 ## Sponsor technology
 
 - **Zetaris.** The data layer and where the statistics are computed. openFDA endpoints are registered as Zetaris REST tables **at runtime for whatever drug is asked about**, cached, flattened into views, and joined in SQL to produce the 2×2 disproportionality table. The Judge re-queries Zetaris to verify every number the Hunter cites. Without Zetaris there is no screen and no verification.
-- **Meterless Nightshift.** The only model provider. Every agent call goes through Nightshift's OpenAI-compatible gateway with the required headers, and the trace records which model actually served each call. *Planned: a Meterless **World Model** engine holding facts, claims, evidence links and decision states, with a test showing that a changed label version reopens a dependent verdict.*
+- **Meterless Nightshift.** The only model provider. Every agent call goes through Nightshift's OpenAI-compatible gateway with the required headers, and the trace records which model actually served each call. 
+- **Meterless World Model engine.** `app/engines/world_model.py` is a Python port of the Meterless World Model reference (Apache-2.0): stable IDs, merge bands, provenance on every write, idempotent ingest, bitemporal edges and an ordered audit log, with the reference's eight conformance checks ported as tests. Black Box adds decisions that record the facts they rest on: each run stores the drug's label version and its settled verdicts, and when a later run sees a new label version, the earlier verdicts are reopened and listed in the dossier for a second look.
 - **NVIDIA Nemotron.** Both agents run on `nvidia/nemotron-3-ultra-550b-a55b` through Nightshift.
 - **Cursor.** The organisers did not provide Cursor credits, so the team uses Cursor's free plan for smaller tasks and develops mainly with Claude Code and Codex. Cursor work is logged in [docs/CURSOR_LOG.md](docs/CURSOR_LOG.md).
 
@@ -135,7 +136,8 @@ These are **development checks, not clinical validation**. The reference labels 
 | Built | Next |
 |---|---|
 | Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | Live evaluation of the current decision contract (implemented and unit-tested) |
-| Hunter and Judge loop with code checks, objections, unresolved disputes and fallbacks | Meterless World Model engine with a behaviour test |
+| Hunter and Judge loop with code checks, objections, unresolved disputes and fallbacks | A live run that shows a label change reopening earlier verdicts (shown offline so far) |
+| Meterless World Model engine: label versions and verdicts kept across runs, with conformance tests | |
 | Ranked review queue with coverage counts; JSONL traces | A Skeptic step: reporter-type evidence for top candidates |
 | Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, `POST /run`, Dockerfile, sample mode |
 
