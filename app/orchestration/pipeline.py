@@ -2,6 +2,7 @@
 Hunter revises on rejection (bounded rounds), and the accepted findings become the dossier."""
 import json
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from app.adapters.meterless import NightshiftClient
 from app.adapters.zetaris import ZetarisClient
@@ -9,6 +10,7 @@ from app.agents.hunter import Hunter, screen_table
 from app.agents.judge import Judge
 from app.config import Settings
 from app.data.faers import Clerk, validate_drug
+from app.engines.world_model import WorldModel
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
 
@@ -107,6 +109,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
             entry.update(status="unresolved", note="review rounds ran out before the Judge's objection was settled")
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []))
+    world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
+                     datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    tracer.event("world_model", "remembered", **world)
     counts = {"reactions_screened": len(signals), "passing_evans": len(passing),
               "shown_to_hunter": ctx["screen_shown"], "picked_by_hunter": len(ctx.get("picked", [])),
               "assessed": len(state), "decided_by_rule": sum(e["finding"].decided_by == "rule" for e in state.values()),
@@ -134,6 +139,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "degraded_steps": degraded,
         "hunter_summary": summary,
         "rounds": rounds,
+        "world_model": world,
         "untested_factors": NOT_YET_CHECKED,
         "caveat": CAVEAT,
         "evidence_queries": queries,
@@ -159,6 +165,34 @@ def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
     if any(h["decision"] == "reject" and h["claim"] == claim for h in history):
         return "unresolved", "the Hunter returned to an answer the Judge had already rejected"
     return "rejected", ""
+
+
+SETTLED = ("reviewed", "unresolved")
+
+
+def remember(world: WorldModel, drug: str, label: dict, queue: list[dict], run_id: str, at: str) -> dict:
+    """Record this run's label version and settled verdicts in the World Model. A label version that
+    differs from the last run's supersedes it, which reopens every earlier verdict that rested on it:
+    those come back in `reopened` so the analyst knows which past answers need a second look."""
+    source = {"kind": "openfda-label-via-zetaris", "at": at, "runId": run_id}
+    entity = world.upsert_entity(type="drug", name=drug, source=source)
+    version = {"set_id": label.get("set_id"), "effective_time": label.get("effective_time")}
+    before = {d["key"] for d in world.decisions(status="reopened", about=entity["id"])}
+    fact = world.assert_fact(about=entity["id"], predicate="label_version", value=version, source=source)
+    reopened = [{"reaction": d["value"]["reaction"], "earlier_run": d["value"]["run_id"],
+                 "earlier_label_coverage": d["value"].get("label_coverage"),
+                 "earlier_review_priority": d["value"].get("review_priority")}
+                for d in world.decisions(status="reopened", about=entity["id"]) if d["key"] not in before]
+    recorded = 0
+    for q in queue:
+        if q["workflow_status"] in SETTLED:
+            world.record_decision(
+                key=f"{entity['id']}|{q['reaction']}", about=entity["id"], depends_on=[fact["id"]], source=source,
+                value={"reaction": q["reaction"], "run_id": run_id, "workflow_status": q["workflow_status"],
+                       **{k: q.get(k) for k in ("label_coverage", "context", "review_priority")}})
+            recorded += 1
+    return {"label_fact": fact["id"], "label_version": version, "decisions_recorded": recorded,
+            "reopened": reopened}
 
 
 PRIORITY_ORDER = {"review_next": 0, "insufficient_evidence": 1, "lower_priority": 2, None: 3}

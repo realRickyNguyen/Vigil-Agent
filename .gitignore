@@ -14,3 +14,5 @@ logs/*
 !logs/.gitkeep
 __pycache__/
 .venv/
+# World Model state persists across runs; local to each machine
+state/

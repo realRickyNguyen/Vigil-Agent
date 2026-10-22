@@ -34,6 +34,7 @@ class Settings:
     parallel: int
     sample_mode: bool
     logs_dir: Path
+    world_path: Path
 
 
 def get_settings() -> Settings:
@@ -60,4 +61,7 @@ def get_settings() -> Settings:
         parallel=max(1, int(e("MODEL_PARALLEL", "2"))),
         sample_mode=e("SAMPLE_MODE", "false").lower() == "true",
         logs_dir=ROOT / "logs",
+        # The World Model persists across runs (unlike logs/, which is per-run evidence), so a later run can
+        # reopen verdicts that an earlier run's label version supported. Relative paths are from the repo root.
+        world_path=ROOT / e("WORLD_MODEL_PATH", "state/world-model.json"),
     )
