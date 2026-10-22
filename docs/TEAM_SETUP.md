@@ -6,12 +6,14 @@ How a teammate gets from a fresh clone to running Black Box. Read [HANDOFF.md](H
 
 You can work on most of the code and run every test without Zetaris or Nightshift.
 
+The repo is private: https://github.com/realRickyNguyen/genai_hackathon. Ask Ricky to add you as a collaborator first.
+
 ```bash
-git clone <repo-url> black-box
+git clone https://github.com/realRickyNguyen/genai_hackathon.git
 ```
 
 ```bash
-cd black-box
+cd genai_hackathon
 ```
 
 ```bash

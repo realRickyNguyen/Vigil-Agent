@@ -25,7 +25,7 @@ Input is a drug name. The app:
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
 | README, deck, video, `metadata.json` | Not started |
 
-Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). The repo goes to a private GitHub repo for the team on 22 Oct; teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
 
 Tools: no Cursor credits are coming, so we use Cursor's free plan for small tasks and develop mainly with Claude Code and Codex. `CLAUDE.md`, `AGENTS.md` and `.cursor/rules/` carry the same rules.
 
