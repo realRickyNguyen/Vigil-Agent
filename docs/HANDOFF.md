@@ -25,7 +25,7 @@ Input is a drug name. The app:
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
 | README, deck, video, `metadata.json` | Not started |
 
-Git: one local commit `b5b16db` on `master` (22 Oct 15:50 Sydney). Everything since then, including contract v2, the eval harness, the review pack and this file, is uncommitted. There is no remote yet.
+Git: local commits on `master`: `b5b16db` (first working loop, 22 Oct 15:50 Sydney) and `564d3ea` (contract v2, evaluation harness, these docs). There is no remote yet. Evaluation reports in `eval/reports/` are not committed yet.
 
 ## How to run
 
