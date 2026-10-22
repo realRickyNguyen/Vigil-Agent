@@ -1,0 +1,371 @@
+{
+ "scores": [
+  {
+   "run_id": "20261022T052007Z-c721ea",
+   "drug": "atorvastatin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 7,
+    "correct": 7,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 11,
+    "correct": 10,
+    "accuracy": 0.909
+   },
+   "judge_effect": {
+    "kept_correct": 7
+   },
+   "added_after_missing": {
+    "count": 5,
+    "scored": 4,
+    "correct": 3,
+    "accuracy": 0.75
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 5
+    },
+    "hunter": {
+     "correct": 5,
+     "wrong": 1
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 2,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 0,
+    "gold": {}
+   },
+   "unresolved": [],
+   "ambiguous_classified": 4,
+   "not_in_gold": [],
+   "open_items": {
+    "failed": 0
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 2,
+    "likely_indication_or_disease -> possible_new_signal": 1,
+    "on_label -> on_label": 7,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 1,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 1,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 4,
+     "rejected": 0,
+     "missing": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261022T053615Z-cace76",
+   "drug": "isotretinoin",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 7,
+    "correct": 7,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 11,
+    "correct": 11,
+    "accuracy": 1.0
+   },
+   "judge_effect": {
+    "kept_correct": 7
+   },
+   "added_after_missing": {
+    "count": 4,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 6
+    },
+    "hunter": {
+     "correct": 5
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 0,
+    "gold": {}
+   },
+   "unresolved": [],
+   "ambiguous_classified": 3,
+   "not_in_gold": [],
+   "open_items": {
+    "failed": 0
+   },
+   "confusion_final": {
+    "not_meaningful -> not_meaningful": 1,
+    "on_label -> on_label": 9,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "missing": 2
+    },
+    {
+     "round": 2,
+     "reviewed": 2,
+     "rejected": 0,
+     "missing": 2
+    },
+    {
+     "round": 3,
+     "reviewed": 2,
+     "rejected": 0,
+     "missing": 2
+    }
+   ]
+  },
+  {
+   "run_id": "20261022T054238Z-b061a2",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 18,
+   "round1": {
+    "scored": 6,
+    "correct": 5,
+    "accuracy": 0.833
+   },
+   "final": {
+    "scored": 6,
+    "correct": 5,
+    "accuracy": 0.833
+   },
+   "judge_effect": {
+    "kept_correct": 5,
+    "kept_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 3,
+     "wrong": 1
+    },
+    "hunter": {
+     "correct": 2
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 0,
+    "gold": {}
+   },
+   "unresolved": [],
+   "ambiguous_classified": 1,
+   "not_in_gold": [
+    "CHRONIC KIDNEY DISEASE",
+    "PANCREATITIS ACUTE",
+    "TYPE 2 DIABETES MELLITUS"
+   ],
+   "open_items": {
+    "failed": 0
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> on_label": 1,
+    "on_label -> on_label": 4,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "missing": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261022T054536Z-32312d",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 2,
+    "correct": 2,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 6,
+    "correct": 6,
+    "accuracy": 1.0
+   },
+   "judge_effect": {
+    "kept_correct": 2
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 3
+    },
+    "hunter": {
+     "correct": 3
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 0,
+    "gold": {}
+   },
+   "unresolved": [],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "MIDDLE INSOMNIA",
+    "NIGHTMARE",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "failed": 0
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 4,
+    "on_label -> on_label": 2
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 9,
+     "rejected": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261022T055712Z-6e45d2",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 5,
+    "correct": 4,
+    "accuracy": 0.8
+   },
+   "final": {
+    "scored": 6,
+    "correct": 6,
+    "accuracy": 1.0
+   },
+   "judge_effect": {
+    "kept_correct": 4,
+    "fixed": 1
+   },
+   "added_after_missing": {
+    "count": 1,
+    "scored": 1,
+    "correct": 1,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 5
+    },
+    "hunter": {
+     "correct": 1
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 0,
+    "gold": {}
+   },
+   "unresolved": [],
+   "ambiguous_classified": 1,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HYPONATRAEMIA",
+    "MANIA",
+    "PSYCHOTIC DISORDER"
+   ],
+   "open_items": {
+    "failed": 1
+   },
+   "confusion_final": {
+    "on_label -> on_label": 6
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 2,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 5,
+     "rejected": 2,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 3,
+     "missing": 3
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}

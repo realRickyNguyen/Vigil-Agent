@@ -100,6 +100,7 @@ Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor tec
 ## Machine state
 - Windows 11 Home, 15.8 GB RAM. **C: free about 4.2 GB** (after clearing the npm cache). Docker's disk file is about 22 GB and only grows. Docker reports about 5.5 GB of unused images (not hackathon-related: `bayesimpact/pandas-base`, `cancer-kg/cdot-alignment`, `cancer-kg/hgvs-inspection`, `biocommons/uta`, `staphb/bcftools` x2, `python:3.11.5-slim`). Nothing removed; they may belong to the user's other work. Deleting images does not shrink the file on C: until `scripts/compact-wsl-disks.ps1` runs in an administrator PowerShell with Docker quit.
 - Avoid large downloads and big installs.
+- 22 Oct: a Cursor install/update filled C: to 0 GB (cancelled; Cursor to be uninstalled, the teammate uses Cursor instead). Moved Nightshift's unused local Llama 1B/3B models (2.6 GB) to the Recycle Bin. Removed the five unused non-hackathon Docker images (biocommons/uta, staphb/bcftools ×2, python:3.11.5-slim-bookworm, bayesimpact/pandas-base; about 3.6 GB, all re-pullable from Docker Hub). Also cleared 1.16 GB of Docker build cache. That space only returns to C: after `scripts/compact-wsl-disks.ps1` runs with Docker quit (planned for the evening of 22 Oct).
 - Docker Desktop needed the `run` folder rename again on 22 Oct (stale `userAnalyticsOtlpHttp.sock`). Services started with "lets begin": Docker engine 27.3.1, Zetaris up, Nightshift up, smoke test 3 PASS.
 
 ## Setup status (22 Oct)

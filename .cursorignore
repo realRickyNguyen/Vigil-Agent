@@ -1,0 +1,13 @@
+# Keep secrets and run artefacts away from Cursor's indexing and AI features.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.toml
+secrets/
+credentials/
+logs/
+zetaris-platform/
+zetaris-platform.zip

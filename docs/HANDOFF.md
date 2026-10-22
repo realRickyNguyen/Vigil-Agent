@@ -19,13 +19,13 @@ Input is a drug name. The app:
 | Zetaris data layer (Clerk) | Built and working. Any drug name is registered at runtime; PRR matches an independent Python check |
 | Hunter and Judge loop | Built. Last full run: montelukast in 9 minutes on Nemotron Ultra |
 | Decision contract v2 | **Code done and tested offline (37 tests), not yet run against Nightshift.** It separates label coverage, context and review priority; adds objection and next check per finding; closes disputes as `unresolved`; marks unreached items `pending` or `failed` |
-| Evaluation harness | Built: 100-row gold set over 5 drugs, scorer, runner. **The baseline evaluation (old contract) is running now**; results land in `eval/reports/` |
+| Evaluation harness | Built: 100-row gold set over 5 drugs, scorer, runner. **Baseline (contract v1) scored 22 Oct:** `eval/reports/eval-20261022T063731Z.md`. 5 runs, one per drug: 93% round-1 and 95% final accuracy on clear gold items, but only 27 of 80 clear items were classified in round 1. The Judge fixed 1 item and kept 1 wrong. The two montelukast repeat runs were stopped, so there is no repeat-run agreement yet |
 | Meterless Engine (required) | **Not started.** Plan: minimal World Model with a behaviour test |
 | Skeptic agent | Not started. Plan: one operation, reporter-type composition for top candidates |
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
 | README, deck, video, `metadata.json` | Not started |
 
-Git: local commits on `master`: `b5b16db` (first working loop, 22 Oct 15:50 Sydney) and `564d3ea` (contract v2, evaluation harness, these docs). There is no remote yet. Evaluation reports in `eval/reports/` are not committed yet.
+Git: local commits on `master`: `b5b16db` (first working loop, 22 Oct 15:50 Sydney), `564d3ea` (contract v2, evaluation harness, these docs), then the baseline evaluation report and Cursor setup files (end of 22 Oct). There is no remote yet. Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
 
 ## How to run
 
@@ -118,7 +118,13 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 1. **You, today (needs your HackOS login):**
    - Read the Track 02 challenge statement.
    - Post the organiser questions below.
-2. **Score the baseline evaluation, then run it on contract v2 and compare.** Watch round-1 against final accuracy, unresolved disputes, and whether the gold set supports the "review next" items.
+2. **Run the evaluation on contract v2** (`python -I eval/run_eval.py`, about 1.5 hours) **and compare with the baseline report.** Watch:
+   - round-1 against final accuracy
+   - unresolved disputes
+   - whether the gold set supports the "review next" items
+   - coverage: the baseline classified only a third of the clear gold items
+
+   The repeat runs give the first stability figure.
 3. **Minimal World Model engine** with a behaviour test: changing a supporting label version reopens a dependent "not covered" verdict.
 4. **Tune the Hunter's selection** using the evaluation results (transparent criteria, a mix of candidates, no drug-specific hacks).
 5. **Skeptic with one operation:** reporter-type composition for the top review-next items. It provides context, never proof.
