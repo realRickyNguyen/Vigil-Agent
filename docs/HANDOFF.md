@@ -94,8 +94,6 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | `scripts/zetaris/` | Baseline SQL and a runner that sends `.sql` files through the REST API |
 | `eval/` | Gold set, labelling rules, scorer, runner, backtest feasibility notes |
 | `tests/` | Offline tests: app logic and scorer |
-| `docs/review/` | Review pack for outside reviewers |
-
 ## Rules to keep (from the hackathon and from what broke)
 
 - **Secrets only in `.env`.** Never print them. The NVIDIA key lives inside Nightshift only.

@@ -51,8 +51,6 @@ Built: `run.py`, `app/` (adapters, data, agents, orchestration, schemas, tracing
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
 - `docs/ideas/BLACK_BOX.md`: the design and its reasons.
 - `docs/HACKATHON_KNOWLEDGE.md`: confirmed rules, stack behaviour, Zetaris and Nightshift findings.
-- `docs/review/`: the review pack given to an outside reviewer.
-
 ## Working notes for Claude
 - Mark confirmed facts, proposals and unknowns separately; do not invent organiser details that are placeholders.
 - Check ideas against the three tests: removal (would it work without Zetaris/Meterless?), collaboration (does one agent change another's work?), hardcoding (does a new input still give a real answer?).
