@@ -3,7 +3,7 @@
 Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/` (the 03_LLM_context pack and the 19 Oct setup guide). Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md`.
 
 ## The project
-**Black Box** (Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Hunter and Judge agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/BLACK_BOX.md`. Evaluation: `eval/`. Development uses Claude Code until the organisers deliver Cursor credits; log real Cursor work in `docs/CURSOR_LOG.md` from the day it starts, never backdated.
+**Black Box** (Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Hunter and Judge agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/BLACK_BOX.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The organisers will not provide Cursor credits: the team develops mainly with Claude Code and Codex and uses Cursor's free plan for small tasks; log real Cursor work in `docs/CURSOR_LOG.md` on the day it happens, never backdated. Do not add Co-Authored-By trailers to commit messages.
 
 ## The event
 - Organiser GenAI Works, platform HackOS (hackathon.genai.works). Online, 22 to 27 Oct 2026. Teams of 1 to 5; the user's team is registered on HackOS.
@@ -23,7 +23,7 @@ Read this first in every session, then **`docs/HANDOFF.md`** (current state, how
 - The team must be able to explain its code. Keep `docs/CURSOR_LOG.md` updated when Cursor writes real code.
 - Judges must be able to run it: provide `run.py` and/or `POST /run`, a `Dockerfile`, 3+ sample inputs, and a `SAMPLE_MODE` that runs real agent logic on cached data without keys.
 
-## Machine and setup (as of 2026-10-20)
+## Machine and setup (Ricky's Windows laptop, as of 2026-10-20; teammates see docs/TEAM_SETUP.md)
 Windows 11 Home, 15.8 GB RAM, **disk is tight** (C: about 8 GB free). Docker runs Zetaris through WSL 2 (Ubuntu); `C:\Users\Ricky\.wslconfig` sets 8 GB.
 - **Zetaris**: platform bundle at `~/zetaris-platform` inside WSL Ubuntu (not in this repo; gitignored). Start with `docker compose up -d`, check with `./verify.sh` (9 checks). GUI http://localhost:3000, REST http://localhost:8888/api/v1.0 (org ID 1). The admin password was changed from the bundle default on 2026-10-20 (the new one is saved in the user's Chrome; do not ask for it or store it). `verify.sh` will now fail its login check because it still tries the old default in the platform `.env`; that is expected, not a fault. API key lives in this project's `.env` as `ZETARIS_API_KEY`. Management > API Tokens creates keys (shown once).
 - **Nightshift 1.2.1** (Meterless) at `C:\Users\Ricky\AppData\Local\Nightshift` (`meterless-runtime.exe`, daemon `meterlessd.exe`). OpenAI-compatible endpoint http://127.0.0.1:8088/v1; token and URL are in `.env` (`METERLESS_*`, `MODEL_*`). NVIDIA key is stored inside Nightshift (Setup > Providers), **never in `.env`**. NVIDIA access is trial credits with a per-minute cap, not unlimited.

@@ -1,0 +1,2 @@
+# The app uses only the Python 3.11 standard library. pytest runs the offline tests.
+pytest>=7.4

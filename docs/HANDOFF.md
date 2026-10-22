@@ -25,7 +25,9 @@ Input is a drug name. The app:
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
 | README, deck, video, `metadata.json` | Not started |
 
-Git: local commits on `master`: `b5b16db` (first working loop, 22 Oct 15:50 Sydney), `564d3ea` (contract v2, evaluation harness, these docs), then the baseline evaluation report and Cursor setup files (end of 22 Oct). There is no remote yet. Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). The repo goes to a private GitHub repo for the team on 22 Oct; teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+
+Tools: no Cursor credits are coming, so we use Cursor's free plan for small tasks and develop mainly with Claude Code and Codex. `CLAUDE.md`, `AGENTS.md` and `.cursor/rules/` carry the same rules.
 
 ## How to run
 
@@ -101,7 +103,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **Every number an agent cites must come from a Zetaris query ID in the trace.** The Judge's code checks enforce this; do not weaken them to make a run pass.
 - **Keep model calls small.** Large prompts on Nightshift time out or come back empty. Batches of 3 and per-reaction label excerpts are deliberate.
 - **Do not overclaim.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Gold accuracy is a development check labelled by an AI, not clinical validation.
-- **Cursor.** Development so far used Claude Code, because Cursor credits had not arrived. Log real Cursor work in [CURSOR_LOG.md](CURSOR_LOG.md) with dates from the day it starts. Do not backdate it.
+- **Cursor.** No credits are coming; Cursor runs on the free plan for small tasks, and development is mainly Claude Code and Codex. Log real Cursor work in [CURSOR_LOG.md](CURSOR_LOG.md) on the day it happens. Never backdate it.
 
 ## Known issues
 
@@ -134,6 +136,6 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 ## Open questions for the organisers
 
 1. How should judges run an app whose agents need a model, given the "SAMPLE_MODE without keys" rule? Options: a local Nightshift lane, labelled replay of recorded model replies, or judges using their own Nightshift.
-2. We developed with Claude Code before the Cursor credits arrived. Is that acceptable if Cursor is used from now on and disclosed?
+2. No Cursor credits were provided. We develop mainly with Claude Code and Codex and use Cursor's free plan for smaller tasks, disclosed in the README. Does that satisfy the "Cursor as development environment" rule?
 3. Is a Python implementation of a Meterless Engine, with our own tests, accepted for the build rule?
 4. What should `metadata.json` contain?

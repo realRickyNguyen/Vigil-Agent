@@ -47,6 +47,8 @@ Outputs:
 ## Docs
 
 - [docs/HANDOFF.md](docs/HANDOFF.md): state, commands, code map, next steps
+- [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md): teammate setup and working agreement
+- [AGENTS.md](AGENTS.md): rules for coding agents (Codex, Cursor, Claude Code)
 - [docs/ideas/BLACK_BOX.md](docs/ideas/BLACK_BOX.md): design and reasons
 - [eval/](eval/): gold set, labelling rules, scorer
 - [docs/HACKATHON_KNOWLEDGE.md](docs/HACKATHON_KNOWLEDGE.md): event rules and stack findings
