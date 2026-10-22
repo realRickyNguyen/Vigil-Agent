@@ -1,57 +1,197 @@
 # Black Box
 
-**Open Agent Hackathon 2026 · Track 02: The Agent That Can Explain Why** (work in progress)
+**From a statistical alert to a defensible next step.**
 
-Black Box helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, and shows the evidence and objections behind that shortlist.
+Open Agent Hackathon 2026 · **Track 02: The Agent That Can Explain Why** · built on Zetaris, Meterless Nightshift and NVIDIA Nemotron
 
-You give it a drug name. It:
-1. Registers the drug's public FDA adverse-event counts (openFDA FAERS) and its current label as tables in **Zetaris**.
-2. Computes reporting disproportionality (PRR, chi-squared) in SQL.
-3. Has two agents running on **NVIDIA Nemotron through Meterless Nightshift** assess the strongest signals. The Hunter proposes; the Judge checks every number and label quote in code, then objects, accepts or leaves the finding unresolved.
-4. Returns a ranked review queue. Each item carries:
-   - its label coverage and review priority
-   - the strongest objection
-   - a next check
-   - the SQL and label text behind it
+Black Box helps drug-safety analysts decide which reported drug-reaction patterns deserve a closer look. Every recommendation carries the numbers that triggered it, the label text it was checked against, the strongest objection to it, and a concrete next check.
 
-> FAERS shows reporting patterns, not that a drug causes an event. This is not medical advice.
+> FAERS data shows reporting patterns, not that a drug causes an event. Black Box supports expert review; it is not medical advice.
+
+---
+
+## Why this matters
+
+Drug-safety knowledge keeps changing after a medicine is approved, and every new signal has to be weighed by someone.
+
+| | | |
+|---|---|---|
+| **23%** | **2 million+** | **~27,000 · 99.9%** |
+| of 560 novel medicines approved 2001 to 2019 later received an FDA safety action (median follow-up 12 years) | adverse-event and medication-error reports evaluated each year by FDA's drug-safety office | statistical safety alerts in one company's year (GSK, 2023), and the share closed with a documented rationale |
+| [Doernberg et al., *JAMA Intern Med* 2026](https://jamanetwork.com/journals/jamainternalmedicine/article-abstract/2842413) | [FDA Office of Surveillance and Epidemiology](https://www.fda.gov/about-fda/cder-offices-and-divisions/cder-office-surveillance-and-epidemiology) | [*Drug Safety* 2026, MLIT study](https://link.springer.com/article/10.1007/s40264-026-01696-0) |
+
+These are three separate pieces of evidence, from different populations and years. They do not form a funnel, and none of them means that a quarter of medicines are unsafe or that the reports are confirmed injuries. Together they show three things:
+- safety review after approval has consequential work to do
+- the evidence arrives at scale
+- generating an alert is the start of the work, not the end. Each one needs a decision, and the reason for it has to be written down.
+
+## The user and the problem
+
+**User:** a drug-safety (pharmacovigilance) analyst doing first-pass review of public reporting patterns, for example at a small biotech or a hospital pharmacy.
+
+**Problem:** the analyst has to decide which reported drug-reaction patterns deserve further investigation, and assemble the evidence that makes each decision defensible. The hard part is the stretch between "this looks suspicious" and "here is a reasoned next step". For every candidate, the analyst asks:
+
+1. **What triggered it?** The report counts and the disproportionality statistics.
+2. **What does the label already say?** Whether the existing warnings describe it exactly, describe something broader or narrower, or say nothing.
+3. **What weakens the first interpretation?** The drug's own indication, vague terms, data limits, competing explanations.
+4. **What should happen next?** Investigate further, keep monitoring, or close it with a stated reason, for a human to decide.
+
+Public data makes this harder, not easier. For montelukast (an asthma drug), the strongest statistical signals in FAERS are asthma, wheezing and airway obstruction: that's the disease the drug treats, not a side effect. Telling those apart from patterns worth a closer look is the judgement Black Box is built to support.
+
+## What goes in, what comes out
+
+**In:** a drug's generic name.
+
+```json
+{ "drug": "montelukast" }
+```
+
+**Out:** a **review queue** (the dossier), ranked so that "review next" comes first, plus a full trace of how it was produced.
+
+| Every entry carries | Values |
+|---|---|
+| Report count and PRR, with the SQL that produced them | from Zetaris, re-checked by the Judge |
+| `context`: what kind of term this is | clinical event · treated condition · non-clinical |
+| `label_coverage`: does the current label already describe it? | covered · not found · unclear · not assessed |
+| `label_quote`: the label sentence | extracted by code, never written by the model |
+| `review_priority` | review next · insufficient evidence · lower priority |
+| `strongest_objection` | the Judge's best argument against the finding as it stands |
+| `next_check` | one concrete check that would settle or advance it |
+| `workflow_status`: did the review finish, and how? | reviewed · unresolved · not reviewed · pending · failed |
+| `history` | each round's claim, verdict and objection |
+
+The dossier also reports **coverage**: how many reactions were screened, passed the statistical screen, were shown to the agents, assessed, reviewed, left unresolved or not reached. Nothing unfinished is presented as finished. The trace (`logs/trace-<run>.jsonl`) records every Zetaris query, every model call (including which model actually answered), and every agent message.
+
+## Why this needs agents
+
+The statistics don't need an LLM, and Black Box doesn't use one for them: disproportionality runs as SQL in Zetaris. Easy cases are settled by code rules: administrative terms, a reaction named in the indications, or a reaction named word for word in a warning. The model is used where judgement in language is needed:
+
+- **Matching medical terms to label prose.** FAERS uses standard medical terms (MedDRA); labels use free text. "Nightmare" is covered by "sleep disturbances". "Productive cough" sits under "cough". "Full blood count abnormal" is broader than the label's "thrombocytopenia", so it is not covered. Keyword matching gets these wrong.
+- **Telling the disease from the drug.** Wheezing for an asthma drug, or blood glucose for a diabetes drug, reflects the patients' illness. Deciding this needs knowledge of what the drug treats and what that condition looks like.
+- **Choosing what deserves attention.** Montelukast alone has 256 reactions that pass the statistical screen. An analyst's time goes to the few that matter.
+- **Arguing with itself.** A single model pass can't challenge its own first reading. Black Box has a second agent whose job is to object, and the first agent has to answer.
+
+Code keeps the agents honest. The Judge's checks cannot be overruled by a model:
+- every cited number is re-queried from Zetaris
+- every cited query ID must exist
+- every claimed label term must actually appear in the label
+- "review next" is only allowed for an unlabelled clinical event that comes with a next check
+
+## How it works
+
+```mermaid
+flowchart TD
+    IN["Drug name"] --> CLERK
+    subgraph Z["Zetaris (federated SQL)"]
+      FAERS["openFDA adverse-event counts<br/>(this drug + all drugs)"]
+      LABEL["openFDA drug label text"]
+    end
+    CLERK["Clerk (code)<br/>registers sources at runtime,<br/>PRR / chi² screen in SQL, fetches label"] --> Z
+    Z --> CLERK
+    CLERK --> RULES["Rules (code)<br/>settle easy cases"]
+    CLERK --> HUNTER["Hunter (Nemotron via Nightshift)<br/>picks candidates, assesses context,<br/>label coverage, priority, next check"]
+    RULES --> JUDGE
+    HUNTER --> JUDGE["Judge<br/>code checks against Zetaris and the label,<br/>then accept / reject with objection / unresolved"]
+    JUDGE -- "rejections + missing reactions<br/>(max 2 rounds)" --> HUNTER
+    JUDGE --> OUT["Ranked review queue<br/>+ JSONL trace"]
+```
+
+- **Clerk (code):** for any drug name, registers openFDA REST sources as Zetaris tables at runtime, computes the report-based 2×2 table (PRR, chi-squared, Evans screen) in SQL, and fetches the current label.
+- **Hunter (Nemotron Ultra via Nightshift):** picks up to 10 of the 30 strongest signals, then assesses each one in small batches. It sees only the label sentences relevant to that reaction, plus the indication and the boxed warning.
+- **Judge (code, then Nemotron Ultra):** runs the code checks first. It then accepts, rejects with an objection the Hunter must answer, or marks a finding unresolved when the evidence can't settle it. It also names important reactions nobody has looked at yet.
+- **Loop:** at most 2 revision rounds. Accepted findings are never redone. If the agents go round in circles, or an objection is still standing when the rounds run out, the finding closes as **unresolved** rather than being accepted by default.
+- **Resilience:** small parallel batches, retries, one-item-per-call fallbacks. Anything that still fails is reported as `failed` or `not_reviewed`, never guessed.
+
+## How Black Box answers Track 02
+
+> *Build agents that investigate complex questions across multiple data sources, connect findings, and produce evidence-backed answers or recommendations.*
+
+| Track 02 asks for | In Black Box |
+|---|---|
+| **Investigate complex questions** | "Which of this drug's reported patterns deserve a closer look, and why?" There are hundreds of screen-positive reactions, each needing interpretation, not lookup |
+| **Across multiple data sources** | Two openFDA datasets, adverse-event counts (this drug and the whole database) and drug labels, joined through Zetaris tables registered at runtime for any drug. Statistics and label prose are combined in one investigation. *(Planned: a reporter-type breakdown as a third evidence stream.)* |
+| **Connect findings** | Each finding links its numbers, the matching label sentence, the Judge's objection and the Hunter's answer, round by round |
+| **Evidence-backed answers or recommendations** | A ranked recommendation (review next / insufficient evidence / lower priority). Every number traces to a query ID and its SQL; every label quote is extracted by code; unresolved disputes are shown, not hidden |
+| **Explain why** | `strongest_objection`, `next_check` and `history` say why each item sits where it does, and what would change it |
+
+## Sponsor technology
+
+- **Zetaris.** The data layer and where the statistics are computed. openFDA endpoints are registered as Zetaris REST tables **at runtime for whatever drug is asked about**, cached, flattened into views, and joined in SQL to produce the 2×2 disproportionality table. The Judge re-queries Zetaris to verify every number the Hunter cites. Without Zetaris there is no screen and no verification.
+- **Meterless Nightshift.** The only model provider. Every agent call goes through Nightshift's OpenAI-compatible gateway with the required headers, and the trace records which model actually served each call. *Planned: a Meterless **World Model** engine holding facts, claims, evidence links and decision states, with a test showing that a changed label version reopens a dependent verdict.*
+- **NVIDIA Nemotron.** Both agents run on `nvidia/nemotron-3-ultra-550b-a55b` through Nightshift.
+- **Cursor.** The organisers did not provide Cursor credits, so the team uses Cursor's free plan for smaller tasks and develops mainly with Claude Code and Codex. Cursor work is logged in [docs/CURSOR_LOG.md](docs/CURSOR_LOG.md).
+
+## Results so far
+
+A development evaluation against a hand-labelled set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 22 Oct with the first version of the decision contract:
+- **Accuracy:** 93% of the Hunter's first-round assessments and 95% of final assessments matched the reference label, among the clear reference items the agents assessed.
+- **Coverage is the main gap:** the first round assessed only 27 of the 80 clear reference items.
+- **The Judge mostly confirmed:** across these runs it fixed one finding, kept one wrong one, and added 16 reactions the Hunter had skipped.
+
+These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/](eval/reports/).
 
 ## Status
 
-This is a work in progress, and this README will be rewritten for judging. What works today, what doesn't, and how to run it: [docs/HANDOFF.md](docs/HANDOFF.md).
+| Built | Next |
+|---|---|
+| Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | Live evaluation of the current decision contract (implemented and unit-tested) |
+| Hunter and Judge loop with code checks, objections, unresolved disputes and fallbacks | Meterless World Model engine with a behaviour test |
+| Ranked review queue with coverage counts; JSONL traces | A Skeptic step: reporter-type evidence for top candidates |
+| Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, `POST /run`, Dockerfile, sample mode |
 
-## Quick start (local services required)
+## Run it
 
-```bash
-cp .env.example .env
-```
-Fill in the Zetaris and Nightshift values; the NVIDIA key goes into Nightshift, not `.env`.
-
-```bash
-python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
-```
-Registers the shared Zetaris baseline. Once per Zetaris install.
+Needs Python 3.11+, plus a local Zetaris and Meterless Nightshift; the hackathon requires both to run on your own machine. Full setup: [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md).
 
 ```bash
-python -I run.py --drug montelukast
+python -m pip install -r requirements.txt
 ```
 
 ```bash
 python -I -m pytest tests -q
 ```
 
-Outputs:
-- `logs/trace-<run>.jsonl`: every query and model call
-- `logs/dossier-<run>.json`: the review queue
+The offline tests need no services.
 
-## Docs
+```bash
+cp .env.example .env
+```
 
-- [docs/HANDOFF.md](docs/HANDOFF.md): state, commands, code map, next steps
-- [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md): teammate setup and working agreement
-- [AGENTS.md](AGENTS.md): rules for coding agents (Codex, Cursor, Claude Code)
-- [docs/ideas/BLACK_BOX.md](docs/ideas/BLACK_BOX.md): design and reasons
-- [eval/](eval/): gold set, labelling rules, scorer
-- [docs/HACKATHON_KNOWLEDGE.md](docs/HACKATHON_KNOWLEDGE.md): event rules and stack findings
+Fill in the Zetaris and Nightshift values. The NVIDIA key goes into Nightshift, not `.env`.
+
+```bash
+python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
+```
+
+This registers the shared Zetaris baseline, once per Zetaris install.
+
+```bash
+python -I run.py --drug montelukast
+```
+
+Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.jsonl` (every query and model call).
+
+## Limitations
+
+- **FAERS** reports are voluntary and unverified, can be duplicated, and show association, not causation. Screen-positive means "worth a look", not new or proven.
+- **We count every report that mentions the drug,** including reports where it was not the suspect drug. This broadens the population; it does not necessarily inflate the PRR.
+- **Coverage limits:**
+  - The baseline holds the 999 most-reported reactions (openFDA's limit without a key).
+  - The Hunter assesses a limited number of candidates per run.
+  - Both limits are shown in the coverage counts.
+- **Aggregate data only:** no case-level review and no duplicate removal. Breakdowns such as reporter type give context, not adjustment for confounding.
+- **Labels:** the label is the one openFDA returns for the generic name, and that can be a combination product (a fix is planned).
+- **Shared model:** the Hunter and Judge use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
+
+## Data and privacy
+
+All data is public: openFDA adverse-event aggregates and drug labels. No case-level or personal data reaches the app or the model. Secrets live only in `.env`, which is gitignored.
+
+## More
+
+- [docs/HANDOFF.md](docs/HANDOFF.md): current state, code map, next steps
+- [docs/ideas/BLACK_BOX.md](docs/ideas/BLACK_BOX.md): design and the reasons behind it
+- [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md): teammate setup
+- [AGENTS.md](AGENTS.md): rules for coding agents
+- [eval/](eval/): gold set, labelling rules, scorer, reports
 - [docs/PREEXISTING.md](docs/PREEXISTING.md): pre-existing work declaration
-
-Secrets live only in `.env` (gitignored).
