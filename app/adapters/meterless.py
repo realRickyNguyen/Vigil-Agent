@@ -77,7 +77,9 @@ class NightshiftClient:
                 last = f"HTTP {e.code}: {detail}"
                 if e.code not in (408, 429) and e.code < 500:
                     break
-            except (urllib.error.URLError, TimeoutError, MeterlessError, KeyError) as e:
+            # ConnectionError covers Nightshift closing the socket mid-request (ConnectionResetError,
+            # RemoteDisconnected), which on 22 Oct crashed a whole run at the Hunter's first call.
+            except (urllib.error.URLError, TimeoutError, ConnectionError, MeterlessError, KeyError) as e:
                 last = f"{type(e).__name__}: {e}"
             self.tracer.event(agent, "llm_retry", model=model, attempt=attempt, error=last)
             time.sleep(5 * (attempt + 1))  # NVIDIA trial lanes have a per-minute cap

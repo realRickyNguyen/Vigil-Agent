@@ -156,6 +156,23 @@ class FakeLLM:
                              for r in rows], "summary": ""}
 
 
+def test_chat_retries_when_nightshift_drops_the_connection(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    monkeypatch.setattr(meterless.time, "sleep", lambda s: None)
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=2), FakeTracer())
+    replies = [ConnectionResetError(10054, "forcibly closed"), {"choices": [{"message": {"content": "ok"}}]}]
+
+    def post(body):
+        r = replies.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+    monkeypatch.setattr(client, "_post", post)
+    assert client.chat("hunter", "m", [{"role": "user", "content": "hi"}]) == "ok"
+    assert [k for _, k, _ in client.tracer.events] == ["llm_retry", "llm_call"]
+
+
 def hunter_ctx():
     passing = [Signal(n, a=10, b=1, c=1, d=1, prr=3.0, chi2=50 - i) for i, n in enumerate("ABCDEFGHIJ")]
     return {"drug": "x", "passing": passing, "label": {}, "label_qid": "q-l", "screen_qid": "q-s",
