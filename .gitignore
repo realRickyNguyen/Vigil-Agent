@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.toml
+secrets/
+credentials/
+# Zetaris platform bundle holds its own .env and registry login
+zetaris-platform/
+zetaris-platform.zip
+logs/*
+!logs/.gitkeep
+__pycache__/
+.venv/
