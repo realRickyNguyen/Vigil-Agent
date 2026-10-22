@@ -25,21 +25,30 @@ Choose up to {MAX_PICKS} reactions a drug-safety reviewer should look at. Prefer
 Use only reactions from the table, spelled exactly as in the table. Reply with only a JSON object:
 {{"picked": [{{"reaction": str, "why": str}}]}}"""
 
-CLASSIFY_SYSTEM = """You are the Hunter in a drug-safety review team. Classify each listed FAERS reaction for one drug against the drug's current label.
+CLASSIFY_SYSTEM = """You are the Hunter in a drug-safety review team. For one drug, you help an analyst decide which reported drug-reaction patterns deserve a closer look. FAERS statistics show reporting patterns, not that the drug causes anything.
 
-Rules:
-- Use only the data in the message. Never invent numbers, reactions or label text.
-- Copy "reaction", "a" and "prr" exactly from the table.
-- Give each reaction exactly one classification:
-  - "on_label": the label already describes this reaction or a clearly equivalent event. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term": the word or short phrase (1 to 4 words) the label uses for it, spelled as in the label.
-  - "possible_new_signal": the label does not describe it.
-  - "likely_indication_or_disease": it is the condition the drug treats, or a feature of that condition, so the reports probably reflect the patients' illness rather than the drug.
-  - "not_meaningful": an administrative or non-clinical term.
-- "evidence" lists the query IDs your finding relies on.
-- "reasoning" is one short plain sentence. "summary" is at most two sentences.
+Answer three separate questions for each listed reaction:
+
+1. "context": what kind of term is it?
+   - "non_clinical": about the product, its use, exposure or the report, not a clinical event.
+   - "treated_condition": the condition the drug treats, a symptom, sign, measure or complication of it, or an outcome the drug is given to prevent.
+   - "clinical_event": any other clinical event.
+2. "label_coverage": does the current label describe this reaction as something the drug may cause or worsen?
+   - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label).
+   - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term).
+   - "not_found": nothing in the label text shown describes it.
+   - "not_assessed": the term is non_clinical or the treated condition.
+3. "review_priority":
+   - "review_next": a clinical_event that is not_found or unclear in the label, with enough reports to be worth an analyst's time.
+   - "insufficient_evidence": not covered, but the term is too vague or the numbers too thin to act on.
+   - "lower_priority": covered by the label, the treated condition, or non_clinical.
+
+Also give "reasoning" (one sentence: why this priority) and "next_check" (one concrete check an analyst could run next, for example a specific breakdown of the reports or a label section to compare).
+
+Rules: use only the data in the message; never invent numbers, reactions or label text; copy "reaction", "a" and "prr" exactly from the table; "evidence" lists the query IDs you relied on; "summary" is at most two sentences.
 
 Reply with only a JSON object:
-{"findings": [{"reaction": str, "a": int, "prr": float, "classification": str, "label_section": str or null, "label_term": str or null, "reasoning": str, "evidence": [str]}], "summary": str}"""
+{"findings": [{"reaction": str, "a": int, "prr": float, "context": str, "label_coverage": str, "review_priority": str, "label_section": str or null, "label_term": str or null, "reasoning": str, "next_check": str, "evidence": [str]}], "summary": str}"""
 
 
 def screen_table(signals: list[Signal], limit: int) -> str:
@@ -137,8 +146,9 @@ class Hunter:
         user = (f"{self.header(ctx)}\n\nReactions to classify (from query {ctx['screen_qid']}):\n"
                 f"{screen_table(rows, len(rows))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
         if feedback:
-            user += ("\n\nThe Judge reviewed your earlier findings for these reactions. Fix the rejected ones and "
-                     "classify the missing ones it named:\n" + json.dumps(feedback, indent=1))
+            user += ("\n\nThe Judge reviewed your earlier findings for these reactions. For each rejected one, "
+                     "answer its objection: change your answer if the objection holds, or keep it and say why in "
+                     "\"reasoning\". Classify the missing ones it named:\n" + json.dumps(feedback, indent=1))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": CLASSIFY_SYSTEM},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
         wanted = set(reactions)
@@ -146,7 +156,8 @@ class Hunter:
         return [f for f in findings if f.reaction in wanted], str(out.get("summary", ""))
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
-        return self.classify(ctx, self.pick(ctx))
+        ctx["picked"] = self.pick(ctx)
+        return self.classify(ctx, ctx["picked"])
 
     def revise(self, ctx: dict, rejected: list[Finding], feedback: dict) -> tuple[list[Finding], str]:
         """Re-classify only the rejected findings and the newly named missing reactions."""

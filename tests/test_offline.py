@@ -12,16 +12,22 @@ from app.agents.rules import route  # noqa: E402
 from app.data.label import excerpt_block, retrieve  # noqa: E402
 from app.agents.judge import code_checks, failed  # noqa: E402
 from app.data.faers import signal_sql, slug, sql_str, validate_drug  # noqa: E402
-from app.schemas import Finding, Signal  # noqa: E402
+from app.orchestration.pipeline import review_queue, settle  # noqa: E402
+from app.schemas import Finding, Signal, Verdict  # noqa: E402
 
 LABEL = {"boxed_warning": "WARNING: SERIOUS NEUROPSYCHIATRIC EVENTS  Serious neuropsychiatric (NP) events have been reported."}
 FRESH = Signal("NIGHTMARE", a=1200, b=170000, c=9000, d=20500000, prr=7.14, chi2=9807.4)
 
 
 def finding(**kw):
-    base = dict(reaction="NIGHTMARE", a=1200, prr=7.14, classification="on_label", reasoning="r",
-                evidence=["q-1"], label_section="boxed_warning", label_term="neuropsychiatric (NP) events")
+    base = dict(reaction="NIGHTMARE", a=1200, prr=7.14, label_coverage="covered", context="clinical_event",
+                review_priority="lower_priority", reasoning="r", evidence=["q-1"], label_section="boxed_warning",
+                label_term="neuropsychiatric (NP) events")
     return Finding(**{**base, **kw})
+
+
+NEW = dict(label_coverage="not_found", review_priority="review_next", next_check="check reporter types",
+           label_term=None, label_section=None)
 
 
 @pytest.mark.parametrize("bad", ["", "a", "x\"; DROP VIEW openfda.faers_total", "drug%22", "a" * 60, "../etc"])
@@ -65,8 +71,59 @@ def test_checks_reject_term_not_in_label():
 
 def test_checks_reject_new_signal_the_label_names():
     label = {"adverse_reactions": "Dream abnormalities, including nightmares, were reported."}
-    f = finding(classification="possible_new_signal", label_term=None)
+    f = finding(**NEW)
     assert any(m.startswith("not_named_in_label") for m in failed(code_checks(f, FRESH, label, {"q-1"})))
+
+
+def test_checks_review_next_must_be_unlabelled_clinical_event_with_next_check():
+    assert failed(code_checks(finding(**NEW), FRESH, LABEL, {"q-1"})) == []
+    covered = failed(code_checks(finding(review_priority="review_next", next_check="x"), FRESH, LABEL, {"q-1"}))
+    assert any(m.startswith("priority_consistent") for m in covered)
+    disease = failed(code_checks(finding(**{**NEW, "context": "treated_condition"}), FRESH, LABEL, {"q-1"}))
+    assert any(m.startswith("priority_consistent") for m in disease)
+    no_check = failed(code_checks(finding(**{**NEW, "next_check": ""}), FRESH, LABEL, {"q-1"}))
+    assert any(m.startswith("has_next_check") for m in no_check)
+
+
+def test_checks_reject_unknown_field_values():
+    assert any(m.startswith("valid_fields") for m in failed(code_checks(finding(context="maybe"), FRESH, LABEL, {"q-1"})))
+
+
+@pytest.mark.parametrize("coverage,context,expected", [
+    ("covered", "clinical_event", "on_label"), ("not_found", "clinical_event", "possible_new_signal"),
+    ("unclear", "clinical_event", "possible_new_signal"), ("not_assessed", "treated_condition", "likely_indication_or_disease"),
+    ("covered", "treated_condition", "on_label"), ("not_assessed", "non_clinical", "not_meaningful")])
+def test_derived_category_follows_gold_precedence(coverage, context, expected):
+    assert finding(label_coverage=coverage, context=context).classification == expected
+
+
+def test_from_dict_defaults_are_cautious():
+    f = Finding.from_dict({"reaction": "X", "a": 3, "prr": 2.5})
+    assert (f.label_coverage, f.context, f.review_priority) == ("not_assessed", "clinical_event", "insufficient_evidence")
+
+
+def test_settle_closes_a_dispute_that_goes_round_in_circles():
+    f = finding(**NEW)
+    reject = Verdict("NIGHTMARE", "reject", "label covers it", objection="dream abnormalities")
+    assert settle(f, reject, []) == ("rejected", "")
+    history = [{"decision": "reject", "claim": dict(zip(("label_coverage", "context", "review_priority"), f.key()))}]
+    status, note = settle(f, reject, history)
+    assert status == "unresolved" and "already rejected" in note
+    assert settle(f, Verdict("NIGHTMARE", "accept", "ok"), history) == ("reviewed", "")
+    assert settle(f, Verdict("NIGHTMARE", "unresolved", "narrower term only"), [])[0] == "unresolved"
+
+
+def test_review_queue_ranks_review_next_first_and_keeps_open_items():
+    passing = [Signal(n, a=10, b=1, c=1, d=1, prr=3.0, chi2=c) for n, c in (("A", 90), ("B", 50), ("P", 40), ("F", 30))]
+    state = {
+        "A": {"finding": finding(reaction="A"), "verdict": Verdict("A", "accept", "ok"), "status": "reviewed", "history": []},
+        "B": {"finding": finding(reaction="B", **NEW), "verdict": Verdict("B", "accept", "ok", objection="vague"),
+              "status": "reviewed", "history": []},
+    }
+    q = review_queue(state, passing, [{"reaction": "P", "why": "strong"}], ["F"])
+    assert [x["reaction"] for x in q] == ["B", "A", "P", "F"]
+    assert [x["workflow_status"] for x in q] == ["reviewed", "reviewed", "pending", "failed"]
+    assert q[0]["strongest_objection"] == "vague" and q[0]["next_check"] == "check reporter types"
 
 
 def test_checks_reject_missing_evidence_and_unknown_reaction():
@@ -93,8 +150,9 @@ class FakeLLM:
         if self.fail_all or any(r in user for r in self.fail_on):
             raise MeterlessError("empty_response")
         rows = [l.split(" | ") for l in user.splitlines() if l.count(" | ") == 3 and not l.startswith("reaction")]
-        return {"findings": [{"reaction": r[0], "a": int(r[1]), "prr": float(r[2]),
-                              "classification": "possible_new_signal", "reasoning": "x", "evidence": ["q-s"]}
+        return {"findings": [{"reaction": r[0], "a": int(r[1]), "prr": float(r[2]), "context": "clinical_event",
+                              "label_coverage": "not_found", "review_priority": "review_next", "reasoning": "x",
+                              "next_check": "y", "evidence": ["q-s"]}
                              for r in rows], "summary": ""}
 
 
@@ -170,5 +228,5 @@ def test_rejected_rule_finding_goes_to_the_model():
 
 def test_checks_new_signal_must_pass_screen():
     weak = Signal("RASH", a=2, b=1, c=1, d=1, prr=1.5, chi2=1.0)
-    f = finding(reaction="RASH", a=2, prr=1.5, classification="possible_new_signal", label_term=None)
+    f = finding(reaction="RASH", a=2, prr=1.5, **NEW)
     assert any(m.startswith("passes_screen") for m in failed(code_checks(f, weak, LABEL, {"q-1"})))

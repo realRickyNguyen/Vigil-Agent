@@ -1,6 +1,6 @@
 # Hackathon knowledge base (as of Thu 22 Oct 2026)
 
-Neutral facts only. No project idea is chosen or recommended here. Each item is marked **confirmed** (seen in an organiser document or tested on this machine), **reported** (from a source we did not verify ourselves) or **unknown**. The live HackOS page and organiser announcements override everything here.
+Neutral facts about the event and the stack. The project chosen on 22 Oct is Black Box; see `docs/HANDOFF.md` and `docs/ideas/BLACK_BOX.md`. Each item is marked **confirmed** (seen in an organiser document or tested on this machine), **reported** (from a source we did not verify ourselves) or **unknown**. The live HackOS page and organiser announcements override everything here.
 
 Sources: `docs/reference/03_LLM_context_for_your_AI.md`, the 21 Oct Participant Setup Guide PDF (30 pages; the 19 Oct guide in `docs/reference/` matches it closely), `cursor-sponsor-overview.md`, and the Zetaris getting-started catalog pages (REST, Parquet/CSV, USL).
 
@@ -8,7 +8,7 @@ Sources: `docs/reference/03_LLM_context_for_your_AI.md`, the 21 Oct Participant 
 - Open Agent Hackathon 2026, GenAI Works, platform HackOS (hackathon.genai.works). Online. Teams of 1 to 5.
 - Build window opened Thu 22 Oct 00:00 UTC (11:00 Sydney). Submissions close Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney). Hard deadline.
 - Registration: the HackOS notice says it closes 22 Oct 23:59 UTC (Fri 23 Oct 10:59 Sydney). Plan for 10:45 Sydney.
-- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track not chosen.** We have **not seen the challenge statements** on HackOS; they override the generic track text.
+- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track 02 chosen provisionally** for Black Box. We have **not seen the challenge statements** on HackOS; they override the generic track text.
 - Help desk: the Help desk channel on HackOS (hackathon.genai.works/messages).
 
 ## Tracks and prizes (confirmed from the context pack)

@@ -57,13 +57,16 @@ Answered by the 19 Oct guide: Meterless is required as provider and as an Engine
 - Vibe coding workshop was 20 Oct 9 PM PST (YouTube link in the guide). Already past.
 - Cursor credit redemption is still not explained: check HackOS Resources.
 
-## Still open (22 Oct)
-- [x] Team registered on HackOS (22 Oct). Track still to choose; check the challenge statements on HackOS
+## Still open (updated 22 Oct, 17:00 Sydney)
+- [x] Team registered on HackOS (22 Oct). Project Black Box, Track 02 provisionally
+- [ ] Read the Track 02 challenge statement on HackOS
 - [ ] Cursor credit redeemed; Check 2 (Agent runs hello.py with Composer or Grok)
 - [x] Zetaris GUI and PokeAPI recipe done (22 Oct)
-- [ ] Meterless Engine feature with a passing test (Build rule)
-- [ ] App uses Nightshift as primary provider (Power rule)
-- [ ] Judge-facing: public repo, Dockerfile, run.py or POST /run, SAMPLE_MODE, 3+ sample inputs
+- [ ] Meterless Engine feature with a passing test (Build rule): World Model planned
+- [x] App uses Nightshift as primary provider (Power rule): every agent call goes through Nightshift, pinned to Nemotron Ultra
+- [x] `run.py` entry point (22 Oct)
+- [ ] Judge-facing: public repo, Dockerfile, `POST /run`, `SAMPLE_MODE`, 3+ sample inputs (1 so far)
+- [ ] Nightshift lanes: Ultra lane running, Lightning stopped, race width 1 (done 22 Oct; re-check after every restart)
 
 ## Daily status (22 Oct, after "lets begin")
 - Docker engine 27.3.1 needed the `run` folder rename again. Zetaris and Nightshift up. Smoke test 3 PASS.

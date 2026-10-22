@@ -30,13 +30,17 @@ def main() -> int:
     request = json.loads(Path(args.input).read_text()) if args.input else {"drug": args.drug}
     d = investigate(request, settings)
 
-    print(f"\n{d['drug']}: {d['data']['drug_reports']} reports, {d['screen']['passing_evans']} reactions pass the screen")
-    for f in d["findings"]:
-        print(f"  [{f['classification']}] {f['reaction']}  a={f['a']} PRR={f['prr']}")
-    for f in d["excluded_by_judge"]:
-        print(f"  [excluded] {f['reaction']}: {f['judge'][:100]}")
-    for f in d["not_reviewed_by_judge"]:
-        print(f"  [not reviewed] [{f['classification']}] {f['reaction']}")
+    c = d["counts"]
+    print(f"\n{d['drug']}: {d['data']['drug_reports']} reports; {c['passing_evans']} of {c['reactions_screened']} "
+          f"reactions pass the screen; {c['assessed']} assessed ({c['decided_by_rule']} by rule), "
+          f"{c['reviewed']} reviewed, {c['unresolved']} unresolved, {c['pending']} pending, {c['failed']} failed")
+    for q in d["review_queue"]:
+        prio = q.get("review_priority") or "-"
+        print(f"  {prio:22s} {q['workflow_status']:12s} {q['reaction']}  a={q['a']} PRR={q['prr']}"
+              + (f"  [{q['label_coverage']}, {q['context']}]" if q.get("label_coverage") else ""))
+        if q.get("review_priority") == "review_next" or q["workflow_status"] == "unresolved":
+            print(f"      objection: {(q.get('strongest_objection') or q.get('status_note') or '-')[:140]}")
+            print(f"      next check: {(q.get('next_check') or '-')[:140]}")
     print(f"\nRounds: {d['rounds']}")
     print(f"Dossier: logs/dossier-{d['run_id']}.json   Trace: logs/{d['trace']}")
     return 0

@@ -9,7 +9,7 @@ from app.agents.hunter import Hunter, screen_table
 from app.agents.judge import Judge
 from app.config import Settings
 from app.data.faers import Clerk, validate_drug
-from app.schemas import CAVEAT
+from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
 
 # Passing rows shown to the Hunter, strongest evidence (chi2) first. 60 rows made the pick call run past
@@ -58,45 +58,61 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                  label_sections=[k for k in label if k not in ("effective_time", "set_id")],
                  label_effective=label.get("effective_time"), evidence_ids=sorted(ctx["evidence_ids"]))
 
-    # Hunter <-> Judge loop. Accepted findings are settled and never re-classified; each round only
-    # handles the Judge's rejections and missing reactions nobody has attempted yet.
+    # Hunter <-> Judge loop. Accepted findings are settled and never re-done; each round only handles the
+    # Judge's rejections and missing reactions nobody has attempted yet. A dispute that cannot be settled
+    # ends as "unresolved" rather than being accepted when the rounds run out.
     names = {s.reaction for s in passing}
     findings, summary = hunter.run(ctx)
     tracer.event("hunter", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
-    settled: dict = {}
-    excluded_now: dict = {}
-    unreviewed: dict = {}  # passed code checks, but every model review attempt failed
-    rounds = []
+    state: dict = {}  # reaction -> {"finding", "verdict", "status", "history"}
+    rounds, new_missing = [], []
     for rnd in range(1, settings.judge_rounds + 2):
         verdicts, missing, judge_summary = judge.review(ctx, findings, attempted)
         by = {v.reaction: v for v in verdicts}
-        rejected = [f for f in findings if by[f.reaction].decision == "reject"]
+        retry = []
         for f in findings:
             v = by[f.reaction]
-            for d in (settled, excluded_now, unreviewed):
-                d.pop(f.reaction, None)
-            {"accept": settled, "reject": excluded_now}.get(v.decision, unreviewed)[f.reaction] = (f, v)
+            entry = state.setdefault(f.reaction, {"history": []})
+            status, note = settle(f, v, entry["history"])
+            entry["history"].append({"round": rnd, "claim": dict(zip(("label_coverage", "context", "review_priority"),
+                                                                       f.key())),
+                                     "decision": v.decision, "reason": v.reason, "objection": v.objection})
+            entry.update(finding=f, verdict=v, status=status, note=note)
+            if status == "rejected":
+                retry.append(f)
+            elif status == "unresolved" and note:
+                tracer.event("orchestrator", "dispute_unresolved", reaction=f.reaction, reason=note)
         new_missing = [m for m in missing if m["reaction"] in names and m["reaction"] not in attempted]
         tracer.event("judge", "verdicts", round=rnd, verdicts=[asdict(v) for v in verdicts], missing=new_missing,
                      ignored_missing=[m for m in missing if m not in new_missing], summary=judge_summary)
-        rounds.append({"round": rnd, "reviewed": len(findings), "rejected": len(rejected),
+        rounds.append({"round": rnd, "reviewed": len(findings), "rejected": len(retry),
+                       "unresolved": sum(by[f.reaction].decision == "unresolved" for f in findings),
                        "missing": len(new_missing)})
-        if (not rejected and not new_missing) or rnd > settings.judge_rounds:
+        if (not retry and not new_missing) or rnd > settings.judge_rounds:
             break
-        feedback = {"rejected": [{"reaction": f.reaction, "reason": by[f.reaction].reason} for f in rejected],
+        feedback = {"rejected": [{"reaction": f.reaction, "reason": by[f.reaction].reason,
+                                  "objection": by[f.reaction].objection} for f in retry],
                     "missing": new_missing}
         tracer.event("orchestrator", "retry", round=rnd + 1, reason="judge rejected or found missing items",
                      feedback=feedback)
         attempted |= {m["reaction"] for m in new_missing}
-        findings, summary = hunter.revise(ctx, rejected, feedback)
+        new_missing = []
+        findings, summary = hunter.revise(ctx, retry, feedback)
         attempted |= set(ctx.get("unclassified", []))
         tracer.event("hunter", "findings", round=rnd + 1, findings=[f.to_dict() for f in findings], summary=summary)
 
-    accepted = [{**f.to_dict(), "judge": v.reason} for f, v in settled.values()]
-    excluded = [{**f.to_dict(), "judge": v.reason} for f, v in excluded_now.values()]
-    not_reviewed = [{**f.to_dict(), "judge": v.reason} for f, v in unreviewed.values()]
-    findings = [f for d in (settled, excluded_now, unreviewed) for f, _ in d.values()]
+    for r, entry in state.items():
+        if entry["status"] == "rejected":  # rounds ran out with the Judge's objection unanswered
+            entry.update(status="unresolved", note="review rounds ran out before the Judge's objection was settled")
+            tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
+    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []))
+    counts = {"reactions_screened": len(signals), "passing_evans": len(passing),
+              "shown_to_hunter": ctx["screen_shown"], "picked_by_hunter": len(ctx.get("picked", [])),
+              "assessed": len(state), "decided_by_rule": sum(e["finding"].decided_by == "rule" for e in state.values()),
+              **{s: sum(q["workflow_status"] == s for q in queue) for s in STATUS},
+              "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
+                                 for q in queue)}
 
     queries, degraded = {}, []
     with tracer.path.open(encoding="utf-8") as fh:
@@ -113,11 +129,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "data": {"source": "openFDA FAERS and drug label via Zetaris", **{k: totals[k] for k in
                  ("drug_reports", "all_reports", "data_last_updated")},
                  "label_effective": label.get("effective_time"), "label_set_id": label.get("set_id")},
-        "screen": {"reactions_screened": len(signals), "passing_evans": len(passing)},
-        "findings": accepted,
-        "excluded_by_judge": excluded,
-        "not_reviewed_by_judge": not_reviewed,
-        "not_classified": sorted(set(ctx.get("unclassified", [])) - {f.reaction for f in findings}),
+        "counts": counts,
+        "review_queue": queue,
         "degraded_steps": degraded,
         "hunter_summary": summary,
         "rounds": rounds,
@@ -128,5 +141,51 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     }
     out = settings.logs_dir / f"dossier-{tracer.run_id}.json"
     out.write_text(json.dumps(dossier, indent=2, ensure_ascii=False), encoding="utf-8")
-    tracer.event("orchestrator", "run_end", accepted=len(accepted), excluded=len(excluded), dossier=out.name)
+    tracer.event("orchestrator", "run_end", counts=counts, dossier=out.name)
     return dossier
+
+
+def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
+    """Workflow status for a finding after the Judge's verdict, and a note when a dispute is closed.
+    A rejection of a claim the Judge already rejected once means the two agents are going round in
+    circles, so the dispute is closed as unresolved instead of being re-asked."""
+    if v.decision == "accept":
+        return "reviewed", ""
+    if v.decision == "unreviewed":
+        return "not_reviewed", ""
+    if v.decision == "unresolved":
+        return "unresolved", ""
+    claim = dict(zip(("label_coverage", "context", "review_priority"), f.key()))
+    if any(h["decision"] == "reject" and h["claim"] == claim for h in history):
+        return "unresolved", "the Hunter returned to an answer the Judge had already rejected"
+    return "rejected", ""
+
+
+PRIORITY_ORDER = {"review_next": 0, "insufficient_evidence": 1, "lower_priority": 2, None: 3}
+STATUS_ORDER = {"unresolved": 0, "reviewed": 1, "not_reviewed": 2, "pending": 3, "failed": 4}
+
+
+def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str]) -> list[dict]:
+    """The analyst's queue: every assessed reaction with its priority, objection and next check, plus
+    reactions that were named for review but never reached, ranked review_next first."""
+    stats = {s.reaction: s for s in passing}
+    queue = []
+    for r, e in state.items():
+        f, v = e["finding"], e["verdict"]
+        queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
+                      "workflow_status": e["status"], "judge": v.reason, "status_note": e.get("note", ""),
+                      "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
+                      "history": e["history"]})
+    for m in pending:
+        s = stats.get(m["reaction"])
+        queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,
+                      "chi2": s.chi2 if s else None, "workflow_status": "pending", "review_priority": None,
+                      "status_note": f"named by the Judge in the last round, not reached: {m.get('why', '')}"})
+    for r in sorted(set(failed) - set(state)):
+        s = stats.get(r)
+        queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
+                      "chi2": s.chi2 if s else None, "workflow_status": "failed", "review_priority": None,
+                      "status_note": "the Hunter's model call failed after every fallback"})
+    queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
+                              STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
+    return queue

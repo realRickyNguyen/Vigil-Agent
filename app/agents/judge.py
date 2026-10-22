@@ -1,6 +1,8 @@
 """Judge: checks every Hunter finding against Zetaris and the label, then reviews the reasoning.
-Code checks come first and cannot be overruled by the model: a finding with wrong numbers,
-no evidence, or a label quote that is not in the label is rejected."""
+Code checks come first and cannot be overruled by the model: a finding with wrong numbers, no
+evidence, a label term that is not in the label, or an inconsistent priority is rejected.
+The model then accepts, rejects (with an objection the Hunter must answer), or marks a finding
+unresolved when the evidence available cannot settle it."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -8,47 +10,57 @@ from app.adapters.meterless import MeterlessError, NightshiftClient
 from app.agents.hunter import BATCH, MAX_TOKENS, screen_table
 from app.data.faers import Clerk
 from app.data.label import META, excerpt_block, label_sentence, named_in_label, norm
-from app.schemas import CLASSIFICATIONS, Finding, Signal, Verdict
+from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
 UNREVIEWED = "passed code checks; model review unavailable (Nightshift error), reasoning not reviewed"
 
-SYSTEM = """You are the Judge in a drug-safety review team. The Hunter has classified FAERS reactions for one drug. Code has already re-run each finding's numbers on the database, found the label sentence for each "label_term" (in "label_quote"), and checked whether the label names each claimed new signal; those results are in "checks". Your job is the reasoning.
+SYSTEM = """You are the Judge in a drug-safety review team. The Hunter has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
 
-For each finding that passed the checks, decide "accept" or "reject":
-- Reject "on_label" if the label_quote does not actually describe that reaction or an equivalent event.
-- Reject "possible_new_signal" if the label text shown does describe it, or if the reaction is plainly the treated disease.
-- Reject "likely_indication_or_disease" if the reaction is not related to what the drug treats.
-- Reject reasoning that claims the drug causes the reaction. FAERS shows association only.
-Then list up to 3 "missing" reactions from the rows nobody has classified yet that a reviewer would expect to see. Leave "missing" empty if nothing important is missing.
+Code has already re-run each finding's numbers on the database, found the label sentence for each "label_term" (in "label_quote"), and checked that the fields are consistent; see "checks". Your job is the reasoning.
+
+For each finding, decide:
+- "accept": the context, coverage and priority are defensible from the evidence shown.
+- "reject": something is wrong and the Hunter can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
+- "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
+
+For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
+
+Then list up to 3 "missing" reactions from the rows nobody has assessed yet that a reviewer would expect to see. Leave "missing" empty if nothing important is missing.
 
 Reply with only a JSON object:
-{"verdicts": [{"reaction": str, "decision": "accept" or "reject", "reason": str}], "missing": [{"reaction": str, "why": str}], "summary": str}"""
+{"verdicts": [{"reaction": str, "decision": "accept" or "reject" or "unresolved", "reason": str, "objection": str, "next_check": str}], "missing": [{"reaction": str, "why": str}], "summary": str}"""
 
 
 def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set[str]) -> dict:
     """Deterministic checks. Returns {check: (passed, detail)}. Fills f.label_quote from the label."""
     c = {}
-    c["classification"] = (f.classification in CLASSIFICATIONS, f.classification)
+    c["valid_fields"] = (f.label_coverage in COVERAGE and f.context in CONTEXT and f.review_priority in PRIORITY,
+                         f"{f.context} / {f.label_coverage} / {f.review_priority}")
     if fresh is None:
         c["in_database"] = (False, "reaction not found in the screen for this drug")
     else:
         c["in_database"] = (True, f"a={fresh.a}, prr={fresh.prr}, chi2={fresh.chi2}")
         c["numbers_match"] = (f.a == fresh.a and abs(f.prr - fresh.prr) <= max(0.05, 0.01 * fresh.prr),
                               f"claimed a={f.a}, prr={f.prr}")
-        if f.classification == "possible_new_signal":
+        if f.review_priority == "review_next":
             c["passes_screen"] = (fresh.a >= 3 and fresh.prr >= 2 and fresh.chi2 >= 4, "Evans: a>=3, PRR>=2, chi2>=4")
     cited = [e for e in f.evidence if e in evidence_ids]
     c["cites_evidence"] = (bool(cited), ", ".join(f.evidence) or "none")
-    if f.classification == "on_label":
+    if f.label_coverage == "covered":
         section = label.get(f.label_section or "") or " ".join(
             v for k, v in label.items() if k not in META)
         f.label_quote = label_sentence(section, f.label_term or "")
         c["term_in_label"] = (f.label_quote is not None, f"term '{f.label_term}' in {f.label_section}")
-    if f.classification == "possible_new_signal":
-        c["not_named_in_label"] = (not named_in_label(f.reaction, label),
-                                   f"label text {'contains' if named_in_label(f.reaction, label) else 'does not contain'} "
-                                   f"'{f.reaction.lower()}'")
+    if f.label_coverage == "not_found":
+        named = named_in_label(f.reaction, label)
+        c["not_named_in_label"] = (not named, f"label text {'contains' if named else 'does not contain'} "
+                                              f"'{f.reaction.lower()}'")
+    if f.review_priority == "review_next":
+        # Only an unlabelled clinical event can be sent for review, and it must say what to check.
+        c["priority_consistent"] = (f.context == "clinical_event" and f.label_coverage in ("not_found", "unclear"),
+                                    "review_next needs a clinical_event that is not_found or unclear in the label")
+        c["has_next_check"] = (bool(f.next_check), "review_next needs a next_check")
     return c
 
 
@@ -94,14 +106,16 @@ class Judge:
         for f, checks, _ in checked:
             bad = failed(checks)
             v = llm.get(norm(f.reaction), {})
+            extra = {"objection": str(v.get("objection") or ""), "next_check": str(v.get("next_check") or "")}
             if bad:
-                verdicts.append(Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks))
-            elif v.get("decision") == "reject":
-                verdicts.append(Verdict(f.reaction, "reject", str(v.get("reason", "")), checks))
-            elif v.get("decision") == "unreviewed":
-                verdicts.append(Verdict(f.reaction, "unreviewed", UNREVIEWED, checks))
+                verdicts.append(Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks,
+                                        objection=extra["objection"] or "; ".join(bad), next_check=extra["next_check"]))
+            elif v.get("decision") in ("reject", "unresolved", "unreviewed"):
+                reason = UNREVIEWED if v["decision"] == "unreviewed" else str(v.get("reason", ""))
+                verdicts.append(Verdict(f.reaction, v["decision"], reason, checks, **extra))
             else:
-                verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks))
+                verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks,
+                                        **extra))
         return verdicts, missing, " ".join(s for s in summaries if s)
 
     def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None) -> dict:
