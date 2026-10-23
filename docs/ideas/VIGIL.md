@@ -135,7 +135,7 @@ About 3 minutes from one real run, with any time compression labelled:
 - Counting reports that mention the drug includes reports where it was not the suspect drug. This broadens the population; it does not necessarily inflate the PRR.
 - Coverage limits: the baseline holds only the 999 most-reported reactions, and the Analyst reviews at most 10 picks plus Reviewer-named additions. Both are shown in the counts.
 - The aggregate data allows no case review and no duplicate removal. Marginal counts (reporter type, indication) give context, not adjustment for confounding.
-- The label is whichever one openFDA returns first for the generic name. That can be a combination product (metformin returned ZITUVIMET); a fix is planned.
+- The label is the latest prescription label filed under the drug's most common single-ingredient generic name: one manufacturer's version among many. Before 23 Oct it was whichever label openFDA returned first, which for metformin was a combination product (ZITUVIMET).
 - The Analyst and the Reviewer use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
 
 ## Responsible use
