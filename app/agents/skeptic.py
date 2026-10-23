@@ -33,7 +33,7 @@ def base_names(term: str) -> list[str]:
     """Ingredient names in one openFDA generic name, lower case, salt words removed. A combination
     product gives one name per ingredient. A name that is only salt words is kept whole."""
     out = []
-    for part in re.split(r",| AND |/", term.upper()):
+    for part in re.split(r",| AND |/|\\", term.upper()):  # active substances join with a backslash
         words = part.lower().split()
         kept = [w for w in words if w not in SALTS]
         name = " ".join(kept or words)

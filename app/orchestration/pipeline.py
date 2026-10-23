@@ -117,7 +117,6 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"))
-    # The namespace keeps the project's first name (Vigil) so earlier runs' state still loads.
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))

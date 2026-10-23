@@ -25,7 +25,8 @@ OPENFDA = "https://api.fda.gov/drug"
 DRUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 \-]{1,48}$")
 LABEL_FIELDS = ("boxed_warning", "warnings_and_cautions", "warnings", "precautions",
                 "adverse_reactions", "contraindications", "indications_and_usage")
-DRUG_FIELD = "patient.drug.openfda.generic_name"
+# Both fields that name a co-drug, so the list matches what drug_search() finds.
+CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
 PAIR_COUNTS = ("n", "n_r", "n_x", "n_xr", "n_y", "n_yr", "n_xy", "n_xyr")
 
@@ -70,9 +71,8 @@ def rest_table(name: str, endpoint: str) -> str:
 
 
 def phrase(field: str, value: str) -> str:
-    """One openFDA search clause. Fully URL-encoded, so the endpoint never holds a raw quote or apostrophe.
-    On the drug field this is the same token match the per-drug tables use, so a co-drug search also
-    finds combination products and other salts that contain it."""
+    """One openFDA search clause, fully URL-encoded, so the endpoint never holds a raw quote or apostrophe.
+    Used for reactions; drugs and co-drugs go through drug_search() so they match the per-drug tables."""
     return f"{field}:" + urllib.parse.quote(f'"{value}"', safe="")
 
 
@@ -176,26 +176,28 @@ class DataClerk:
         return name
 
     def co_drugs(self, drug: str, reaction: str, limit: int = 100) -> tuple[QueryResult, list[tuple[str, int]]]:
-        """Other drugs named on the reports of this drug and reaction, as openFDA's exact generic names."""
-        raw = self._count_table(f"{phrase(DRUG_FIELD, drug)}+AND+{phrase(REACTION_FIELD, reaction)}",
-                                f"{DRUG_FIELD}.exact", f"register co-reported drugs for {drug} and {reaction}", limit)
-        res = self.z.run(f"SELECT r.term AS drug, r.`count` AS reports FROM openfda_rest.{raw} "
-                         f"LATERAL VIEW explode(results) AS r ORDER BY reports DESC",
+        """Drugs named on the reports of this drug and reaction, by exact generic name and by active substance.
+        A report can appear under both fields, so the counts only rank candidates."""
+        search = f"{drug_search(drug)}+AND+{phrase(REACTION_FIELD, reaction)}"
+        raws = [self._count_table(search, field, f"register co-reported drugs ({field.split('.')[-2]}) for {drug} "
+                                                 f"and {reaction}", limit) for field in CO_DRUG_FIELDS]
+        res = self.z.run(" UNION ALL ".join(f"SELECT r.term AS drug, r.`count` AS reports FROM openfda_rest.{raw} "
+                                            f"LATERAL VIEW explode(results) AS r" for raw in raws),
                          f"co-reported drugs for {drug} and {reaction}", agent="skeptic")
         return res, [(rec["drug"], int(float(rec["reports"]))) for rec in res.records()]
 
     def pair_counts(self, drug: str, reaction: str, co_drug: str) -> tuple[QueryResult, dict]:
         """The eight report counts behind the co-drug checks, in one query: all reports (n), the reaction (r),
         this drug (x), the co-drug (y), and their overlaps. Totals use the serious-flag sum like the screen."""
-        x, y, r = phrase(DRUG_FIELD, drug), phrase(DRUG_FIELD, co_drug), phrase(REACTION_FIELD, reaction)
+        x, y, r = drug_search(drug), drug_search(co_drug), phrase(REACTION_FIELD, reaction)
         searches = {"n_y": y, "n_yr": f"{y}+AND+{r}", "n_xy": f"{x}+AND+{y}", "n_xyr": f"{x}+AND+{y}+AND+{r}"}
         raws = {k: self._count_table(v, "serious", f"register {k} for {drug}, {co_drug}, {reaction}")
                 for k, v in searches.items()}
         s, rq = slug(drug), sql_str(reaction)
         cols = [f"(SELECT SUM(reports) FROM openfda.faers_total) AS n",
                 f"(SELECT SUM(reports) FROM openfda.faers_reaction_totals WHERE reaction = {rq}) AS n_r",
-                f"(SELECT SUM(reports) FROM openfda.faers_d_{s}_total) AS n_x",
-                f"(SELECT SUM(reports) FROM openfda.faers_d_{s}_reactions WHERE reaction = {rq}) AS n_xr"]
+                f"(SELECT SUM(reports) FROM openfda.faers_d2_{s}_total) AS n_x",
+                f"(SELECT SUM(reports) FROM openfda.faers_d2_{s}_reactions WHERE reaction = {rq}) AS n_xr"]
         cols += [f"(SELECT SUM(r.`count`) FROM openfda_rest.{raw} LATERAL VIEW explode(results) AS r) AS {k}"
                  for k, raw in raws.items()]
         res = self.z.run("SELECT " + ",\n       ".join(cols), f"report counts for {drug} with {co_drug}, {reaction}",

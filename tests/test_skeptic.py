@@ -6,7 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.agents.skeptic import assess, base_names, pair_stats, rank_co_drugs  # noqa: E402
-from app.data.faers import DRUG_FIELD, REACTION_FIELD, phrase  # noqa: E402
+from app.data.faers import CO_DRUG_FIELDS, REACTION_FIELD, DataClerk, drug_search, phrase  # noqa: E402
+from app.schemas import QueryResult  # noqa: E402
 from app.orchestration.pipeline import review_queue, skeptic_round  # noqa: E402
 from app.schemas import Finding, Signal, Verdict  # noqa: E402
 
@@ -26,13 +27,44 @@ INTERACTION = counts(150, 1000, 300, 10000, 200, 10000, 1000, 100000)
 def test_phrase_encodes_quotes_and_apostrophes():
     clause = phrase(REACTION_FIELD, "CROHN'S DISEASE")
     assert clause == REACTION_FIELD + ":%22CROHN%27S%20DISEASE%22"
-    assert '"' not in phrase(DRUG_FIELD, 'x" AND y')
+    assert '"' not in phrase(REACTION_FIELD, 'x" AND y')
+
+
+class RecordingZetaris:
+    def __init__(self):
+        self.sql = []
+
+    def ensure(self, sql, purpose):
+        self.sql.append(sql)
+        return True
+
+    def run(self, sql, purpose, **kw):
+        self.sql.append(sql)
+        return QueryResult("q-1", sql, ["drug", "reports"], [])
+
+
+def test_skeptic_queries_use_the_same_drug_search_as_the_screen():
+    z = RecordingZetaris()
+    clerk = DataClerk(z)
+    clerk.co_drugs("montelukast", "DEPRESSION")
+    lists = [s for s in z.sql if "CREATE LIGHTNING REST TABLE" in s]
+    assert len(lists) == 2 and all(drug_search("montelukast") in s for s in lists)
+    assert [f in s for s, f in zip(lists, CO_DRUG_FIELDS)] == [True, True]
+    assert "UNION ALL" in z.sql[-1]
+    z.sql.clear()
+    z.run = lambda sql, purpose, **kw: (z.sql.append(sql), QueryResult("q-2", sql, ["n"], [["1"]]))[1]
+    clerk.pair_counts("montelukast", "DEPRESSION", "albuterol")
+    tables = [s for s in z.sql if "CREATE LIGHTNING REST TABLE" in s]
+    assert len(tables) == 4 and all(drug_search("albuterol") in s for s in tables)
+    assert sum(drug_search("montelukast") in s for s in tables) == 2  # n_xy and n_xyr
+    assert "faers_d2_montelukast_total" in z.sql[-1] and "faers_d_montelukast" not in z.sql[-1]
 
 
 def test_base_names_merge_salts_and_split_combinations():
     assert base_names("ALBUTEROL SULFATE") == ["albuterol"]
     assert base_names("FLUTICASONE PROPIONATE AND SALMETEROL XINAFOATE") == ["fluticasone", "salmeterol"]
     assert base_names("POTASSIUM CHLORIDE") == ["potassium chloride"]  # only salt words: kept whole
+    assert base_names("FLUTICASONE PROPIONATE\\SALMETEROL XINAFOATE") == ["fluticasone", "salmeterol"]
 
 
 def test_rank_co_drugs_drops_the_drug_itself_and_merges_salts():
@@ -118,7 +150,7 @@ class FakeSkeptic:
                 "summary": "s"}
 
 
-class FakeJudge:
+class FakeReviewer:
     """Returns the scripted decisions in order, one list per review call."""
     def __init__(self, script):
         self.script, self.calls = list(script), []
@@ -129,7 +161,7 @@ class FakeJudge:
         return [Verdict(f.reaction, decisions[f.reaction], "r", objection="co-drug") for f in findings], [], ""
 
 
-class FakeHunter:
+class FakeAnalyst:
     def __init__(self):
         self.calls = []
 
@@ -149,7 +181,7 @@ def round_state(reactions):
 
 def test_skeptic_round_holds_needs_no_model_call():
     ctx, state = round_state(["A"])
-    reviewer, analyst = FakeJudge([]), FakeHunter()
+    reviewer, analyst = FakeReviewer([]), FakeAnalyst()
     out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds"}), reviewer, analyst, Tracer(), 3)
     assert out == {"checked": 1, "challenged": 0, "priority_changed": 0}
     assert reviewer.calls == [] and "q-A" in ctx["evidence_ids"]
@@ -158,8 +190,8 @@ def test_skeptic_round_holds_needs_no_model_call():
 
 def test_skeptic_round_challenge_goes_reviewer_analyst_reviewer():
     ctx, state = round_state(["A", "B"])
-    reviewer = FakeJudge([{"A": "reject", "B": "accept"}, {"A": "accept"}])
-    analyst = FakeHunter()
+    reviewer = FakeReviewer([{"A": "reject", "B": "accept"}, {"A": "accept"}])
+    analyst = FakeAnalyst()
     out = skeptic_round(ctx, state, FakeSkeptic({"A": "challenged", "B": "challenged"}), reviewer, analyst, Tracer(), 3)
     assert reviewer.calls == [["A", "B"], ["A"]] and len(analyst.calls) == 1
     assert state["A"]["status"] == "reviewed" and state["A"]["finding"].review_priority == "insufficient_evidence"
@@ -170,14 +202,14 @@ def test_skeptic_round_challenge_goes_reviewer_analyst_reviewer():
 
 def test_skeptic_round_unsettled_dispute_ends_unresolved():
     ctx, state = round_state(["A"])
-    reviewer = FakeJudge([{"A": "reject"}, {"A": "reject"}])
-    skeptic_round(ctx, state, FakeSkeptic({"A": "challenged"}), reviewer, FakeHunter(), Tracer(), 3)
+    reviewer = FakeReviewer([{"A": "reject"}, {"A": "reject"}])
+    skeptic_round(ctx, state, FakeSkeptic({"A": "challenged"}), reviewer, FakeAnalyst(), Tracer(), 3)
     assert state["A"]["status"] == "unresolved"
 
 
 def test_skeptic_round_checks_only_the_top_accepted_review_next_items():
     ctx, state = round_state(["A", "B", "C"])
     state["C"]["finding"].review_priority = "lower_priority"
-    out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds", "B": "holds"}), FakeJudge([]), FakeHunter(),
+    out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds", "B": "holds"}), FakeReviewer([]), FakeAnalyst(),
                         Tracer(), 1)
     assert out["checked"] == 1 and list(ctx["skeptic"]) == ["A"]  # A has the highest chi2
