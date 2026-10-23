@@ -11,7 +11,7 @@ from app.agents.hunter import Hunter  # noqa: E402
 from app.agents.rules import route  # noqa: E402
 from app.data.label import excerpt_block, retrieve  # noqa: E402
 from app.agents.judge import code_checks, failed  # noqa: E402
-from app.data.faers import signal_sql, slug, sql_str, validate_drug  # noqa: E402
+from app.data.faers import Clerk, drug_search, signal_sql, slug, sql_str, validate_drug  # noqa: E402
 from app.orchestration.pipeline import review_queue, settle  # noqa: E402
 from app.schemas import Finding, Signal, Verdict  # noqa: E402
 
@@ -44,6 +44,37 @@ def test_validate_drug_and_slug():
 def test_sql_str_escapes_quotes():
     assert sql_str("CROHN'S DISEASE") == "'CROHN\\'S DISEASE'"
     assert "dr.reaction = 'CROHN\\'S DISEASE'" in signal_sql("x", reaction="CROHN'S DISEASE")
+
+
+def test_drug_search_uses_both_fields_fully_encoded():
+    s = drug_search("insulin glargine")
+    assert s == ("%28patient.drug.openfda.generic_name%3A%22insulin%20glargine%22%20OR%20"
+                 "patient.drug.activesubstance.activesubstancename%3A%22insulin%20glargine%22%29")
+    assert not any(ch in s for ch in "\"'() ")
+
+
+class RecordingZetaris:
+    def __init__(self):
+        self.sql = []
+
+    def ensure(self, sql, purpose):
+        self.sql.append(sql)
+        return True
+
+    def run(self, sql, purpose, **kw):
+        self.sql.append(sql)
+
+
+def test_register_drug_uses_new_tables_and_combined_search():
+    z = RecordingZetaris()
+    Clerk(z).register_drug("atorvastatin")
+    event_tables = [s for s in z.sql if "event.json" in s]
+    assert len(event_tables) == 2 and all(drug_search("atorvastatin") in s for s in event_tables)
+    assert all("faers_d2_atorvastatin_" in s for s in event_tables)
+    assert not any("faers_d_atorvastatin" in s for s in z.sql)  # old one-field tables are never reused
+    label = next(s for s in z.sql if "label.json" in s)
+    assert "search=openfda.generic_name:%22atorvastatin%22" in label  # label search unchanged
+    assert "faers_d2_x_reactions" in signal_sql("x")
 
 
 def test_extract_json_ignores_think_and_fences():

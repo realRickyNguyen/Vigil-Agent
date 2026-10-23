@@ -55,8 +55,8 @@ All sources are public openFDA endpoints, using aggregate counts only, so no cas
 |---|---|---|
 | `openfda.faers_reaction_totals` | `drug/event.json?count=patient.reaction.reactionmeddrapt.exact&limit=999` | Built (shared baseline) |
 | `openfda.faers_total` | `drug/event.json?count=serious` (sum of the two rows) | Built |
-| `openfda.faers_d_<drug>_reactions` | `search=patient.drug.openfda.generic_name:"<drug>"&count=...reactionmeddrapt.exact&limit=999` | Built, created at runtime |
-| `openfda.faers_d_<drug>_total` | same search, `count=serious` | Built, created at runtime |
+| `openfda.faers_d2_<drug>_reactions` | `search=(patient.drug.openfda.generic_name:"<drug>" OR patient.drug.activesubstance.activesubstancename:"<drug>")&count=...reactionmeddrapt.exact&limit=999`, fully URL-encoded | Built, created at runtime (the older `faers_d_` tables used generic_name alone) |
+| `openfda.faers_d2_<drug>_total` | same search, `count=serious` | Built, created at runtime |
 | `openfda_rest.label_d_<drug>_raw` | `drug/label.json?search=openfda.generic_name:"<drug>"&limit=1` | Built, created at runtime |
 | Reporter type for one drug and reaction | `search=<drug> AND <reaction>&count=primarysource.qualification` | Planned (Skeptic) |
 
