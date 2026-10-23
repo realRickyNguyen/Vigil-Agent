@@ -8,6 +8,7 @@ from app.adapters.meterless import NightshiftClient
 from app.adapters.zetaris import ZetarisClient
 from app.agents.analyst import Analyst, screen_table
 from app.agents.reviewer import Reviewer
+from app.agents.reviewer import failed as failed_checks
 from app.config import Settings
 from app.data.faers import DataClerk, validate_drug
 from app.engines.world_model import WorldModel
@@ -216,10 +217,17 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     queue = []
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
-        queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
-                      "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
-                      "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
-                      "history": e["history"]})
+        item = {**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
+                "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
+                "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
+                "history": e["history"]}
+        bad = failed_checks(v.checks)
+        if e["status"] == "unresolved" and bad and item["review_priority"] == "review_next":
+            # A claim that code has shown to be wrong must not head the queue as "review next".
+            item["review_priority"] = "insufficient_evidence"
+            item["status_note"] = " ".join(x for x in (item["status_note"], "Ranked below review_next because the "
+                                                       "Analyst's last claim failed code checks: " + "; ".join(bad)) if x)
+        queue.append(item)
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,
@@ -229,7 +237,8 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
         s = stats.get(r)
         queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
                       "chi2": s.chi2 if s else None, "workflow_status": "failed", "review_priority": None,
-                      "status_note": "the Analyst's model call failed after every fallback"})
+                      "status_note": "the Analyst could not classify it: its model calls failed after every fallback, "
+                                     "or its reply left this reaction out"})
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
     return queue

@@ -80,10 +80,17 @@ class Finding:
         def pick(name, default):
             # Missing values get the cautious default; unknown values are kept so the Reviewer's checks reject them.
             return str(d.get(name) or "").strip() or default
+
+        def number(name, cast):
+            # "1,234" or "n/a" from a model must not crash the run; a wrong number fails the Reviewer's checks.
+            try:
+                return cast(float(str(d.get(name) or 0).replace(",", "")))
+            except ValueError:
+                return cast(0)
         return cls(
             reaction=str(d.get("reaction", "")).strip(),
-            a=int(d.get("a") or 0),
-            prr=float(d.get("prr") or 0),
+            a=number("a", int),
+            prr=number("prr", float),
             label_coverage=pick("label_coverage", "not_assessed"),
             context=pick("context", "clinical_event"),
             review_priority=pick("review_priority", "insufficient_evidence"),

@@ -118,4 +118,10 @@ class NightshiftClient:
             repair = messages + [{"role": "assistant", "content": reply},
                                  {"role": "user", "content": "That was not a valid JSON object. "
                                   "Reply again with only the JSON object, no other text."}]
-            return extract_json(self.chat(agent, model, repair, **kw))
+            again = self.chat(agent, model, repair, **kw)
+            try:
+                return extract_json(again)
+            except ValueError as e2:
+                # Raised as a model failure, so the agents' smaller-call fallbacks apply instead of a crash.
+                self.tracer.event(agent, "llm_bad_json", error=str(e2), reply_head=again[:300], repair=True)
+                raise MeterlessError(f"no valid JSON after a repair attempt: {e2}") from e2
