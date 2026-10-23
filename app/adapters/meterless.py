@@ -1,12 +1,14 @@
 """Meterless Nightshift adapter, the app's only model provider.
-OpenAI-compatible POST {METERLESS_BASE_URL}/chat/completions with the Runtime token,
-the meterless-app header and meterless-scope: user. The NVIDIA key stays inside Nightshift."""
+OpenAI-compatible POST {METERLESS_BASE_URL}/chat/completions with the Runtime token, the meterless-app
+header and a fresh meterless-scope on every call, which keeps Nightshift's H-MEM out (see _post).
+The NVIDIA key stays inside Nightshift."""
 import hashlib
 import json
 import re
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from app.config import Settings
 from app.tracing import Timer, Tracer
@@ -36,7 +38,8 @@ def nightshift_steps(response: dict) -> dict | None:
     """What Nightshift did to one call, from the compute receipt it returns inline (response["meterless"]
     ["receipt"]). Nightshift can add its own steps: H-MEM injects earlier answers into the prompt after our app
     sends it, so the injected text never appears in our trace, and the reasoning scaffold can add a planning call.
-    On 23 Oct memory was injected into 32 of 34 calls and we found no switch for it, so every call records it."""
+    The app keeps H-MEM out with a fresh scope per call (see NightshiftClient._post), and every call records what
+    the receipt says, so a run shows that no memory was injected."""
     receipt = (response.get("meterless") or {}).get("receipt")
     if not receipt:
         return None  # not served by Nightshift, or an older Nightshift without inline receipts
@@ -58,10 +61,13 @@ class NightshiftClient:
         self.tracer = tracer
 
     def _post(self, body: dict) -> dict:
+        # A fresh scope per call keeps Nightshift's H-MEM out. Its memory is walled by scope, and under the
+        # shared "user" scope it fed each call up to 3 earlier answers as vetted evidence, which replayed one
+        # wrong 22 Oct answer into every later montelukast run. The World Model is the app's memory instead.
         headers = {"Content-Type": "application/json",
                    "Authorization": "Bearer " + self.s.meterless_token,
                    "meterless-app": self.s.meterless_app,
-                   "meterless-scope": "user"}
+                   "meterless-scope": "call-" + uuid.uuid4().hex}
         req = urllib.request.Request(self.s.meterless_url + "/chat/completions",
                                      data=json.dumps(body).encode(), headers=headers)
         with urllib.request.urlopen(req, timeout=self.s.model_timeout) as r:
