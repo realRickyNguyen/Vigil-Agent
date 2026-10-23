@@ -29,6 +29,7 @@ class Settings:
     reviewer_model: str
     source_timeout: int
     model_timeout: int
+    model_stream: bool
     max_retries: int
     reviewer_rounds: int
     parallel: int
@@ -56,6 +57,8 @@ def get_settings() -> Settings:
         reviewer_model=e("REVIEWER_MODEL", e("JUDGE_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         source_timeout=int(e("SOURCE_TIMEOUT_SECONDS", "20")),
         model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "180")),
+        # Stream model replies. Off brings back the buffered calls that Nightshift cut at 45 s.
+        model_stream=e("MODEL_STREAM", "true").lower() not in ("false", "0", "no", "off"),
         max_retries=int(e("MAX_RETRIES", "2")),
         reviewer_rounds=int(e("REVIEWER_ROUNDS", e("JUDGE_ROUNDS", "2"))),
         # Concurrent model calls. The NVIDIA trial lanes have a per-minute cap, so keep this small.

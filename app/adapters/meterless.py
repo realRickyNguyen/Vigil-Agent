@@ -3,6 +3,7 @@ OpenAI-compatible POST {METERLESS_BASE_URL}/chat/completions with the Runtime to
 header and a fresh meterless-scope on every call, which keeps Nightshift's H-MEM out (see _post).
 The NVIDIA key stays inside Nightshift."""
 import hashlib
+import http.client
 import json
 import re
 import time
@@ -20,6 +21,11 @@ class MeterlessError(RuntimeError):
 
 class MeterlessUnauthorized(MeterlessError):
     pass
+
+
+# Error codes in a streamed error frame that a retry cannot fix (Nightshift's proxy.js, statusForCode).
+NOT_RETRYABLE = {"no_provider_configured", "model_disabled_by_operator", "runtime_model_missing",
+                 "runtime_model_unknown", "unknown_decision_id", "unhandled_endpoint"}
 
 
 def extract_json(text: str) -> dict:
@@ -53,6 +59,43 @@ def nightshift_steps(response: dict) -> dict | None:
             "mode": receipt.get("mode")}
 
 
+def read_sse(lines) -> dict:
+    """Assemble Nightshift's SSE frames into the shape of a buffered reply, so chat() reads both the same way.
+    Nightshift has already sent 200 when a stream fails, so the failure arrives as an error frame instead.
+    Its message is generic, so the error keeps the code and Nightshift's detail (for example provider_deadline)."""
+    content, reasoning, reply = [], [], {"model": None, "usage": None, "meterless": None}
+    finished = False
+    for raw in lines:
+        line = raw.decode("utf-8", errors="replace").strip() if isinstance(raw, bytes) else raw.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            finished = True
+            break
+        frame = json.loads(data)
+        if frame.get("error"):
+            err = frame["error"] if isinstance(frame["error"], dict) else {"message": str(frame["error"])}
+            e = MeterlessError(f"{err.get('code', 'error')}: {err.get('meterless_detail') or err.get('message')}"[:300])
+            e.retryable = err.get("code") not in NOT_RETRYABLE
+            raise e
+        reply["model"] = frame.get("model") or reply["model"]
+        reply["usage"] = frame.get("usage") or reply["usage"]
+        reply["meterless"] = frame.get("meterless") or reply["meterless"]
+        for choice in frame.get("choices") or []:
+            delta = choice.get("delta") or {}
+            content.append(delta.get("content") or "")
+            reasoning.append(delta.get("reasoning_content") or "")
+            finished = finished or bool(choice.get("finish_reason"))
+    if not finished:
+        # The connection closed cleanly mid-answer. Returning the partial text would look like a bad reply.
+        raise MeterlessError("stream ended before the reply finished")
+    message = {"role": "assistant", "content": "".join(content)}
+    if any(reasoning):
+        message["reasoning_content"] = "".join(reasoning)
+    return {**reply, "choices": [{"message": message}]}
+
+
 class NightshiftClient:
     def __init__(self, settings: Settings, tracer: Tracer):
         if not settings.meterless_token:
@@ -67,11 +110,27 @@ class NightshiftClient:
         headers = {"Content-Type": "application/json",
                    "Authorization": "Bearer " + self.s.meterless_token,
                    "meterless-app": self.s.meterless_app,
-                   "meterless-scope": "call-" + uuid.uuid4().hex}
+                   "meterless-scope": "call-" + uuid.uuid4().hex,
+                   # Nightshift ignores our model pin because the app has a mode policy, so it may split a prompt
+                   # into a buffered planning phase (still cut at 45 s) with a "write a plan" or "show the diff"
+                   # system prompt that fights our JSON contract. One phase keeps the call as we wrote it.
+                   "meterless-tier-split": "off"}
+        if self.s.model_stream:
+            # Nightshift aborts its NVIDIA fetch if no response headers arrive within 45 s (providers.js,
+            # CLOUD_FETCH_DEADLINE_MS). A buffered call gets no headers until the whole answer is written, so
+            # any reply that takes Ultra over 45 s failed with provider_deadline. Streaming gets headers at once.
+            # The trace header makes the final frame carry the full receipt, as the buffered reply does.
+            body = {**body, "stream": True, "stream_options": {"include_usage": True}}
+            headers["meterless-trace"] = "on"
         req = urllib.request.Request(self.s.meterless_url + "/chat/completions",
                                      data=json.dumps(body).encode(), headers=headers)
-        with urllib.request.urlopen(req, timeout=self.s.model_timeout) as r:
-            return json.loads(r.read())
+        # With streaming the socket timeout is a gap between chunks, not a cap on the whole reply.
+        try:
+            with urllib.request.urlopen(req, timeout=self.s.model_timeout) as r:
+                return read_sse(r) if self.s.model_stream else json.loads(r.read())
+        except (ValueError, http.client.HTTPException) as e:
+            # A connection dropped mid-frame leaves half a JSON line, which would otherwise crash the run.
+            raise MeterlessError(f"broken reply: {type(e).__name__}: {e}"[:300]) from e
 
     def chat(self, agent: str, model: str, messages: list[dict], max_tokens: int = 8000,
              temperature: float = 0.2) -> str:
@@ -110,8 +169,12 @@ class NightshiftClient:
             # RemoteDisconnected), which on 22 Oct crashed a whole run at the Analyst's first call.
             except (urllib.error.URLError, TimeoutError, ConnectionError, MeterlessError, KeyError) as e:
                 last = f"{type(e).__name__}: {e}"
+                if not getattr(e, "retryable", True):
+                    self.tracer.event(agent, "llm_error", model=model, error=last)
+                    break
             self.tracer.event(agent, "llm_retry", model=model, attempt=attempt, error=last)
-            time.sleep(5 * (attempt + 1))  # NVIDIA trial lanes have a per-minute cap
+            # NVIDIA trial lanes have a per-minute cap, so a 429 waits out most of the minute.
+            time.sleep(30 if "429" in (last or "") else 5 * (attempt + 1))
         raise MeterlessError(last)
 
     def chat_json(self, agent: str, model: str, messages: list[dict], **kw) -> dict:
