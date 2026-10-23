@@ -59,8 +59,11 @@ All sources are public openFDA endpoints, using aggregate counts only, so no cas
 | `openfda.faers_total` | `drug/event.json?count=serious` (sum of the two rows) | Built |
 | `openfda.faers_d2_<drug>_reactions` | `search=(patient.drug.openfda.generic_name:"<drug>" OR patient.drug.activesubstance.activesubstancename:"<drug>")&count=...reactionmeddrapt.exact&limit=999`, fully URL-encoded | Built, created at runtime (the older `faers_d_` tables used generic_name alone) |
 | `openfda.faers_d2_<drug>_total` | same search, `count=serious` | Built, created at runtime |
-| `openfda_rest.label_d_<drug>_raw` | `drug/label.json?search=openfda.generic_name:"<drug>"&limit=1` | Built, created at runtime |
-| Reporter type for one drug and reaction | `search=<drug> AND <reaction>&count=primarysource.qualification` | Planned (Skeptic) |
+| `openfda_rest.label_d2_<drug>_raw` | `drug/label.json?search=openfda.generic_name:"<drug>"&sort=effective_time:desc&limit=10`; `choose_label()` takes the newest single-ingredient prescription label | Built, created at runtime |
+| Product names on the drug's reports | `search=<drug>&count=patient.drug.openfda.generic_name.exact` and the same for `activesubstance.activesubstancename.exact`, `limit=999` | Built: combination-product share |
+| Co-reported drugs for one drug and reaction | `search=<drug> AND <reaction>&count=patient.drug.openfda.generic_name.exact&limit=100` | Built (Skeptic), table `faers_q_<hash>` |
+| Pair counts for drug, co-drug and reaction | four `count=serious` searches: co-drug; co-drug AND reaction; drug AND co-drug; all three | Built (Skeptic), tables `faers_q_<hash>` |
+| Reporter type for one drug and reaction | `search=<drug> AND <reaction>&count=primarysource.qualification` | Planned (second Skeptic check) |
 
 **Confirmed facts about openFDA (22 Oct):**
 - Count queries return flat `results: [{term, count}]`, which Zetaris flattens with `LATERAL VIEW explode`.
@@ -86,9 +89,9 @@ Zetaris results matched an independent Python calculation. That validates the ar
 |---|---|---|---|
 | Data Clerk | Code | Registers sources in Zetaris, runs the screen, fetches the label | Built |
 | Rules | Code | Settles easy cases: administrative terms, the treated condition named in indications, the reaction named literally in the label | Built |
-| Analyst | Nemotron Ultra via Nightshift | Picks up to 10 of the 30 strongest screen rows, then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
+| Analyst | Nemotron Ultra via Nightshift | Always assesses the 15 strongest screen rows by chi² and may add up to 5 of the next 15 (`ANALYST_TOP`, `ANALYST_EXTRA`), then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
 | Reviewer | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: accept, reject with an objection, or unresolved; names missing reactions | Built |
-| Skeptic | Zetaris queries plus Nemotron | One evidence operation (reporter-type composition) for the top review-next items. Context only, never proof | Planned |
+| Skeptic | Code over Zetaris counts | Co-reported drug check for the top 3 accepted review-next items: for each of the top 3 co-drugs, the co-drug's own PRR, this drug's Mantel-Haenszel PRR adjusted for the co-drug, and the Omega interaction measure (Norén et al. 2008). Only an adjusted PRR below 2 challenges a finding; the co-drug's own signal ("shared with most co-drugs") and Omega are context. Challenged items go back to the Reviewer, then one Analyst revision; if that review call fails, the round-1 verdict stands. Context only, never proof | Built on `experiment/skeptic-co-drugs` |
 
 **Loop:**
 - Rejections and missing reactions go back to the Analyst for at most 2 revision rounds. Accepted findings are never redone.
@@ -135,7 +138,7 @@ About 3 minutes from one real run, with any time compression labelled:
 - Counting reports that mention the drug includes reports where it was not the suspect drug. This broadens the population; it does not necessarily inflate the PRR.
 - Coverage limits: the baseline holds only the 999 most-reported reactions, and the Analyst reviews at most 10 picks plus Reviewer-named additions. Both are shown in the counts.
 - The aggregate data allows no case review and no duplicate removal. Marginal counts (reporter type, indication) give context, not adjustment for confounding.
-- The label is whichever one openFDA returns first for the generic name. That can be a combination product (metformin returned ZITUVIMET); a fix is planned.
+- The label is the newest single-ingredient prescription label among the 10 newest for the generic name. Generic labels of one drug can differ; the dossier names the one used.
 - The Analyst and the Reviewer use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
 
 ## Responsible use

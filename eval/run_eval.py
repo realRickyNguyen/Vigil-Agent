@@ -3,6 +3,7 @@
   python -I eval/run_eval.py                                  # each gold drug once, montelukast 3 times
   python -I eval/run_eval.py --drugs metformin --repeats 2
   python -I eval/run_eval.py --score-only <run_id> [...]      # re-score existing runs, no model calls
+  python -I eval/run_eval.py --gold eval/gold_v1.jsonl --score-only <run_id> [...]   # against another gold set
 
 Needs Zetaris and Nightshift running. Each run takes several minutes."""
 import argparse
@@ -18,21 +19,22 @@ sys.path.insert(0, str(ROOT))
 
 from app.config import get_settings  # noqa: E402
 from app.orchestration.pipeline import investigate  # noqa: E402
-from eval.score import agreement, load_gold, load_run, score_run, summarise  # noqa: E402
+from eval.score import GOLD, agreement, load_gold, load_run, score_run, summarise  # noqa: E402
 
 REPORTS = Path(__file__).resolve().parent / "reports"
 
 
 def main() -> int:
-    gold = load_gold()
-    drugs = sorted({d for d, _ in gold})
     ap = argparse.ArgumentParser()
-    ap.add_argument("--drugs", nargs="*", default=drugs)
+    ap.add_argument("--gold", type=Path, default=GOLD, help="gold set to score against (default: v2)")
+    ap.add_argument("--drugs", nargs="*")
     ap.add_argument("--repeats", type=int, default=1, help="runs per drug")
     ap.add_argument("--repeat-drug", default="montelukast", help="extra repeats for this drug (stability)")
     ap.add_argument("--repeat-extra", type=int, default=2)
     ap.add_argument("--score-only", nargs="*")
     args = ap.parse_args()
+    gold = load_gold(args.gold)
+    args.drugs = args.drugs or sorted({d for d, _ in gold})
 
     run_ids = list(args.score_only or [])
     if not args.score_only:
@@ -58,12 +60,13 @@ def main() -> int:
 
     REPORTS.mkdir(exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    (REPORTS / f"eval-{stamp}.json").write_text(json.dumps({"scores": scores, "agreement": agreements}, indent=1),
-                                               encoding="utf-8")
-    report = summarise(scores, agreements)
-    (REPORTS / f"eval-{stamp}.md").write_text(report, encoding="utf-8")
+    name = f"eval-{stamp}-{args.gold.stem}"
+    (REPORTS / f"{name}.json").write_text(json.dumps({"gold": args.gold.name, "scores": scores,
+                                                      "agreement": agreements}, indent=1), encoding="utf-8")
+    report = summarise(scores, agreements, args.gold.name)
+    (REPORTS / f"{name}.md").write_text(report, encoding="utf-8")
     print(report)
-    print(f"Report: eval/reports/eval-{stamp}.md")
+    print(f"Report: eval/reports/{name}.md")
     return 0
 
 

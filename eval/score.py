@@ -14,7 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS = ROOT / "logs"
-GOLD = Path(__file__).resolve().parent / "gold_v1.jsonl"
+# v2 (23 Oct) matches the two-field drug search and the label choice; v1 (22 Oct) is kept for comparison.
+GOLD = Path(__file__).resolve().parent / "gold_v2.jsonl"
 
 
 def load_gold(path: Path = GOLD) -> dict:
@@ -131,7 +132,7 @@ def agreement(runs: list[dict]) -> dict:
     return out
 
 
-def summarise(scores: list[dict], agreements: list[dict]) -> str:
+def summarise(scores: list[dict], agreements: list[dict], gold_name: str = GOLD.name) -> str:
     """Markdown report."""
     def tot(key):
         s = sum(x[key]["scored"] for x in scores)
@@ -142,7 +143,7 @@ def summarise(scores: list[dict], agreements: list[dict]) -> str:
     for x in scores:
         eff.update(x["reviewer_effect"])
     lines = ["# Vigil evaluation", "",
-             f"Gold set: `eval/gold_v1.jsonl` (labelled by an AI assistant, not yet reviewed by a person; "
+             f"Gold set: `eval/{gold_name}` (labelled by an AI assistant, not yet reviewed by a person; "
              f"ambiguous rows excluded from accuracy). Runs: {len(scores)}.", "",
              "| Run | Drug | Round-1 accuracy | Final accuracy | Reviewer effect | Added via 'missing' | New-signal claims (gold-confirmed) | Review next (gold) | Unresolved | Pending/failed |",
              "|---|---|---|---|---|---|---|---|---|---|"]

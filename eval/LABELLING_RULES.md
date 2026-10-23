@@ -44,3 +44,17 @@ The label text was searched with regular expressions over all label sections, no
 
 - There is no category for **non-specific** terms (for example "full blood count abnormal"). They fall into `possible_new_signal` but are not actionable. A fifth category may be worth adding to the app.
 - Litigation-driven reporting is not a category. Examples: atorvastatin and diabetes, isotretinoin and inflammatory bowel disease. The planned Skeptic agent is meant to detect it from reporter type.
+
+## Version 2 (23 Oct 2026)
+
+`eval/gold_v2.jsonl`, built by `eval/build_gold_v2.py`, replaces v1 as the default for scoring. v1 is kept unchanged for comparison with the 22 Oct baseline.
+
+**Why.** Two changes on 23 Oct altered what the agents see:
+- The drug search now uses generic name OR active substance (Bryan's finding). Each drug's top 20 by chi-squared changed: atorvastatin swapped 6 reactions, metformin, sertraline and isotretinoin 1 or 2 each, montelukast none.
+- The Data Clerk now picks the newest single-ingredient prescription label instead of openFDA's first match. Metformin's label is no longer ZITUVIMET (sitagliptin + metformin).
+
+**How.**
+- Same rules and categories as v1, applied to the new top 20 and the newly chosen label (its `set_id` is on each row).
+- Rows still in the top 20 keep their v1 decision unless the new label no longer supports the v1 evidence. Each row's `origin` says which applies: `kept from v1` (83), `re-checked against the new label` (7), `new in the top 20` (10).
+- Re-checked: montelukast pneumonia and bronchitis (the newest label has no pediatric adverse-reaction list), metformin acute kidney injury (named only in the combination label's sitagliptin part) and weight decreased, sertraline intentional overdose, paranoia and drug abuse (evidence wording changed).
+- Labelled by Claude (AI) from the label text and the screen only, **before looking at any output of the 23 Oct evaluation runs**. Earlier runs on 23 Oct had been looked at, for a few items. **Not yet reviewed by a person.**

@@ -73,7 +73,7 @@ def test_register_drug_uses_new_tables_and_combined_search():
     assert all("faers_d2_atorvastatin_" in s for s in event_tables)
     assert not any("faers_d_atorvastatin" in s for s in z.sql)  # old one-field tables are never reused
     label = next(s for s in z.sql if "label.json" in s)
-    assert "search=openfda.generic_name:%22atorvastatin%22" in label  # label search unchanged
+    assert "search=openfda.generic_name:%22atorvastatin%22" in label  # label search uses one field
     assert "faers_d2_x_reactions" in signal_sql("x")
 
 
@@ -248,10 +248,74 @@ def analyst_ctx():
             "totals": {"drug_reports": 1, "all_reports": 2, "data_last_updated": "d", "query_id": "q-t"}}
 
 
-def test_pick_falls_back_to_top_chi2_when_model_fails():
-    h = Analyst(FakeLLM(fail_all=True), "m")
-    assert h.pick(analyst_ctx()) == list("ABCDEFGHIJ")
+def test_selection_always_assesses_the_top_rows_and_survives_a_failed_pick():
+    ctx = analyst_ctx()
+    h = Analyst(FakeLLM(fail_all=True), "m", top=4, extra=2)
+    assert h.pick(ctx) == []  # the model's extra picks are lost, nothing else
     assert any(k == "degraded" for _, k, _ in h.llm.tracer.events)
+    h = Analyst(FakeLLM(), "m", top=4, extra=2)
+    h.run(ctx)
+    assert ctx["selection"]["always"] == list("ABCD") and ctx["picked"][:4] == list("ABCD")
+    assert Analyst(FakeLLM(), "m", top=10, extra=2).pick(analyst_ctx()) == []  # no rows left to choose from
+
+
+def test_classify_fails_fast_on_nightshift_deadline_only_for_batches(monkeypatch):
+    import io
+    import urllib.error
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    monkeypatch.setattr(meterless.time, "sleep", lambda s: None)
+    calls = []
+
+    def deadline(body):
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 502, "bad gateway", {}, io.BytesIO(
+            b'{"error":{"code":"provider_error","meterless_detail":"provider_deadline"}}'))
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=2), FakeTracer())
+    monkeypatch.setattr(client, "_post", deadline)
+    with pytest.raises(meterless.MeterlessDeadline):
+        client.chat("analyst", "m", [{"role": "user", "content": "x"}], fail_fast=True)
+    assert len(calls) == 1 and client.tracer.events[-1][1] == "llm_deadline"
+    calls.clear()
+    with pytest.raises(MeterlessError):
+        client.chat("analyst", "m", [{"role": "user", "content": "x"}])  # a single item still gets its retries
+    assert len(calls) == 3
+
+
+def label_record(name, rx=True, date="20260101", boxed=True, set_id="s"):
+    return {"set_id": set_id, "effective_time": date, **({"boxed_warning": ["B"]} if boxed else {}),
+            "openfda": {"generic_name": [name], "brand_name": [name.title()],
+                        "product_type": ["HUMAN PRESCRIPTION DRUG" if rx else "HUMAN OTC DRUG"]}}
+
+
+def test_choose_label_prefers_single_ingredient_prescription_labels():
+    from app.data.faers import choose_label
+    combo = label_record("SITAGLIPTIN AND METFORMIN HYDROCHLORIDE", date="20260909", set_id="combo")
+    otc = label_record("METFORMIN HYDROCHLORIDE", rx=False, date="20260908", set_id="otc")
+    rx = label_record("METFORMIN HYDROCHLORIDE", date="20260901", set_id="rx")
+    rec, why = choose_label([combo, otc, rx])
+    assert rec["set_id"] == "rx" and why["rule"] == "single-ingredient prescription label" and why["candidates"] == 3
+    assert choose_label([combo, otc])[0]["set_id"] == "otc"
+    assert choose_label([combo])[1]["rule"] == "newest label"
+
+
+def test_combination_summary_counts_products_that_contain_the_drug():
+    from app.data.faers import combination_summary
+    rows = [("generic_name", "ACETAMINOPHEN", 500), ("generic_name", "OXYCODONE AND ACETAMINOPHEN", 300),
+            ("generic_name", "HYDROCODONE BITARTRATE AND ACETAMINOPHEN", 150), ("generic_name", "IBUPROFEN", 400),
+            ("activesubstancename", "OXYCODONE HYDROCHLORIDE\\ACETAMINOPHEN", 200)]
+    c = combination_summary(rows, "acetaminophen", 1000)
+    assert c["reports"] == 450 and c["share"] == 0.45 and c["field"] == "generic_name"
+    assert c["top_products"][0] == {"name": "OXYCODONE AND ACETAMINOPHEN", "reports": 300}
+    assert c["partners"] == ["OXYCODONE", "HYDROCODONE BITARTRATE"]
+    assert combination_summary([("generic_name", "ATORVASTATIN CALCIUM", 10)], "atorvastatin", 10)["share"] == 0.0
+
+
+def test_register_drug_fetches_the_newest_labels():
+    z = RecordingZetaris()
+    DataClerk(z).register_drug("montelukast")
+    label = next(s for s in z.sql if "label.json" in s)
+    assert "label_d2_montelukast_raw" in label and "sort=effective_time:desc&limit=10" in label
 
 
 def test_classify_splits_failed_batch_and_reports_unclassified():

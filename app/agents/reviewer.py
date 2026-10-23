@@ -7,7 +7,8 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 from app.adapters.meterless import MeterlessError, NightshiftClient
-from app.agents.analyst import BATCH, MAX_TOKENS, screen_table
+from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
+from app.agents.skeptic import compact
 from app.data.faers import DataClerk
 from app.data.label import META, excerpt_block, label_sentence, named_in_label, norm
 from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
@@ -23,6 +24,8 @@ For each finding, decide:
 - "accept": the context, coverage and priority are defensible from the evidence shown.
 - "reject": something is wrong and the Analyst can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
 - "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
+
+Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
 
 For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
 
@@ -86,8 +89,11 @@ class Reviewer:
             checks = code_checks(f, fresh, ctx["label"], ctx["evidence_ids"] | {res.query_id})
             checked.append((f, checks, res.query_id))
 
+        skeptic = ctx.get("skeptic", {})
         payload = [{**f.to_dict(), "checks": {k: {"passed": ok, "detail": d} for k, (ok, d) in ch.items()},
-                    "recheck_query": qid} for f, ch, qid in checked]
+                    "recheck_query": qid,
+                    **({"co_reported_drugs": compact(skeptic[f.reaction])} if f.reaction in skeptic else {})}
+                   for f, ch, qid in checked]
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}
         unpicked = [s for s in ctx["passing"] if norm(s.reaction) not in done][:UNPICKED_ROWS]
 
@@ -125,10 +131,11 @@ class Reviewer:
         names = [p["reaction"] for p in batch]
         messages = [{"role": "system", "content": SYSTEM},
                     {"role": "user", "content":
-                     f"Drug: {ctx['drug']}\n\n{extra}{excerpt_block(names, ctx['label'], ctx['label_qid'])}\n\n"
+                     f"Drug: {ctx['drug']}{context_notes(ctx)}\n\n{extra}{excerpt_block(names, ctx['label'], ctx['label_qid'])}\n\n"
                      f"Analyst findings with code checks:\n{json.dumps(batch, indent=1)}"}]
         try:
-            return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS)
+            return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS,
+                                      fail_fast=len(batch) > 1)
         except MeterlessError as e:
             if len(batch) > 1:
                 # Smaller calls succeed more often: review one finding per call before giving up.

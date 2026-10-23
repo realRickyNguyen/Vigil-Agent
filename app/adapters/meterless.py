@@ -20,6 +20,10 @@ class MeterlessUnauthorized(MeterlessError):
     pass
 
 
+class MeterlessDeadline(MeterlessError):
+    """Nightshift ended the provider call at its deadline. Retrying the same prompt mostly hits it again."""
+
+
 def extract_json(text: str) -> dict:
     """Parse the first JSON object in a model reply, ignoring <think> blocks and code fences.
     Nemotron Ultra (via Nightshift) returns its reasoning inline, ending in </think> with no opening tag."""
@@ -68,7 +72,10 @@ class NightshiftClient:
             return json.loads(r.read())
 
     def chat(self, agent: str, model: str, messages: list[dict], max_tokens: int = 8000,
-             temperature: float = 0.2) -> str:
+             temperature: float = 0.2, fail_fast: bool = False) -> str:
+        """fail_fast: on Nightshift's provider deadline, raise MeterlessDeadline at once instead of retrying,
+        so a caller that can split the work does so. On 23 Oct the atorvastatin run had 43 failed attempts,
+        all provider_deadline 502s at about 50 s each, with the same batch retried up to three times."""
         body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
         prompt_sha = hashlib.sha256(json.dumps(messages).encode()).hexdigest()[:12]
         last = None
@@ -98,6 +105,10 @@ class NightshiftClient:
                     self.tracer.event(agent, "llm_error", model=model, error=f"unauthorized ({e.code})")
                     raise MeterlessUnauthorized(f"Nightshift rejected the Runtime token ({e.code})")
                 last = f"HTTP {e.code}: {detail}"
+                if fail_fast and "provider_deadline" in detail:
+                    self.tracer.event(agent, "llm_deadline", model=model, attempt=attempt, error=last,
+                                      action="split the batch")
+                    raise MeterlessDeadline(last)
                 if e.code not in (408, 429) and e.code < 500:
                     break
             # ConnectionError covers Nightshift closing the socket mid-request (ConnectionResetError,
