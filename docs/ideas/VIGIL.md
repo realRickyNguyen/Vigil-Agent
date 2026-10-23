@@ -60,7 +60,9 @@ All sources are public openFDA endpoints, using aggregate counts only, so no cas
 | `openfda.faers_d2_<drug>_reactions` | `search=(patient.drug.openfda.generic_name:"<drug>" OR patient.drug.activesubstance.activesubstancename:"<drug>")&count=...reactionmeddrapt.exact&limit=999`, fully URL-encoded | Built, created at runtime (the older `faers_d_` tables used generic_name alone) |
 | `openfda.faers_d2_<drug>_total` | same search, `count=serious` | Built, created at runtime |
 | `openfda_rest.label_d_<drug>_raw` | `drug/label.json?search=openfda.generic_name:"<drug>"&limit=1` | Built, created at runtime |
-| Reporter type for one drug and reaction | `search=<drug> AND <reaction>&count=primarysource.qualification` | Planned (Skeptic) |
+| Co-reported drugs for one drug and reaction | `search=<drug> AND <reaction>&count=patient.drug.openfda.generic_name.exact&limit=100` | Built (Skeptic), table `faers_q_<hash>` |
+| Pair counts for drug, co-drug and reaction | four `count=serious` searches: co-drug; co-drug AND reaction; drug AND co-drug; all three | Built (Skeptic), tables `faers_q_<hash>` |
+| Reporter type for one drug and reaction | `search=<drug> AND <reaction>&count=primarysource.qualification` | Planned (second Skeptic check) |
 
 **Confirmed facts about openFDA (22 Oct):**
 - Count queries return flat `results: [{term, count}]`, which Zetaris flattens with `LATERAL VIEW explode`.
@@ -88,7 +90,7 @@ Zetaris results matched an independent Python calculation. That validates the ar
 | Rules | Code | Settles easy cases: administrative terms, the treated condition named in indications, the reaction named literally in the label | Built |
 | Analyst | Nemotron Ultra via Nightshift | Picks up to 10 of the 30 strongest screen rows, then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
 | Reviewer | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: accept, reject with an objection, or unresolved; names missing reactions | Built |
-| Skeptic | Zetaris queries plus Nemotron | One evidence operation (reporter-type composition) for the top review-next items. Context only, never proof | Planned |
+| Skeptic | Code over Zetaris counts | Co-reported drug check for the top 3 accepted review-next items: for each of the top 3 co-drugs, the co-drug's own PRR, this drug's Mantel-Haenszel PRR adjusted for the co-drug, and the Omega interaction measure (Norén et al. 2008). Challenged items go back to the Reviewer, then one Analyst revision. Context only, never proof | Built on `experiment/skeptic-co-drugs` |
 
 **Loop:**
 - Rejections and missing reactions go back to the Analyst for at most 2 revision rounds. Accepted findings are never redone.

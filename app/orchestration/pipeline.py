@@ -1,5 +1,7 @@
 """One investigation: the Data Clerk gathers evidence in Zetaris, the Analyst classifies, the Reviewer
-checks, the Analyst revises on rejection (bounded rounds), and the accepted findings become the dossier."""
+checks, the Analyst revises on rejection (bounded rounds). The Skeptic then tests the strongest
+review_next findings against co-reported drugs, and challenged ones go back through the Reviewer.
+The result is the dossier."""
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -8,6 +10,7 @@ from app.adapters.meterless import NightshiftClient
 from app.adapters.zetaris import ZetarisClient
 from app.agents.analyst import Analyst, screen_table
 from app.agents.reviewer import Reviewer
+from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
 from app.data.faers import DataClerk, validate_drug
 from app.engines.world_model import WorldModel
@@ -23,7 +26,8 @@ NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
     "Reporter type, e.g. lawyer-driven reporting",
     "Reporting spikes over time (notoriety bias)",
-    "Co-reported drugs",
+    "Co-reported drugs beyond the Skeptic's top co-drugs, items beyond its top review_next items, and "
+    "interactions among three or more drugs. Adjustment is for one co-drug at a time",
     "Recalls and contaminated batches",
     "Only reports naming the drug by generic name are counted, whether or not it was the suspect drug",
     "The baseline holds the 999 most-reported reactions; rarer reactions are not screened",
@@ -41,6 +45,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     clerk = DataClerk(zetaris)
     analyst = Analyst(llm, settings.analyst_model, settings.parallel)
     reviewer = Reviewer(llm, settings.reviewer_model, clerk, settings.parallel)
+    skeptic = Skeptic(clerk, settings.skeptic_co_drugs)
 
     # Evidence, all through Zetaris.
     created = clerk.register_drug(drug)
@@ -108,7 +113,10 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         if entry["status"] == "rejected":  # rounds ran out with the Reviewer's objection unanswered
             entry.update(status="unresolved", note="review rounds ran out before the Reviewer's objection was settled")
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
-    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []))
+    skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items)
+    if skeptic_counts["challenged"]:
+        rounds.append({"round": "skeptic", **skeptic_counts})
+    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"))
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -118,7 +126,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
               "assessed": len(state), "decided_by_rule": sum(e["finding"].decided_by == "rule" for e in state.values()),
               **{s: sum(q["workflow_status"] == s for q in queue) for s in STATUS},
               "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
-                                 for q in queue)}
+                                 for q in queue),
+              **{f"skeptic_{k}": v for k, v in skeptic_counts.items()}}
 
     queries, degraded = {}, []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0}
@@ -177,6 +186,64 @@ def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
     return "rejected", ""
 
 
+def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, analyst: Analyst, tracer: Tracer,
+                  top: int) -> dict:
+    """The Skeptic checks the strongest accepted review_next findings against their co-reported drugs.
+    A challenged finding goes back to the Reviewer with that evidence. If the Reviewer rejects it, the Analyst
+    gets one revision and the Reviewer one more look; a dispute still open after that ends as unresolved."""
+    stats = {s.reaction: s for s in ctx["passing"]}
+    picked = sorted((r for r, e in state.items()
+                     if e["status"] == "reviewed" and e["finding"].review_priority == "review_next"),
+                    key=lambda r: -(stats[r].chi2 if r in stats else 0))[:top]
+    ctx["skeptic"] = {}
+    for r in picked:
+        ev = skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None)
+        ctx["skeptic"][r] = ev
+        ctx["evidence_ids"] |= set(ev["query_ids"])
+        tracer.event("skeptic", "co_drug_check", reaction=r, outcome=ev["outcome"], summary=ev.get("summary"),
+                     pairs=ev["pairs"], query_ids=ev["query_ids"], error=ev.get("error"))
+    challenged = [state[r]["finding"] for r in picked if ctx["skeptic"][r]["outcome"] == "challenged"]
+    counts = {"checked": len(picked), "challenged": len(challenged), "priority_changed": 0}
+    if not challenged:
+        return counts
+
+    before = {f.reaction: f.key() for f in challenged}
+    everyone = {s.reaction for s in ctx["passing"]}  # the Reviewer names no missing reactions in this round
+    findings = challenged
+    for step in ("skeptic", "skeptic_revision"):
+        verdicts, _, reviewer_summary = reviewer.review(ctx, findings, everyone)
+        by = {v.reaction: v for v in verdicts}
+        retry = []
+        for f in findings:
+            v, entry = by[f.reaction], state[f.reaction]
+            status, note = settle(f, v, entry["history"])
+            entry["history"].append({"round": step, "claim": dict(zip(("label_coverage", "context", "review_priority"),
+                                                                        f.key())),
+                                     "decision": v.decision, "reason": v.reason, "objection": v.objection})
+            entry.update(finding=f, verdict=v, status=status, note=note)
+            if status == "rejected":
+                retry.append(f)
+        tracer.event("reviewer", "verdicts", round=step, verdicts=[asdict(v) for v in verdicts], missing=[],
+                     summary=reviewer_summary)
+        if not retry or step == "skeptic_revision":
+            break
+        feedback = {"rejected": [{"reaction": f.reaction, "reason": by[f.reaction].reason,
+                                  "objection": by[f.reaction].objection} for f in retry], "missing": []}
+        tracer.event("orchestrator", "retry", round="skeptic_revision",
+                     reason="the Reviewer rejected a finding after the Skeptic's co-drug check", feedback=feedback)
+        findings, analyst_summary = analyst.revise(ctx, retry, feedback)
+        tracer.event("analyst", "findings", round="skeptic_revision", findings=[f.to_dict() for f in findings],
+                     summary=analyst_summary)
+        if not findings:
+            break
+    for r in before:
+        if state[r]["status"] == "rejected":
+            state[r].update(status="unresolved", note="the Reviewer's objection after the Skeptic's check was not settled")
+            tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=state[r]["note"])
+    counts["priority_changed"] = sum(state[r]["finding"].key() != k for r, k in before.items())
+    return counts
+
+
 SETTLED = ("reviewed", "unresolved")
 
 
@@ -209,7 +276,8 @@ PRIORITY_ORDER = {"review_next": 0, "insufficient_evidence": 1, "lower_priority"
 STATUS_ORDER = {"unresolved": 0, "reviewed": 1, "not_reviewed": 2, "pending": 3, "failed": 4}
 
 
-def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str]) -> list[dict]:
+def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str],
+                 skeptic: dict | None = None) -> list[dict]:
     """The analyst's queue: every assessed reaction with its priority, objection and next check, plus
     reactions that were named for review but never reached, ranked review_next first."""
     stats = {s.reaction: s for s in passing}
@@ -219,7 +287,8 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
         queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
                       "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
                       "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
-                      "history": e["history"]})
+                      "history": e["history"],
+                      **({"co_reported_drugs": skeptic[r]} if skeptic and r in skeptic else {})})
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,

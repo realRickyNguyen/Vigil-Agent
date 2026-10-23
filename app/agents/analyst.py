@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.adapters.meterless import MeterlessError, NightshiftClient
 from app.agents.rules import route
+from app.agents.skeptic import compact
 from app.data.label import excerpt_block
 from app.schemas import Finding, Signal
 
@@ -145,6 +146,12 @@ class Analyst:
         rows = [s for s in ctx["passing"] if s.reaction in set(reactions)]
         user = (f"{self.header(ctx)}\n\nReactions to classify (from query {ctx['screen_qid']}):\n"
                 f"{screen_table(rows, len(rows))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
+        skeptic = {r: compact(ctx["skeptic"][r]) for r in reactions if r in ctx.get("skeptic", {})}
+        if skeptic:
+            user += ("\n\nThe Skeptic checked the drugs most often reported alongside this one (adjusted_prr: this "
+                     "drug's PRR adjusted for the co-drug; possible_interaction: more reports with both drugs than "
+                     "either alone predicts). Take it into account and cite its query IDs in \"evidence\" if you "
+                     "rely on it:\n" + json.dumps(skeptic, indent=1))
         if feedback:
             user += ("\n\nThe Reviewer reviewed your earlier findings for these reactions. For each rejected one, "
                      "answer its objection: change your answer if the objection holds, or keep it and say why in "

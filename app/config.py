@@ -35,6 +35,8 @@ class Settings:
     sample_mode: bool
     logs_dir: Path
     world_path: Path
+    skeptic_items: int = 3
+    skeptic_co_drugs: int = 3
 
 
 def get_settings() -> Settings:
@@ -65,4 +67,8 @@ def get_settings() -> Settings:
         # The World Model persists across runs (unlike logs/, which is per-run evidence), so a later run can
         # reopen verdicts that an earlier run's label version supported. Relative paths are from the repo root.
         world_path=ROOT / e("WORLD_MODEL_PATH", "state/world-model.json"),
+        # The Skeptic checks the top review_next items against their most co-reported drugs. Each co-drug
+        # costs four openFDA calls (no-key limit: about 1,000 a day per IP), so both are kept small.
+        skeptic_items=max(0, int(e("SKEPTIC_ITEMS", "3"))),
+        skeptic_co_drugs=max(1, int(e("SKEPTIC_CO_DRUGS", "3"))),
     )

@@ -8,9 +8,12 @@ Per drug, created at runtime:
   openfda_rest.faers_d2_<slug>_reactions_raw / openfda.faers_d2_<slug>_reactions
   openfda_rest.faers_d2_<slug>_total_raw     / openfda.faers_d2_<slug>_total
   openfda_rest.label_d_<slug>_raw           current label from drug/label
+For the Skeptic, created at runtime and shared across runs:
+  openfda_rest.faers_q_<hash>               one openFDA count query each (co-reported drugs, pair counts)
 The d2 tables use drug_search() (two fields). The older faers_d_<slug> tables used generic_name alone; they
 stay in Zetaris because REST tables cannot be dropped through SQL, so the new search needed new names.
 """
+import hashlib
 import json
 import re
 import urllib.parse
@@ -22,6 +25,9 @@ OPENFDA = "https://api.fda.gov/drug"
 DRUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 \-]{1,48}$")
 LABEL_FIELDS = ("boxed_warning", "warnings_and_cautions", "warnings", "precautions",
                 "adverse_reactions", "contraindications", "indications_and_usage")
+DRUG_FIELD = "patient.drug.openfda.generic_name"
+REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
+PAIR_COUNTS = ("n", "n_r", "n_x", "n_xr", "n_y", "n_yr", "n_xy", "n_xyr")
 
 
 class DrugNotFound(RuntimeError):
@@ -61,6 +67,13 @@ def rest_table(name: str, endpoint: str) -> str:
     return (f'CREATE LIGHTNING REST TABLE {name} FROM OPENFDA_REST REQUEST(\n'
             f'    endpoint "{endpoint}",\n    method "get",\n    response_type "json",\n'
             f'    http_encoding "URLENCODED"\n) HEADER (\n) BODY ()')
+
+
+def phrase(field: str, value: str) -> str:
+    """One openFDA search clause. Fully URL-encoded, so the endpoint never holds a raw quote or apostrophe.
+    On the drug field this is the same token match the per-drug tables use, so a co-drug search also
+    finds combination products and other salts that contain it."""
+    return f"{field}:" + urllib.parse.quote(f'"{value}"', safe="")
 
 
 def count_view(view: str, raw: str, term_alias: str) -> str:
@@ -153,6 +166,42 @@ class DataClerk:
                          f"re-check {reaction} for {drug}", agent=agent)
         recs = res.records()
         return res, (to_signal(recs[0]) if recs else None)
+
+    def _count_table(self, search: str, count: str, purpose: str, limit: int | None = None) -> str:
+        """A REST table for one openFDA count query, named by a hash of its URL so that runs and drugs
+        asking the same question share one table (they cannot be deleted through SQL)."""
+        url = f"{OPENFDA}/event.json?search={search}&count={count}" + (f"&limit={limit}" if limit else "")
+        name = "faers_q_" + hashlib.sha1(url.encode()).hexdigest()[:12]
+        self.z.ensure(rest_table(name, url), purpose)
+        return name
+
+    def co_drugs(self, drug: str, reaction: str, limit: int = 100) -> tuple[QueryResult, list[tuple[str, int]]]:
+        """Other drugs named on the reports of this drug and reaction, as openFDA's exact generic names."""
+        raw = self._count_table(f"{phrase(DRUG_FIELD, drug)}+AND+{phrase(REACTION_FIELD, reaction)}",
+                                f"{DRUG_FIELD}.exact", f"register co-reported drugs for {drug} and {reaction}", limit)
+        res = self.z.run(f"SELECT r.term AS drug, r.`count` AS reports FROM openfda_rest.{raw} "
+                         f"LATERAL VIEW explode(results) AS r ORDER BY reports DESC",
+                         f"co-reported drugs for {drug} and {reaction}", agent="skeptic")
+        return res, [(rec["drug"], int(float(rec["reports"]))) for rec in res.records()]
+
+    def pair_counts(self, drug: str, reaction: str, co_drug: str) -> tuple[QueryResult, dict]:
+        """The eight report counts behind the co-drug checks, in one query: all reports (n), the reaction (r),
+        this drug (x), the co-drug (y), and their overlaps. Totals use the serious-flag sum like the screen."""
+        x, y, r = phrase(DRUG_FIELD, drug), phrase(DRUG_FIELD, co_drug), phrase(REACTION_FIELD, reaction)
+        searches = {"n_y": y, "n_yr": f"{y}+AND+{r}", "n_xy": f"{x}+AND+{y}", "n_xyr": f"{x}+AND+{y}+AND+{r}"}
+        raws = {k: self._count_table(v, "serious", f"register {k} for {drug}, {co_drug}, {reaction}")
+                for k, v in searches.items()}
+        s, rq = slug(drug), sql_str(reaction)
+        cols = [f"(SELECT SUM(reports) FROM openfda.faers_total) AS n",
+                f"(SELECT SUM(reports) FROM openfda.faers_reaction_totals WHERE reaction = {rq}) AS n_r",
+                f"(SELECT SUM(reports) FROM openfda.faers_d_{s}_total) AS n_x",
+                f"(SELECT SUM(reports) FROM openfda.faers_d_{s}_reactions WHERE reaction = {rq}) AS n_xr"]
+        cols += [f"(SELECT SUM(r.`count`) FROM openfda_rest.{raw} LATERAL VIEW explode(results) AS r) AS {k}"
+                 for k, raw in raws.items()]
+        res = self.z.run("SELECT " + ",\n       ".join(cols), f"report counts for {drug} with {co_drug}, {reaction}",
+                         agent="skeptic")
+        rec = res.records()[0]
+        return res, {k: int(float(rec.get(k) or 0)) for k in PAIR_COUNTS}
 
     def label(self, drug: str) -> tuple[str | None, dict]:
         """Current label sections. Fields vary between labels (and DESCRIBE truncates long schemas),

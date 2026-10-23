@@ -93,12 +93,16 @@ flowchart TD
     RULES --> JUDGE
     HUNTER --> JUDGE["Reviewer<br/>code checks against Zetaris and the label,<br/>then accept / reject with objection / unresolved"]
     JUDGE -- "rejections + missing reactions<br/>(max 2 rounds)" --> HUNTER
+    JUDGE --> SKEPTIC["Skeptic (code)<br/>co-reported drugs: adjusted PRR,<br/>co-drug PRR, interaction score"]
+    SKEPTIC <--> Z
+    SKEPTIC -- "challenged findings<br/>(Reviewer, then one Analyst revision)" --> JUDGE
     JUDGE --> OUT["Ranked review queue<br/>+ JSONL trace"]
 ```
 
 - **Data Clerk (code):** for any drug name, registers openFDA REST sources as Zetaris tables at runtime, computes the report-based 2×2 table (PRR, chi-squared, Evans screen) in SQL, and fetches the current label.
 - **Analyst (Nemotron Ultra via Nightshift):** picks up to 10 of the 30 strongest signals, then assesses each one in small batches. It sees only the label sentences relevant to that reaction, plus the indication and the boxed warning.
 - **Reviewer (code, then Nemotron Ultra):** runs the code checks first. It then accepts, rejects with an objection the Analyst must answer, or marks a finding unresolved when the evidence can't settle it. It also names important reactions nobody has looked at yet.
+- **Skeptic (code, Zetaris counts):** takes the strongest accepted "review next" findings (top 3 by chi²) and checks them against the drugs most often reported alongside them (top 3, salts merged). For each co-drug it asks whether the reaction is disproportionate for the co-drug itself, whether this drug's PRR stays at 2 or above once the co-drug is adjusted for (Mantel-Haenszel over reports with and without it), and whether reports naming both drugs show more of the reaction than either alone predicts (the Omega interaction measure, Norén et al., *Statistics in Medicine* 2008). A challenged finding goes back to the Reviewer with these numbers; if the Reviewer rejects it, the Analyst gets one revision and the Reviewer a final look. The Skeptic never changes a priority itself.
 - **Loop:** at most 2 revision rounds. Accepted findings are never redone. If the agents go round in circles, or an objection is still standing when the rounds run out, the finding closes as **unresolved** rather than being accepted by default.
 - **Resilience:** small parallel batches, retries, one-item-per-call fallbacks. Anything that still fails is reported as `failed` or `not_reviewed`, never guessed.
 
@@ -109,7 +113,7 @@ flowchart TD
 | Track 02 asks for | In Vigil |
 |---|---|
 | **Investigate complex questions** | "Which of this drug's reported patterns deserve a closer look, and why?" There are hundreds of screen-positive reactions, each needing interpretation, not lookup |
-| **Across multiple data sources** | Two openFDA datasets, adverse-event counts (this drug and the whole database) and drug labels, joined through Zetaris tables registered at runtime for any drug. Statistics and label prose are combined in one investigation. *(Planned: a reporter-type breakdown as a third evidence stream.)* |
+| **Across multiple data sources** | Two openFDA datasets, adverse-event counts (this drug and the whole database) and drug labels, joined through Zetaris tables registered at runtime for any drug. Statistics and label prose are combined in one investigation. A third stream, the co-reported drugs on each top finding's reports, is queried through Zetaris for the Skeptic. |
 | **Connect findings** | Each finding links its numbers, the matching label sentence, the Reviewer's objection and the Analyst's answer, round by round |
 | **Evidence-backed answers or recommendations** | A ranked recommendation (review next / insufficient evidence / lower priority). Every number traces to a query ID and its SQL; every label quote is extracted by code; unresolved disputes are shown, not hidden |
 | **Explain why** | `strongest_objection`, `next_check` and `history` say why each item sits where it does, and what would change it |
@@ -138,7 +142,8 @@ These are **development checks, not clinical validation**. The reference labels 
 | Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | Live evaluation of the current decision contract (implemented and unit-tested) |
 | Analyst and Reviewer loop with code checks, objections, unresolved disputes and fallbacks | A live run that shows a label change reopening earlier verdicts (shown offline so far) |
 | Meterless World Model engine: label versions and verdicts kept across runs, with conformance tests | |
-| Ranked review queue with coverage counts; JSONL traces | A Skeptic step: reporter-type evidence for top candidates |
+| Ranked review queue with coverage counts; JSONL traces | Reporter-type evidence as a second Skeptic check |
+| Skeptic: co-reported drug check (adjusted PRR, co-drug PRR, Omega interaction) for the top findings | |
 | Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, `POST /run`, Dockerfile, sample mode |
 
 ## Run it
@@ -182,6 +187,7 @@ Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.json
   - The Analyst assesses a limited number of candidates per run.
   - Both limits are shown in the coverage counts.
 - **Aggregate data only:** no case-level review and no duplicate removal. Breakdowns such as reporter type give context, not adjustment for confounding.
+- **Co-reported drugs:** the Skeptic adjusts for one co-drug at a time, and only for the top co-drugs of the top findings. Adjusting for all co-drugs together needs case-level data. The most frequent co-drug is often just the usual companion treatment, and a rarer co-drug can be the one that matters. The Omega score flags combinations to review; it does not show a pharmacological interaction, and interactions among three or more drugs are not assessed.
 - **Labels:** the label is the one openFDA returns for the generic name, and that can be a combination product (a fix is planned).
 - **Nightshift memory:** Nightshift's H-MEM can add earlier answers to a prompt after the app sends it, and we found no way to turn it off. Each model call's trace event records how many memories were injected (from Nightshift's own receipt), and the dossier counts them under `model_calls`, so runs can be compared with that in view.
 - **Shared model:** the Analyst and Reviewer use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
