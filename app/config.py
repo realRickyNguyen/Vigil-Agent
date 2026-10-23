@@ -25,12 +25,12 @@ class Settings:
     meterless_url: str
     meterless_token: str
     meterless_app: str
-    hunter_model: str
-    judge_model: str
+    analyst_model: str
+    reviewer_model: str
     source_timeout: int
     model_timeout: int
     max_retries: int
-    judge_rounds: int
+    reviewer_rounds: int
     parallel: int
     sample_mode: bool
     logs_dir: Path
@@ -46,17 +46,18 @@ def get_settings() -> Settings:
         zetaris_org=e("ZETARIS_ORG_ID", "1"),
         meterless_url=e("METERLESS_BASE_URL", "http://127.0.0.1:8088/v1").rstrip("/"),
         meterless_token=e("METERLESS_RUNTIME_TOKEN", ""),
-        meterless_app=e("METERLESS_APP", "black-box"),
+        meterless_app=e("METERLESS_APP", "vigil"),
         # Pinned Nemotron lanes, so the award evidence does not depend on meterless/auto routing.
         # Ultra by default. On 22 Oct, Super returned NVIDIA 404s for this account, and racing Ultra against
         # Lightning failed whenever Lightning returned empty first. Ultra alone, race width 1: 5 of 6 classify
         # calls succeeded with better classifications. The trace records which model actually served each call.
-        hunter_model=e("HUNTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
-        judge_model=e("JUDGE_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
+        # The pre-rename names (HUNTER_MODEL, JUDGE_MODEL, JUDGE_ROUNDS) still work in an older .env.
+        analyst_model=e("ANALYST_MODEL", e("HUNTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
+        reviewer_model=e("REVIEWER_MODEL", e("JUDGE_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         source_timeout=int(e("SOURCE_TIMEOUT_SECONDS", "20")),
         model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "180")),
         max_retries=int(e("MAX_RETRIES", "2")),
-        judge_rounds=int(e("JUDGE_ROUNDS", "2")),
+        reviewer_rounds=int(e("REVIEWER_ROUNDS", e("JUDGE_ROUNDS", "2"))),
         # Concurrent model calls. The NVIDIA trial lanes have a per-minute cap, so keep this small.
         parallel=max(1, int(e("MODEL_PARALLEL", "2"))),
         sample_mode=e("SAMPLE_MODE", "false").lower() == "true",

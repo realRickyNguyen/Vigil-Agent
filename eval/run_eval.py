@@ -1,4 +1,4 @@
-"""Run Black Box on the gold-set drugs, then score the runs and write a report to eval/reports/.
+"""Run Vigil on the gold-set drugs, then score the runs and write a report to eval/reports/.
 
   python -I eval/run_eval.py                                  # each gold drug once, montelukast 3 times
   python -I eval/run_eval.py --drugs metformin --repeats 2

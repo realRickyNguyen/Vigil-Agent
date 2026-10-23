@@ -6,11 +6,11 @@ The gold set says how each FAERS reaction *should* be classified, so the agents 
 
 - Labelled by Claude (an AI assistant) on 22 Oct 2026, reading the label text the app itself uses. **Not yet reviewed by a person.** None of us is a pharmacovigilance professional. Before quoting accuracy numbers publicly, a team member should review every row, especially those marked `ambiguous`.
 - Ground truth is **the label the system sees**: the one openFDA returns for the drug's generic name, registered in Zetaris. Its `set_id` and effective date are on each row. A different manufacturer's label for the same drug could differ.
-- For metformin, openFDA returned the label of ZITUVIMET (sitagliptin + metformin). The gold labels follow that label, because the agents see it too. This is a known data issue (the Clerk should prefer single-ingredient labels).
+- For metformin, openFDA returned the label of ZITUVIMET (sitagliptin + metformin). The gold labels follow that label, because the agents see it too. This is a known data issue (the Data Clerk should prefer single-ingredient labels).
 
 ## Which reactions are labelled
 
-For each drug: the 20 reactions with the highest chi-squared among those passing the Evans screen (PRR ≥ 2, chi² ≥ 4, at least 3 reports), computed in Zetaris from openFDA data last updated 30 Jul 2026. The Hunter sees the top 30 by the same order, so most of what it classifies is covered. Findings outside the gold set are counted as "not scored".
+For each drug: the 20 reactions with the highest chi-squared among those passing the Evans screen (PRR ≥ 2, chi² ≥ 4, at least 3 reports), computed in Zetaris from openFDA data last updated 30 Jul 2026. The Analyst sees the top 30 by the same order, so most of what it classifies is covered. Findings outside the gold set are counted as "not scored".
 
 Drugs: montelukast (asthma, allergic rhinitis), atorvastatin (cholesterol, cardiovascular risk), metformin (type 2 diabetes), sertraline (depression and other psychiatric disorders), isotretinoin (severe acne). Total: 100 rows.
 

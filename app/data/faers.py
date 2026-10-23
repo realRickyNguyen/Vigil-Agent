@@ -1,4 +1,4 @@
-"""The Clerk: registers openFDA sources in Zetaris for a drug and answers evidence queries with SQL.
+"""The Data Clerk: registers openFDA sources in Zetaris for a drug and answers evidence queries with SQL.
 Not an LLM agent. All numbers the agents see come from these queries.
 
 Shared baseline (scripts/zetaris/openfda_baseline.sql, Part A):
@@ -98,7 +98,7 @@ def to_signal(rec: dict) -> Signal:
                   prr=float(rec["prr"]), chi2=float(rec["chi2"]))
 
 
-class Clerk:
+class DataClerk:
     def __init__(self, zetaris: ZetarisClient):
         self.z = zetaris
 
@@ -147,8 +147,8 @@ class Clerk:
         res = self.z.run(signal_sql(slug(drug)), f"disproportionality screen for {drug}")
         return res, [to_signal(r) for r in res.records()]
 
-    def signal(self, drug: str, reaction: str, agent: str = "judge") -> tuple[QueryResult, Signal | None]:
-        """Re-query one reaction, so the Judge checks numbers against Zetaris rather than the Hunter's copy."""
+    def signal(self, drug: str, reaction: str, agent: str = "reviewer") -> tuple[QueryResult, Signal | None]:
+        """Re-query one reaction, so the Reviewer checks numbers against Zetaris rather than the Analyst's copy."""
         res = self.z.run(signal_sql(slug(drug), reaction=reaction, min_a=1),
                          f"re-check {reaction} for {drug}", agent=agent)
         recs = res.records()

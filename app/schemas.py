@@ -1,4 +1,4 @@
-"""Shapes passed between the Clerk, the agents and the dossier.
+"""Shapes passed between the Data Clerk, the agents and the dossier.
 
 The decision contract keeps separate questions apart:
 - label_coverage: does the current label already describe this reaction?
@@ -12,9 +12,9 @@ CLASSIFICATIONS = ("on_label", "possible_new_signal", "likely_indication_or_dise
 COVERAGE = ("covered", "not_found", "unclear", "not_assessed")
 CONTEXT = ("clinical_event", "treated_condition", "non_clinical")
 PRIORITY = ("review_next", "insufficient_evidence", "lower_priority")
-# reviewed: the Judge accepted it. unresolved: the Judge and Hunter could not settle it, or the rounds ran out.
-# not_reviewed: passed code checks but the Judge's model review failed. pending: named for review, never done.
-# failed: the Hunter's model could not classify it.
+# reviewed: the Reviewer accepted it. unresolved: the Reviewer and Analyst could not settle it, or the rounds ran out.
+# not_reviewed: passed code checks but the Reviewer's model review failed. pending: named for review, never done.
+# failed: the Analyst's model could not classify it.
 STATUS = ("reviewed", "unresolved", "not_reviewed", "pending", "failed")
 
 CAVEAT = ("FAERS reports show an association between a drug and a reported event, not that the drug caused it. "
@@ -56,9 +56,9 @@ class Finding:
     next_check: str = ""            # the concrete check that would settle or advance it
     evidence: list[str] = field(default_factory=list)
     label_section: str | None = None
-    label_term: str | None = None   # phrase the Hunter says the label uses for this reaction
+    label_term: str | None = None   # phrase the Analyst says the label uses for this reaction
     label_quote: str | None = None  # sentence around label_term, extracted by code, never by the model
-    decided_by: str = "hunter"      # "hunter" (model) or "rule" (app/agents/rules.py)
+    decided_by: str = "analyst"      # "analyst" (model) or "rule" (app/agents/rules.py)
 
     @property
     def classification(self) -> str:
@@ -72,13 +72,13 @@ class Finding:
         return "possible_new_signal"
 
     def key(self) -> tuple:
-        """What the Hunter claimed, for spotting a revision that returns to an already rejected claim."""
+        """What the Analyst claimed, for spotting a revision that returns to an already rejected claim."""
         return (self.label_coverage, self.context, self.review_priority)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Finding":
         def pick(name, default):
-            # Missing values get the cautious default; unknown values are kept so the Judge's checks reject them.
+            # Missing values get the cautious default; unknown values are kept so the Reviewer's checks reject them.
             return str(d.get(name) or "").strip() or default
         return cls(
             reaction=str(d.get("reaction", "")).strip(),
@@ -105,4 +105,4 @@ class Verdict:
     reason: str
     checks: dict = field(default_factory=dict)
     objection: str = ""   # the strongest objection to the finding as it stands
-    next_check: str = ""  # the Judge's version of the check that would settle it
+    next_check: str = ""  # the Reviewer's version of the check that would settle it

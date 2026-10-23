@@ -1,5 +1,5 @@
 """Rule routing: settle the easy reactions in code so only ambiguous ones cost a model call.
-Rule findings go to the Judge like any other; if the Judge rejects one, the Hunter's model re-classifies it."""
+Rule findings go to the Reviewer like any other; if the Reviewer rejects one, the Analyst's model re-classifies it."""
 import re
 
 from app.data.label import INDICATION, find_term

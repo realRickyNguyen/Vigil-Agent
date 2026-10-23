@@ -40,7 +40,7 @@ class ZetarisClient:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or b"{}")
 
-    def run(self, sql: str, purpose: str, agent: str = "clerk", ddl: bool = False) -> QueryResult:
+    def run(self, sql: str, purpose: str, agent: str = "data_clerk", ddl: bool = False) -> QueryResult:
         """Run one statement. Retries timeouts and 5xx; raises AlreadyExists or ZetarisError otherwise."""
         query_id = "q-" + uuid.uuid4().hex[:8]  # short evidence ID the agents cite; Zetaris gets its own UUID
         timeout = DDL_TIMEOUT if ddl else max(self.s.source_timeout, 60)

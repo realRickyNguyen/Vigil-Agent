@@ -1,4 +1,6 @@
-# Black Box: design (updated 22 Oct 2026, 17:00 Sydney)
+# Vigil: Drug Reaction Review, design (updated 22 Oct 2026, 17:00 Sydney)
+
+Named **Black Box** until 23 Oct 2026, with agents called Clerk, Hunter and Judge (now Data Clerk, Analyst and Reviewer). Traces and evaluation reports from before the rename keep the old names.
 
 Practical state, how to run and next steps: [../HANDOFF.md](../HANDOFF.md). This file covers the design and the reasons behind it. Items are marked **built**, **planned** or **unknown**.
 
@@ -6,7 +8,7 @@ Practical state, how to run and next steps: [../HANDOFF.md](../HANDOFF.md). This
 
 ## Pitch
 
-Black Box helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, and shows the evidence and objections behind that shortlist.
+Vigil helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, and shows the evidence and objections behind that shortlist.
 
 The pitch changed on 22 Oct after an outside review. The earlier one, "find side effects the label does not warn about yet", promised more than the results support: most strong signals turn out to be labelled effects or the treated disease, and the rest are often vague terms. The product's value is triage with an inspectable trail, not discovery. The name refers to the FDA's boxed warning.
 
@@ -16,7 +18,7 @@ The pitch changed on 22 Oct after an outside review. The earlier one, "find side
 
 **Their task:** decide which associations deserve further examination, which have straightforward explanations, and which cannot yet be assessed.
 
-**The data:** the FDA Adverse Event Reporting System (FAERS) is public, with about 20.7 million reports (openFDA, data updated 30 Jul 2026). Strong statistical flags often reflect the treated disease or labelled effects, so reading them needs interpretation. Black Box reduces the repetitive evidence reconciliation and keeps a decision trail an analyst can check.
+**The data:** the FDA Adverse Event Reporting System (FAERS) is public, with about 20.7 million reports (openFDA, data updated 30 Jul 2026). Strong statistical flags often reflect the treated disease or labelled effects, so reading them needs interpretation. Vigil reduces the repetitive evidence reconciliation and keeps a decision trail an analyst can check.
 
 ## Why Track 02
 
@@ -36,12 +38,12 @@ The pitch changed on 22 Oct after an outside review. The earlier one, "find side
 | `label_coverage` | `covered`, `not_found`, `unclear`, `not_assessed` | Whether the current label already describes it as a drug effect |
 | `review_priority` | `review_next`, `insufficient_evidence`, `lower_priority` | Whether an analyst should look next |
 | `workflow_status` | `reviewed`, `unresolved`, `not_reviewed`, `pending`, `failed` | Whether the review finished, and how |
-| `strongest_objection` | text | The Judge's best argument against the finding as it stands |
+| `strongest_objection` | text | The Reviewer's best argument against the finding as it stands |
 | `next_check` | text | One concrete check that would settle or advance it |
 | `label_quote` | text | The label sentence, extracted by code, never written by the model |
 | `history` | list | Each round's claim, verdict and objection |
 
-The queue is ranked `review_next` first. Counts show how much of the screen was covered: reactions screened, passing the screen, shown to the Hunter, picked, assessed, decided by rule, reviewed, unresolved, pending, failed. A fixed caveat says that FAERS shows reporting association, not causation, and that this is not medical advice.
+The queue is ranked `review_next` first. Counts show how much of the screen was covered: reactions screened, passing the screen, shown to the Analyst, picked, assessed, decided by rule, reviewed, unresolved, pending, failed. A fixed caveat says that FAERS shows reporting association, not causation, and that this is not medical advice.
 
 The older single category (`on_label`, `possible_new_signal`, `likely_indication_or_disease`, `not_meaningful`) is derived from `context` and `label_coverage` for the gold set.
 
@@ -82,16 +84,16 @@ Zetaris results matched an independent Python calculation. That validates the ar
 
 | Component | Kind | Job | State |
 |---|---|---|---|
-| Clerk | Code | Registers sources in Zetaris, runs the screen, fetches the label | Built |
+| Data Clerk | Code | Registers sources in Zetaris, runs the screen, fetches the label | Built |
 | Rules | Code | Settles easy cases: administrative terms, the treated condition named in indications, the reaction named literally in the label | Built |
-| Hunter | Nemotron Ultra via Nightshift | Picks up to 10 of the 30 strongest screen rows, then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
-| Judge | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: accept, reject with an objection, or unresolved; names missing reactions | Built |
+| Analyst | Nemotron Ultra via Nightshift | Picks up to 10 of the 30 strongest screen rows, then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
+| Reviewer | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: accept, reject with an objection, or unresolved; names missing reactions | Built |
 | Skeptic | Zetaris queries plus Nemotron | One evidence operation (reporter-type composition) for the top review-next items. Context only, never proof | Planned |
 
 **Loop:**
-- Rejections and missing reactions go back to the Hunter for at most 2 revision rounds. Accepted findings are never redone.
-- A revision that returns to an answer the Judge already rejected ends as `unresolved`, and so does an objection still standing when the rounds run out.
-- Reactions the Judge names in the last round become `pending`.
+- Rejections and missing reactions go back to the Analyst for at most 2 revision rounds. Accepted findings are never redone.
+- A revision that returns to an answer the Reviewer already rejected ends as `unresolved`, and so does an objection still standing when the rounds run out.
+- Reactions the Reviewer names in the last round become `pending`.
 
 **Resilience:**
 - At most 2 model calls run at a time.
@@ -109,12 +111,12 @@ Zetaris results matched an independent Python calculation. That validates the ar
 
 - **Gold set:** `eval/gold_v1.jsonl` (100 reactions, 5 drugs), with rules in `eval/LABELLING_RULES.md`. Labelled by an AI assistant from the label text; **a person still needs to review it**. It is a development check, not clinical validation.
 - **Scorer:** `eval/score.py`. It measures:
-  - Hunter round-1 accuracy against final accuracy
-  - what the Judge did to each item: fixed, caught, kept, unresolved
+  - Analyst round-1 accuracy against final accuracy
+  - what the Reviewer did to each item: fixed, caught, kept, unresolved
   - the gold category of every "review next" item
   - unresolved and open items
   - repeat-run agreement
-- **First result** (contract v1, one montelukast run): 6/7 round-1 and 7/8 final on clear gold items. The Judge kept one wrong answer ("loss of personal independence" should be non-clinical).
+- **First result** (contract v1, one montelukast run): 6/7 round-1 and 7/8 final on clear gold items. The Reviewer kept one wrong answer ("loss of personal independence" should be non-clinical).
 - **Backtest:** off the critical path. FDA's labeling-change database cannot be scripted. openFDA returns the latest version of each case. Montelukast's warnings were in the precautions by 2012, so the 2020 boxed warning was an upgrade. See `eval/BACKTEST_FEASIBILITY.md`.
 
 ## Demo plan (draft)
@@ -122,7 +124,7 @@ Zetaris results matched an independent Python calculation. That validates the ar
 About 3 minutes from one real run, with any time compression labelled:
 1. The analyst's question.
 2. The input and evidence scope (the counts).
-3. One real exchange where the Judge's objection or the Skeptic's evidence changes a priority, or leaves an explained `unresolved`.
+3. One real exchange where the Reviewer's objection or the Skeptic's evidence changes a priority, or leaves an explained `unresolved`.
 4. The resulting queue.
 5. How a judge runs it.
 
@@ -131,10 +133,10 @@ About 3 minutes from one real run, with any time compression labelled:
 ## Limitations to state
 
 - Counting reports that mention the drug includes reports where it was not the suspect drug. This broadens the population; it does not necessarily inflate the PRR.
-- Coverage limits: the baseline holds only the 999 most-reported reactions, and the Hunter reviews at most 10 picks plus Judge-named additions. Both are shown in the counts.
+- Coverage limits: the baseline holds only the 999 most-reported reactions, and the Analyst reviews at most 10 picks plus Reviewer-named additions. Both are shown in the counts.
 - The aggregate data allows no case review and no duplicate removal. Marginal counts (reporter type, indication) give context, not adjustment for confounding.
 - The label is whichever one openFDA returns first for the generic name. That can be a combination product (metformin returned ZITUVIMET); a fix is planned.
-- The Hunter and the Judge use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
+- The Analyst and the Reviewer use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
 
 ## Responsible use
 

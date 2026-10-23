@@ -1,27 +1,27 @@
-"""Judge: checks every Hunter finding against Zetaris and the label, then reviews the reasoning.
+"""Reviewer: checks every Analyst finding against Zetaris and the label, then reviews the reasoning.
 Code checks come first and cannot be overruled by the model: a finding with wrong numbers, no
 evidence, a label term that is not in the label, or an inconsistent priority is rejected.
-The model then accepts, rejects (with an objection the Hunter must answer), or marks a finding
+The model then accepts, rejects (with an objection the Analyst must answer), or marks a finding
 unresolved when the evidence available cannot settle it."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 
 from app.adapters.meterless import MeterlessError, NightshiftClient
-from app.agents.hunter import BATCH, MAX_TOKENS, screen_table
-from app.data.faers import Clerk
+from app.agents.analyst import BATCH, MAX_TOKENS, screen_table
+from app.data.faers import DataClerk
 from app.data.label import META, excerpt_block, label_sentence, named_in_label, norm
 from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
 UNREVIEWED = "passed code checks; model review unavailable (Nightshift error), reasoning not reviewed"
 
-SYSTEM = """You are the Judge in a drug-safety review team. The Hunter has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
+SYSTEM = """You are the Reviewer in a drug-safety review team. The Analyst has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
 
 Code has already re-run each finding's numbers on the database, found the label sentence for each "label_term" (in "label_quote"), and checked that the fields are consistent; see "checks". Your job is the reasoning.
 
 For each finding, decide:
 - "accept": the context, coverage and priority are defensible from the evidence shown.
-- "reject": something is wrong and the Hunter can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
+- "reject": something is wrong and the Analyst can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
 - "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
 
 For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
@@ -68,10 +68,10 @@ def failed(checks: dict) -> list[str]:
     return [f"{k}: {d}" for k, (ok, d) in checks.items() if not ok]
 
 
-class Judge:
-    name = "judge"
+class Reviewer:
+    name = "reviewer"
 
-    def __init__(self, llm: NightshiftClient, model: str, clerk: Clerk, parallel: int = 2):
+    def __init__(self, llm: NightshiftClient, model: str, clerk: DataClerk, parallel: int = 2):
         self.llm = llm
         self.model = model
         self.clerk = clerk
@@ -91,7 +91,7 @@ class Judge:
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}
         unpicked = [s for s in ctx["passing"] if norm(s.reaction) not in done][:UNPICKED_ROWS]
 
-        # Small parallel batches for the same reason as the Hunter's; only the first looks for missing reactions.
+        # Small parallel batches for the same reason as the Analyst's; only the first looks for missing reactions.
         batches = [payload[i:i + BATCH] for i in range(0, len(payload), BATCH)]
         with ThreadPoolExecutor(max_workers=self.parallel) as pool:
             outs = list(pool.map(lambda ib: self._review_batch(ctx, ib[1], unpicked if ib[0] == 0 else None),
@@ -126,7 +126,7 @@ class Judge:
         messages = [{"role": "system", "content": SYSTEM},
                     {"role": "user", "content":
                      f"Drug: {ctx['drug']}\n\n{extra}{excerpt_block(names, ctx['label'], ctx['label_qid'])}\n\n"
-                     f"Hunter findings with code checks:\n{json.dumps(batch, indent=1)}"}]
+                     f"Analyst findings with code checks:\n{json.dumps(batch, indent=1)}"}]
         try:
             return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS)
         except MeterlessError as e:

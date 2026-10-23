@@ -1,6 +1,6 @@
 # Team setup
 
-How a teammate gets from a fresh clone to running Black Box. Read [HANDOFF.md](HANDOFF.md) for what the project does and what is next.
+How a teammate gets from a fresh clone to running Vigil. Read [HANDOFF.md](HANDOFF.md) for what the project does and what is next.
 
 ## 1. Code only: no services needed (5 minutes)
 

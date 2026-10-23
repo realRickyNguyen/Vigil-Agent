@@ -1,4 +1,4 @@
-"""Black Box: run one drug-safety investigation.
+"""Vigil: run one drug-safety investigation.
 
   python -I run.py --input input_examples/example_1.json
   python -I run.py --drug montelukast

@@ -1,7 +1,7 @@
-"""Score Black Box runs against the gold set, and measure agreement between repeated runs.
+"""Score Vigil runs against the gold set, and measure agreement between repeated runs.
 
-Reads only what the app wrote: logs/trace-<run>.jsonl (the Hunter's round-1 findings) and
-logs/dossier-<run>.json (the final, Judge-reviewed findings). Ambiguous gold rows are excluded
+Reads only what the app wrote: logs/trace-<run>.jsonl (the Analyst's round-1 findings) and
+logs/dossier-<run>.json (the final, Reviewer-reviewed findings). Ambiguous gold rows are excluded
 from accuracy and counted separately.
 
   python -I eval/score.py <run_id> [<run_id> ...]
@@ -23,7 +23,7 @@ def load_gold(path: Path = GOLD) -> dict:
 
 
 def load_run(run_id: str, logs: Path = LOGS) -> dict:
-    """Round-1 Hunter classifications and the final outcome per reaction for one run."""
+    """Round-1 Analyst classifications and the final outcome per reaction for one run."""
     dossier = json.loads((logs / f"dossier-{run_id}.json").read_text(encoding="utf-8"))
     round1 = {}
     for line in (logs / f"trace-{run_id}.jsonl").read_text(encoding="utf-8").splitlines():
@@ -62,7 +62,7 @@ def score_run(run: dict, gold: dict) -> dict:
     r1 = {r: f["classification"] for r, f in run["round1"].items()}
     accepted = {r: f["classification"] for r, f in run["final"].items() if f["status"] == "accepted"}
 
-    # What the Judge loop did to each clear gold item the Hunter classified in round 1.
+    # What the Reviewer loop did to each clear gold item the Analyst classified in round 1.
     effect = Counter()
     for r in clear & set(r1):
         ok1 = r1[r] == g[r]["gold"]
@@ -79,12 +79,13 @@ def score_run(run: dict, gold: dict) -> dict:
             ok2 = f["classification"] == g[r]["gold"]
             effect[{(True, True): "kept_correct", (False, True): "fixed", (True, False): "broken",
                     (False, False): "kept_wrong"}[(ok1, ok2)]] += 1
-    added = [r for r in accepted if r not in r1]  # reactions the Judge asked for as "missing"
+    added = [r for r in accepted if r not in r1]  # reactions the Reviewer asked for as "missing"
 
     by_who = defaultdict(Counter)
     for r, f in run["final"].items():
         if f["status"] == "accepted" and r in clear:
-            by_who[f.get("decided_by", "hunter")]["correct" if f["classification"] == g[r]["gold"] else "wrong"] += 1
+            # Runs before the 23 Oct rename say "hunter" for the Analyst.
+            by_who[{"hunter": "analyst"}.get(f.get("decided_by", "analyst"), f.get("decided_by", "analyst"))]["correct" if f["classification"] == g[r]["gold"] else "wrong"] += 1
 
     new = [r for r, c in accepted.items() if c == "possible_new_signal" and r in clear]
     # Priority (v2 runs): what the gold set says about the reactions sent to the analyst as "review next".
@@ -94,7 +95,7 @@ def score_run(run: dict, gold: dict) -> dict:
     return {
         "run_id": run["run_id"], "drug": drug, "gold_rows": len(g), "gold_clear": len(clear),
         "round1": acc(r1), "final": acc(accepted),
-        "judge_effect": dict(effect),
+        "reviewer_effect": dict(effect),
         "added_after_missing": {"count": len(added), **acc({r: accepted[r] for r in added})},
         "by_decider": {k: dict(v) for k, v in by_who.items()},
         "new_signal_precision": {"claimed": len(new), "gold_new": sum(g[r]["gold"] == "possible_new_signal" for r in new)},
@@ -139,29 +140,29 @@ def summarise(scores: list[dict], agreements: list[dict]) -> str:
 
     eff = Counter()
     for x in scores:
-        eff.update(x["judge_effect"])
-    lines = ["# Black Box evaluation", "",
+        eff.update(x["reviewer_effect"])
+    lines = ["# Vigil evaluation", "",
              f"Gold set: `eval/gold_v1.jsonl` (labelled by an AI assistant, not yet reviewed by a person; "
              f"ambiguous rows excluded from accuracy). Runs: {len(scores)}.", "",
-             "| Run | Drug | Round-1 accuracy | Final accuracy | Judge effect | Added via 'missing' | New-signal claims (gold-confirmed) | Review next (gold) | Unresolved | Pending/failed |",
+             "| Run | Drug | Round-1 accuracy | Final accuracy | Reviewer effect | Added via 'missing' | New-signal claims (gold-confirmed) | Review next (gold) | Unresolved | Pending/failed |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for x in scores:
         r1, fi = x["round1"], x["final"]
         rn = x["review_next"]
         lines.append(f"| {x['run_id']} | {x['drug']} | {r1['correct']}/{r1['scored']} | {fi['correct']}/{fi['scored']} | "
-                     f"{', '.join(f'{k} {v}' for k, v in sorted(x['judge_effect'].items())) or '-'} | "
+                     f"{', '.join(f'{k} {v}' for k, v in sorted(x['reviewer_effect'].items())) or '-'} | "
                      f"{x['added_after_missing']['count']} | {x['new_signal_precision']['claimed']} "
                      f"({x['new_signal_precision']['gold_new']}) | {rn['count']} "
                      f"({', '.join(f'{k} {v}' for k, v in rn['gold'].items()) or '-'}) | {len(x['unresolved'])} | "
                      f"{', '.join(f'{k} {v}' for k, v in x['open_items'].items() if v) or '-'} |")
     lines += ["", f"**Overall:** round-1 accuracy {tot('round1')}, final accuracy {tot('final')}.", "",
-              "Judge effect across runs (clear gold items the Hunter classified in round 1): "
+              "Reviewer effect across runs (clear gold items the Analyst classified in round 1): "
               + (", ".join(f"{k} {v}" for k, v in sorted(eff.items())) or "none"), "",
               "- `fixed`: wrong in round 1, right after revision. `broken`: the reverse.",
-              "- `caught_wrong`: wrong in round 1 and excluded by the Judge. `rejected_correct`: right but excluded.",
+              "- `caught_wrong`: wrong in round 1 and excluded by the Reviewer. `rejected_correct`: right but excluded.",
               "- `kept_correct` / `kept_wrong`: unchanged. `dropped`: not in the final dossier.",
               "- `unresolved_was_wrong` / `unresolved_was_correct`: the dispute was closed as unresolved; "
-              "this says whether the Hunter's round-1 answer had been right.",
+              "this says whether the Analyst's round-1 answer had been right.",
               "- Review next (gold): reactions sent to the analyst as 'review next', by their gold category. "
               "Gold `possible_new_signal` is the supported case; other categories are unsupported escalations.", ""]
     for a in agreements:

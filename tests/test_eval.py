@@ -16,7 +16,7 @@ GOLD_ROWS = [
 ]
 
 
-def f(reaction, cls, who="hunter"):
+def f(reaction, cls, who="analyst"):
     return {"reaction": reaction, "classification": cls, "decided_by": who}
 
 
@@ -35,7 +35,7 @@ def gold(tmp_path):
     return load_gold(p)
 
 
-def test_judge_effect_categories(tmp_path):
+def test_reviewer_effect_categories(tmp_path):
     write_run(tmp_path, "r1",
               round1=[f("A", "on_label"), f("B", "possible_new_signal"), f("C", "on_label"), f("D", "not_meaningful")],
               accepted=[f("A", "on_label"), f("B", "likely_indication_or_disease"), f("E", "on_label")],
@@ -43,7 +43,7 @@ def test_judge_effect_categories(tmp_path):
     s = score_run(load_run("r1", tmp_path), gold(tmp_path))
     assert s["round1"] == {"scored": 4, "correct": 2, "accuracy": 0.5}
     assert s["final"] == {"scored": 2, "correct": 2, "accuracy": 1.0}  # ambiguous E is not scored
-    assert s["judge_effect"] == {"kept_correct": 1, "fixed": 1, "caught_wrong": 1, "dropped": 1}
+    assert s["reviewer_effect"] == {"kept_correct": 1, "fixed": 1, "caught_wrong": 1, "dropped": 1}
     assert s["ambiguous_classified"] == 1
 
 
@@ -53,7 +53,7 @@ def test_added_after_missing_and_new_signal_precision(tmp_path):
     s = score_run(load_run("r2", tmp_path), gold(tmp_path))
     assert s["added_after_missing"] == {"count": 2, "scored": 2, "correct": 1, "accuracy": 0.5}
     assert s["new_signal_precision"] == {"claimed": 2, "gold_new": 1}
-    assert s["by_decider"] == {"hunter": {"correct": 2}, "rule": {"wrong": 1}}
+    assert s["by_decider"] == {"analyst": {"correct": 2}, "rule": {"wrong": 1}}
 
 
 def test_v2_review_queue_dossier(tmp_path):
@@ -68,7 +68,7 @@ def test_v2_review_queue_dossier(tmp_path):
     (tmp_path / "dossier-v2.json").write_text(json.dumps({"drug": "x", "review_queue": queue}), encoding="utf-8")
     s = score_run(load_run("v2", tmp_path), gold(tmp_path))
     assert s["unresolved"] == ["B"] and s["open_items"] == {"pending": 1}
-    assert s["judge_effect"] == {"unresolved_was_wrong": 1, "kept_correct": 1}
+    assert s["reviewer_effect"] == {"unresolved_was_wrong": 1, "kept_correct": 1}
     assert s["review_next"] == {"count": 2, "gold": {"possible_new_signal": 1, "on_label": 1}}
 
 

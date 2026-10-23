@@ -7,11 +7,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.adapters.meterless import MeterlessError, extract_json  # noqa: E402
-from app.agents.hunter import Hunter  # noqa: E402
+from app.agents.analyst import Analyst  # noqa: E402
 from app.agents.rules import route  # noqa: E402
 from app.data.label import excerpt_block, retrieve  # noqa: E402
-from app.agents.judge import code_checks, failed  # noqa: E402
-from app.data.faers import Clerk, drug_search, signal_sql, slug, sql_str, validate_drug  # noqa: E402
+from app.agents.reviewer import code_checks, failed  # noqa: E402
+from app.data.faers import DataClerk, drug_search, signal_sql, slug, sql_str, validate_drug  # noqa: E402
 from app.orchestration.pipeline import review_queue, settle  # noqa: E402
 from app.schemas import Finding, Signal, Verdict  # noqa: E402
 
@@ -67,7 +67,7 @@ class RecordingZetaris:
 
 def test_register_drug_uses_new_tables_and_combined_search():
     z = RecordingZetaris()
-    Clerk(z).register_drug("atorvastatin")
+    DataClerk(z).register_drug("atorvastatin")
     event_tables = [s for s in z.sql if "event.json" in s]
     assert len(event_tables) == 2 and all(drug_search("atorvastatin") in s for s in event_tables)
     assert all("faers_d2_atorvastatin_" in s for s in event_tables)
@@ -200,7 +200,7 @@ def test_chat_retries_when_nightshift_drops_the_connection(monkeypatch):
             raise r
         return r
     monkeypatch.setattr(client, "_post", post)
-    assert client.chat("hunter", "m", [{"role": "user", "content": "hi"}]) == "ok"
+    assert client.chat("analyst", "m", [{"role": "user", "content": "hi"}]) == "ok"
     assert [k for _, k, _ in client.tracer.events] == ["llm_retry", "llm_call"]
 
 
@@ -211,11 +211,11 @@ def test_trace_keeps_full_prompt_and_reply_but_not_the_token(monkeypatch):
     client = meterless.NightshiftClient(SimpleNamespace(meterless_token="secret-token-xyz", max_retries=0,
                                                         meterless_url="http://x", meterless_app="a",
                                                         model_timeout=1), FakeTracer())
-    messages = [{"role": "system", "content": "You are the Judge."}, {"role": "user", "content": "Drug: x"}]
+    messages = [{"role": "system", "content": "You are the Reviewer."}, {"role": "user", "content": "Drug: x"}]
     reply = "thinking...</think>{\"verdicts\": []}"
     monkeypatch.setattr(client, "_post", lambda body: {"model": "served", "choices": [
         {"message": {"content": reply, "reasoning_content": "hidden steps"}}]})
-    client.chat("judge", "m", messages)
+    client.chat("reviewer", "m", messages)
     (_, kind, data), = client.tracer.events
     assert kind == "llm_call" and data["messages"] == messages and data["reply"] == reply
     assert data["reasoning"] == "hidden steps" and data["served_by"] == "served"
@@ -241,7 +241,7 @@ def test_trace_records_nightshift_memory_and_scaffold_from_the_receipt():
     assert nightshift_steps({"choices": []}) is None
 
 
-def hunter_ctx():
+def analyst_ctx():
     passing = [Signal(n, a=10, b=1, c=1, d=1, prr=3.0, chi2=50 - i) for i, n in enumerate("ABCDEFGHIJ")]
     return {"drug": "x", "passing": passing, "label": {}, "label_qid": "q-l", "screen_qid": "q-s",
             "label_text": "", "screen_table": "", "screen_shown": 10, "screen_passing": 10,
@@ -249,14 +249,14 @@ def hunter_ctx():
 
 
 def test_pick_falls_back_to_top_chi2_when_model_fails():
-    h = Hunter(FakeLLM(fail_all=True), "m")
-    assert h.pick(hunter_ctx()) == list("ABCDEFGHIJ")
+    h = Analyst(FakeLLM(fail_all=True), "m")
+    assert h.pick(analyst_ctx()) == list("ABCDEFGHIJ")
     assert any(k == "degraded" for _, k, _ in h.llm.tracer.events)
 
 
 def test_classify_splits_failed_batch_and_reports_unclassified():
-    ctx = hunter_ctx()
-    h = Hunter(FakeLLM(fail_on={"B |"}), "m")
+    ctx = analyst_ctx()
+    h = Analyst(FakeLLM(fail_on={"B |"}), "m")
     findings, _ = h.classify(ctx, ["A", "B", "C", "D"])
     assert [f.reaction for f in findings] == ["A", "C", "D"]
     assert ctx["unclassified"] == ["B"]
@@ -294,7 +294,7 @@ def test_rules_route_easy_cases():
     assert route(sig("PRODUCTIVE COUGH"), MONTELUKAST_LIKE, ["q"]) is None  # 'PRODUCT' is not a word here
 
 
-def test_rule_finding_passes_judge_code_checks():
+def test_rule_finding_passes_reviewer_code_checks():
     cough = route(Signal("COUGH", a=10, b=1, c=1, d=1, prr=3.0, chi2=50), MONTELUKAST_LIKE, ["q-1"])
     fresh = Signal("COUGH", a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
     assert failed(code_checks(cough, fresh, MONTELUKAST_LIKE, {"q-1"})) == []
@@ -302,13 +302,13 @@ def test_rule_finding_passes_judge_code_checks():
 
 
 def test_rejected_rule_finding_goes_to_the_model():
-    ctx = hunter_ctx()
+    ctx = analyst_ctx()
     ctx["label"] = {"adverse_reactions": "Reactions included A and B."}
-    h = Hunter(FakeLLM(), "m")
+    h = Analyst(FakeLLM(), "m")
     routed, _ = h.classify(ctx, ["A"])
     assert routed[0].decided_by == "rule"
     revised, _ = h.classify(ctx, ["A"], {"rejected": [{"reaction": "A", "reason": "x"}], "missing": []})
-    assert revised[0].decided_by == "hunter"
+    assert revised[0].decided_by == "analyst"
 
 
 def test_checks_new_signal_must_pass_screen():

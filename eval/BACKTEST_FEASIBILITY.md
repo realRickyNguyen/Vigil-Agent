@@ -1,6 +1,6 @@
 # Can we build a backtest set? (checked 22 Oct 2026)
 
-**Goal.** Run Black Box "as of" a past date and test whether it would have flagged a reaction before the label added it.
+**Goal.** Run Vigil "as of" a past date and test whether it would have flagged a reaction before the label added it.
 
 ## FDA Drug Safety-related Labeling Changes (SrLC) database
 

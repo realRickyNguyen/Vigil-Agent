@@ -2,7 +2,7 @@
 
 The first eight tests port the Meterless World Model conformance runner
 (github.com/Meterless/Meterless, engines/world-model/conformance/runner.ts) case by case,
-with the same inputs and the same assertions. The rest cover what Black Box adds on top:
+with the same inputs and the same assertions. The rest cover what Vigil adds on top:
 decisions that depend on facts, reopened when a supporting fact is superseded."""
 import sys
 from pathlib import Path
@@ -102,7 +102,7 @@ def test_audit_001_every_mutation_writes_an_audit_entry_in_order():
     assert all(b["seq"] > a["seq"] for a, b in zip(audit, audit[1:]))
 
 
-# Black Box behaviour: decisions depend on facts and reopen when a fact is superseded.
+# Vigil behaviour: decisions depend on facts and reopen when a fact is superseded.
 
 def label_world(effective_time="20240101"):
     world = WorldModel(namespace="bb")

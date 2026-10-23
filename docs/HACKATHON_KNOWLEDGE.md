@@ -1,6 +1,6 @@
 # Hackathon knowledge base (as of Thu 22 Oct 2026)
 
-Neutral facts about the event and the stack. The project chosen on 22 Oct is Black Box; see `docs/HANDOFF.md` and `docs/ideas/BLACK_BOX.md`. Each item is marked **confirmed** (seen in an organiser document or tested on this machine), **reported** (from a source we did not verify ourselves) or **unknown**. The live HackOS page and organiser announcements override everything here.
+Neutral facts about the event and the stack. The project chosen on 22 Oct is Vigil (named Black Box until 23 Oct); see `docs/HANDOFF.md` and `docs/ideas/VIGIL.md`. Each item is marked **confirmed** (seen in an organiser document or tested on this machine), **reported** (from a source we did not verify ourselves) or **unknown**. The live HackOS page and organiser announcements override everything here.
 
 Sources: `docs/reference/03_LLM_context_for_your_AI.md`, the 21 Oct Participant Setup Guide PDF (30 pages; the 19 Oct guide in `docs/reference/` matches it closely), `cursor-sponsor-overview.md`, and the Zetaris getting-started catalog pages (REST, Parquet/CSV, USL).
 
@@ -8,7 +8,7 @@ Sources: `docs/reference/03_LLM_context_for_your_AI.md`, the 21 Oct Participant 
 - Open Agent Hackathon 2026, GenAI Works, platform HackOS (hackathon.genai.works). Online. Teams of 1 to 5.
 - Build window opened Thu 22 Oct 00:00 UTC (11:00 Sydney). Submissions close Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney). Hard deadline.
 - Registration: the HackOS notice says it closes 22 Oct 23:59 UTC (Fri 23 Oct 10:59 Sydney). Plan for 10:45 Sydney.
-- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track 02 chosen provisionally** for Black Box. We have **not seen the challenge statements** on HackOS; they override the generic track text.
+- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track 02 chosen provisionally** for Vigil. We have **not seen the challenge statements** on HackOS; they override the generic track text.
 - Help desk: the Help desk channel on HackOS (hackathon.genai.works/messages).
 
 ## Tracks and prizes (confirmed from the context pack)
@@ -59,13 +59,13 @@ Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor tec
 ## Nightshift models available (confirmed 22 Oct)
 `GET /v1/models` lists `meterless/*` routing modes (auto, fast, deep, local, fusion, judge, embed and others) and NVIDIA models including `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3.5-super-vl-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, `nvidia/nemotron-3-nano-30b-a3b`, plus many `local-runtime/*` models. NVIDIA access is trial credits with a per-minute cap. Cap size is unknown.
 
-## Nightshift behaviour seen while building Black Box (confirmed 22 Oct)
+## Nightshift behaviour seen while building Vigil (confirmed 22 Oct)
 - A pinned model ID does not pin the model. Receipts in `%APPDATA%\ai.meterless.runtime\meterless.json` show `requested_mode: meterless/auto`, a learned-router race of width 2 (Super vs Lightning), with Lightning winning. The response's `model` field shows the model that actually served the call; the app logs it as `served_by`.
 - The Super lane is broken for this account. Requests for Super above a few KB return 502 with an NVIDIA 404 "Function ... Not found for account". The same function ID fails for `nemotron-3.5-super-vl`. Small Super requests are answered by Lightning.
 - Lightning hides its reasoning tokens and still counts them. Task prompts (classifying FAERS reactions against a label) often use up the whole budget and return 502 `empty_response`. Large ones hit `provider_deadline` after about 45 s. `max_tokens` is not enforced (one call returned 7,157 completion tokens with a 4,000 cap).
 - None of these turned reasoning off: `chat_template_kwargs.enable_thinking=false`, `/no_think` in the system or user message, `reasoning_effort` low/none, `reasoning.enabled=false`, `thinking.type=disabled`, `meterless/fast`, streaming.
 - Asking the model to copy exact label quotes made calls run much longer. Asking for a 1 to 4 word matching term, which code then finds in the label, cut a 5-reaction call to about 18 s.
-- Nightshift adds its own steps to app requests (receipts in `meterless.json`, field `hmem` and `reasoning_scaffold`): its memory reinjects 2 to 3 earlier answers into each prompt ("comprehensive" strategy, similarity up to 0.88), and a reasoning scaffold switches on for prompts it rates as difficult. Both make prompts and outputs longer, and the memory mixes earlier answers (possibly the Hunter's) into later calls such as the Judge's. The Console's Apps tab sets a mode per app (auto, fast, deep, cheap, local, fusion). The Console's "daemon not running" and "proxy needs a health check" warnings (with a Linux `systemctl` hint) were wrong on 22 Oct: requests were served and receipts were signed by meterlessd.
+- Nightshift adds its own steps to app requests (receipts in `meterless.json`, field `hmem` and `reasoning_scaffold`): its memory reinjects 2 to 3 earlier answers into each prompt ("comprehensive" strategy, similarity up to 0.88), and a reasoning scaffold switches on for prompts it rates as difficult. Both make prompts and outputs longer, and the memory mixes earlier answers (possibly the Analyst's) into later calls such as the Reviewer's. The Console's Apps tab sets a mode per app (auto, fast, deep, cheap, local, fusion). The Console's "daemon not running" and "proxy needs a health check" warnings (with a Linux `systemctl` hint) were wrong on 22 Oct: requests were served and receipts were signed by meterlessd.
 - Reliability on 22 Oct between 00:55 and 02:00 UTC: 6 successful agent calls out of 39 attempts.
 - **Fix found (22 Oct, about 04:30 UTC):** racing lanes was the main cause. With two lanes racing, a pinned model ID is not honoured, and an empty reply from one lane fails the whole request. Changing the Super lane's model to `nemotron-3-ultra-550b-a55b` (it works with this key), stopping the Lightning lane and setting race width to 1 in Preferences gave 12 successful calls out of 17 attempts, all served by Ultra, and a full montelukast run in 9 minutes. Restarting Nightshift re-seats lanes from the imported `lanes.toml` snapshot (`%LOCALAPPDATA%\ai.meterless.runtime\lanes.toml`), so check the lanes after a restart. Ultra returns its reasoning inline, ending in `</think>` with no opening tag. Simple small prompts kept working throughout (the smoke test passes).
 

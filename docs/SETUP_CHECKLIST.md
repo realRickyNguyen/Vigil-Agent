@@ -55,7 +55,7 @@ Answered by the 19 Oct guide: Meterless is required as provider and as an Engine
 - Cursor credit redemption is still not explained: check HackOS Resources.
 
 ## Still open (updated 22 Oct, 17:00 Sydney)
-- [x] Team registered on HackOS (22 Oct). Project Black Box, Track 02 provisionally
+- [x] Team registered on HackOS (22 Oct). Project Vigil, Track 02 provisionally
 - [ ] Read the Track 02 challenge statement on HackOS
 - [x] Cursor: dropped 23 Oct, nothing to redeem
 - [x] Zetaris GUI and PokeAPI recipe done (22 Oct)

@@ -4,7 +4,7 @@ Follows the Meterless reference (github.com/Meterless/Meterless, engines/world-m
 stable IDs, merge bands, provenance required on every write, idempotent ingest, bitemporal edges
 and a strictly increasing audit sequence. tests/test_world_model.py ports its conformance runner.
 
-Black Box adds decisions: an agent's verdict is recorded with the facts it rests on, and when a
+Vigil adds decisions: an agent's verdict is recorded with the facts it rests on, and when a
 newer fact supersedes one of them (for example a new label version), the verdict is reopened
 instead of silently standing. The reference has no dependency tracking, so this part is ours.
 

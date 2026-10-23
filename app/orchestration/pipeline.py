@@ -1,26 +1,26 @@
-"""One investigation: Clerk gathers evidence in Zetaris, Hunter classifies, Judge checks,
-Hunter revises on rejection (bounded rounds), and the accepted findings become the dossier."""
+"""One investigation: the Data Clerk gathers evidence in Zetaris, the Analyst classifies, the Reviewer
+checks, the Analyst revises on rejection (bounded rounds), and the accepted findings become the dossier."""
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 from app.adapters.meterless import NightshiftClient
 from app.adapters.zetaris import ZetarisClient
-from app.agents.hunter import Hunter, screen_table
-from app.agents.judge import Judge
+from app.agents.analyst import Analyst, screen_table
+from app.agents.reviewer import Reviewer
 from app.config import Settings
-from app.data.faers import Clerk, validate_drug
+from app.data.faers import DataClerk, validate_drug
 from app.engines.world_model import WorldModel
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
 
-# Passing rows shown to the Hunter, strongest evidence (chi2) first. 60 rows made the pick call run past
+# Passing rows shown to the Analyst, strongest evidence (chi2) first. 60 rows made the pick call run past
 # Nightshift's deadline about half the time; for montelukast the top 30 by chi2 still include the
 # neuropsychiatric terms that rank in the 40s by PRR.
 SCREEN_ROWS = 30
 
 NOT_YET_CHECKED = [
-    "Confounding by indication beyond the Hunter's judgement (no stratified counts yet)",
+    "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
     "Reporter type, e.g. lawyer-driven reporting",
     "Reporting spikes over time (notoriety bias)",
     "Co-reported drugs",
@@ -33,18 +33,18 @@ NOT_YET_CHECKED = [
 def investigate(request: dict, settings: Settings, tracer: Tracer | None = None) -> dict:
     tracer = tracer or Tracer(settings.logs_dir)
     drug = validate_drug(request.get("drug", ""))
-    tracer.event("orchestrator", "run_start", request=request, hunter_model=settings.hunter_model,
-                 judge_model=settings.judge_model)
+    tracer.event("orchestrator", "run_start", request=request, analyst_model=settings.analyst_model,
+                 reviewer_model=settings.reviewer_model)
 
     zetaris = ZetarisClient(settings, tracer)
     llm = NightshiftClient(settings, tracer)
-    clerk = Clerk(zetaris)
-    hunter = Hunter(llm, settings.hunter_model, settings.parallel)
-    judge = Judge(llm, settings.judge_model, clerk, settings.parallel)
+    clerk = DataClerk(zetaris)
+    analyst = Analyst(llm, settings.analyst_model, settings.parallel)
+    reviewer = Reviewer(llm, settings.reviewer_model, clerk, settings.parallel)
 
     # Evidence, all through Zetaris.
     created = clerk.register_drug(drug)
-    tracer.event("clerk", "sources_ready", drug=drug, created_now=created)
+    tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
     totals = clerk.totals(drug)
     screen_res, signals = clerk.signals(drug)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
@@ -56,21 +56,21 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "screen_table": screen_table(passing, SCREEN_ROWS),
         "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set()),
     }
-    tracer.event("clerk", "evidence_ready", screened=len(signals), passing=len(passing),
+    tracer.event("data_clerk", "evidence_ready", screened=len(signals), passing=len(passing),
                  label_sections=[k for k in label if k not in ("effective_time", "set_id")],
                  label_effective=label.get("effective_time"), evidence_ids=sorted(ctx["evidence_ids"]))
 
-    # Hunter <-> Judge loop. Accepted findings are settled and never re-done; each round only handles the
-    # Judge's rejections and missing reactions nobody has attempted yet. A dispute that cannot be settled
+    # Analyst <-> Reviewer loop. Accepted findings are settled and never re-done; each round only handles the
+    # Reviewer's rejections and missing reactions nobody has attempted yet. A dispute that cannot be settled
     # ends as "unresolved" rather than being accepted when the rounds run out.
     names = {s.reaction for s in passing}
-    findings, summary = hunter.run(ctx)
-    tracer.event("hunter", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
+    findings, summary = analyst.run(ctx)
+    tracer.event("analyst", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
     state: dict = {}  # reaction -> {"finding", "verdict", "status", "history"}
     rounds, new_missing = [], []
-    for rnd in range(1, settings.judge_rounds + 2):
-        verdicts, missing, judge_summary = judge.review(ctx, findings, attempted)
+    for rnd in range(1, settings.reviewer_rounds + 2):
+        verdicts, missing, reviewer_summary = reviewer.review(ctx, findings, attempted)
         by = {v.reaction: v for v in verdicts}
         retry = []
         for f in findings:
@@ -86,34 +86,35 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
             elif status == "unresolved" and note:
                 tracer.event("orchestrator", "dispute_unresolved", reaction=f.reaction, reason=note)
         new_missing = [m for m in missing if m["reaction"] in names and m["reaction"] not in attempted]
-        tracer.event("judge", "verdicts", round=rnd, verdicts=[asdict(v) for v in verdicts], missing=new_missing,
-                     ignored_missing=[m for m in missing if m not in new_missing], summary=judge_summary)
+        tracer.event("reviewer", "verdicts", round=rnd, verdicts=[asdict(v) for v in verdicts], missing=new_missing,
+                     ignored_missing=[m for m in missing if m not in new_missing], summary=reviewer_summary)
         rounds.append({"round": rnd, "reviewed": len(findings), "rejected": len(retry),
                        "unresolved": sum(by[f.reaction].decision == "unresolved" for f in findings),
                        "missing": len(new_missing)})
-        if (not retry and not new_missing) or rnd > settings.judge_rounds:
+        if (not retry and not new_missing) or rnd > settings.reviewer_rounds:
             break
         feedback = {"rejected": [{"reaction": f.reaction, "reason": by[f.reaction].reason,
                                   "objection": by[f.reaction].objection} for f in retry],
                     "missing": new_missing}
-        tracer.event("orchestrator", "retry", round=rnd + 1, reason="judge rejected or found missing items",
+        tracer.event("orchestrator", "retry", round=rnd + 1, reason="reviewer rejected or found missing items",
                      feedback=feedback)
         attempted |= {m["reaction"] for m in new_missing}
         new_missing = []
-        findings, summary = hunter.revise(ctx, retry, feedback)
+        findings, summary = analyst.revise(ctx, retry, feedback)
         attempted |= set(ctx.get("unclassified", []))
-        tracer.event("hunter", "findings", round=rnd + 1, findings=[f.to_dict() for f in findings], summary=summary)
+        tracer.event("analyst", "findings", round=rnd + 1, findings=[f.to_dict() for f in findings], summary=summary)
 
     for r, entry in state.items():
-        if entry["status"] == "rejected":  # rounds ran out with the Judge's objection unanswered
-            entry.update(status="unresolved", note="review rounds ran out before the Judge's objection was settled")
+        if entry["status"] == "rejected":  # rounds ran out with the Reviewer's objection unanswered
+            entry.update(status="unresolved", note="review rounds ran out before the Reviewer's objection was settled")
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []))
+    # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
     tracer.event("world_model", "remembered", **world)
     counts = {"reactions_screened": len(signals), "passing_evans": len(passing),
-              "shown_to_hunter": ctx["screen_shown"], "picked_by_hunter": len(ctx.get("picked", [])),
+              "shown_to_analyst": ctx["screen_shown"], "picked_by_analyst": len(ctx.get("picked", [])),
               "assessed": len(state), "decided_by_rule": sum(e["finding"].decided_by == "rule" for e in state.values()),
               **{s: sum(q["workflow_status"] == s for q in queue) for s in STATUS},
               "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
@@ -146,7 +147,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "degraded_steps": degraded,
         # Nightshift steps our app did not ask for, counted from each call's receipt (see nightshift_steps).
         "model_calls": model_calls,
-        "hunter_summary": summary,
+        "analyst_summary": summary,
         "rounds": rounds,
         "world_model": world,
         "untested_factors": NOT_YET_CHECKED,
@@ -161,8 +162,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
 
 
 def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
-    """Workflow status for a finding after the Judge's verdict, and a note when a dispute is closed.
-    A rejection of a claim the Judge already rejected once means the two agents are going round in
+    """Workflow status for a finding after the Reviewer's verdict, and a note when a dispute is closed.
+    A rejection of a claim the Reviewer already rejected once means the two agents are going round in
     circles, so the dispute is closed as unresolved instead of being re-asked."""
     if v.decision == "accept":
         return "reviewed", ""
@@ -172,7 +173,7 @@ def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
         return "unresolved", ""
     claim = dict(zip(("label_coverage", "context", "review_priority"), f.key()))
     if any(h["decision"] == "reject" and h["claim"] == claim for h in history):
-        return "unresolved", "the Hunter returned to an answer the Judge had already rejected"
+        return "unresolved", "the Analyst returned to an answer the Reviewer had already rejected"
     return "rejected", ""
 
 
@@ -216,19 +217,19 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
         queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
-                      "workflow_status": e["status"], "judge": v.reason, "status_note": e.get("note", ""),
+                      "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
                       "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
                       "history": e["history"]})
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,
                       "chi2": s.chi2 if s else None, "workflow_status": "pending", "review_priority": None,
-                      "status_note": f"named by the Judge in the last round, not reached: {m.get('why', '')}"})
+                      "status_note": f"named by the Reviewer in the last round, not reached: {m.get('why', '')}"})
     for r in sorted(set(failed) - set(state)):
         s = stats.get(r)
         queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
                       "chi2": s.chi2 if s else None, "workflow_status": "failed", "review_priority": None,
-                      "status_note": "the Hunter's model call failed after every fallback"})
+                      "status_note": "the Analyst's model call failed after every fallback"})
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
     return queue

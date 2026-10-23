@@ -101,7 +101,7 @@ class NightshiftClient:
                 if e.code not in (408, 429) and e.code < 500:
                     break
             # ConnectionError covers Nightshift closing the socket mid-request (ConnectionResetError,
-            # RemoteDisconnected), which on 22 Oct crashed a whole run at the Hunter's first call.
+            # RemoteDisconnected), which on 22 Oct crashed a whole run at the Analyst's first call.
             except (urllib.error.URLError, TimeoutError, ConnectionError, MeterlessError, KeyError) as e:
                 last = f"{type(e).__name__}: {e}"
             self.tracer.event(agent, "llm_retry", model=model, attempt=attempt, error=last)

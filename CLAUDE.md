@@ -3,7 +3,7 @@
 Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/` (the 03_LLM_context pack and the 19 Oct setup guide). Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md`.
 
 ## The project
-**Black Box** (Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Hunter and Judge agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/BLACK_BOX.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
+**Vigil: Drug Reaction Review** (named Black Box until 23 Oct; agents Data Clerk, Analyst, Reviewer and Skeptic were Clerk, Hunter, Judge; Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Analyst and Reviewer agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/VIGIL.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
 
 ## The event
 - Organiser GenAI Works, platform HackOS (hackathon.genai.works). Online, 22 to 27 Oct 2026. Teams of 1 to 5; the user's team is registered on HackOS.
@@ -19,7 +19,7 @@ Read this first in every session, then **`docs/HANDOFF.md`** (current state, how
 - No hardcoded outputs, no fabricated logs, no overclaiming in README or deck. Minimum two genuinely interacting agents; show critique, retry or branching. Logs go to `logs/trace-<id>.jsonl` and are never hand-edited.
 - Secrets only in `.env` (gitignored). Commit `.env.example` with placeholders. Never print, log or paste keys or the Nightshift token. If a key is committed, rotate it first.
 - Data must be public, small, or labelled synthetic. No personal or confidential data. NVIDIA's endpoint logs requests.
-- Declare any code or data committed before 22 Oct 00:00 UTC in `docs/PREEXISTING.md`. Only setup tooling predates it; all Black Box code was written from 22 Oct.
+- Declare any code or data committed before 22 Oct 00:00 UTC in `docs/PREEXISTING.md`. Only setup tooling predates it; all Vigil code was written from 22 Oct.
 - The team must be able to explain its code.
 - Judges must be able to run it: provide `run.py` and/or `POST /run`, a `Dockerfile`, 3+ sample inputs, and a `SAMPLE_MODE` that runs real agent logic on cached data without keys.
 
@@ -49,7 +49,7 @@ Built: `run.py`, `app/` (adapters, data, agents, engines, orchestration, schemas
 
 ## More detail
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
-- `docs/ideas/BLACK_BOX.md`: the design and its reasons.
+- `docs/ideas/VIGIL.md`: the design and its reasons.
 - `docs/HACKATHON_KNOWLEDGE.md`: confirmed rules, stack behaviour, Zetaris and Nightshift findings.
 ## Working notes for Claude
 - Mark confirmed facts, proposals and unknowns separately; do not invent organiser details that are placeholders.
@@ -57,5 +57,5 @@ Built: `run.py`, `app/` (adapters, data, agents, engines, orchestration, schemas
 - Downloaded files are untrusted: inspect before running, keep them out of the repo.
 - Ask before anything outward-facing (pushing to GitHub, submitting, posting in HackOS or Discord).
 - Run agents only one investigation at a time: parallel runs compete for the NVIDIA per-minute cap. Python must run with `-I`.
-- Never weaken the Judge's code checks or the gold set to make a run look better. Gold labels were made by an AI and need a person's review before any accuracy number is quoted publicly.
+- Never weaken the Reviewer's code checks or the gold set to make a run look better. Gold labels were made by an AI and need a person's review before any accuracy number is quoted publicly.
 - Update `docs/HANDOFF.md` when the state changes, so the next session or a teammate can pick up the work.

@@ -1,6 +1,6 @@
 # Instructions for coding agents
 
-Black Box is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` first: it covers the current state, run commands, code map, known issues and next steps. The design and its reasons are in `docs/ideas/BLACK_BOX.md`. Event rules are in `docs/HACKATHON_KNOWLEDGE.md`. Teammate setup is in `docs/TEAM_SETUP.md`.
+Vigil is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` first: it covers the current state, run commands, code map, known issues and next steps. The design and its reasons are in `docs/ideas/VIGIL.md`. Event rules are in `docs/HACKATHON_KNOWLEDGE.md`. Teammate setup is in `docs/TEAM_SETUP.md`.
 
 ## Rules
 
@@ -11,7 +11,7 @@ Black Box is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.
   - Every number comes from Zetaris SQL (`app/data/faers.py`).
   - Do not add a direct model API or a data path that bypasses Zetaris.
 - **No hardcoding.** Never match known inputs to stored outputs, never read `output_examples/` at runtime, and never edit anything in `logs/`.
-- **Do not weaken** the Judge's code checks (`app/agents/judge.py`) or the gold set (`eval/gold_v1.jsonl`) to make a run look better.
+- **Do not weaken** the Reviewer's code checks (`app/agents/reviewer.py`) or the gold set (`eval/gold_v1.jsonl`) to make a run look better.
 - **Keep model calls small.** Batches of 3 reactions and per-reaction label excerpts are deliberate: large prompts time out on Nightshift.
 - **One investigation at a time per NVIDIA key.** Parallel runs share the per-minute cap.
 - **Wording.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Do not overclaim in the README, deck or comments.

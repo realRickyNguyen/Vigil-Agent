@@ -1,5 +1,5 @@
-"""Hunter: picks the reactions that matter from the disproportionality screen, then classifies
-them against the current label. Revises its findings when the Judge rejects them.
+"""Analyst: picks the reactions that matter from the disproportionality screen, then classifies
+them against the current label. Revises its findings when the Reviewer rejects them.
 
 Kept small per call: Nightshift ends a provider call after about 45 s, and Nemotron Lightning
 spends most of its budget on hidden reasoning when a call is large. So picking and classifying are
@@ -18,14 +18,14 @@ MAX_TOKENS = 6000
 MAX_PICKS = 10
 BATCH = 3  # reactions per classify call
 
-PICK_SYSTEM = f"""You are the Hunter in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
+PICK_SYSTEM = f"""You are the Analyst in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
 
 Choose up to {MAX_PICKS} reactions a drug-safety reviewer should look at. Prefer strong signals (high PRR backed by many reports) and anything that could be a safety problem, including reactions that may simply be the disease the drug treats, so they can be ruled out. Cover different body systems rather than many terms for the same thing. Skip administrative terms such as product use issues.
 
 Use only reactions from the table, spelled exactly as in the table. Reply with only a JSON object:
 {{"picked": [{{"reaction": str, "why": str}}]}}"""
 
-CLASSIFY_SYSTEM = """You are the Hunter in a drug-safety review team. For one drug, you help an analyst decide which reported drug-reaction patterns deserve a closer look. FAERS statistics show reporting patterns, not that the drug causes anything.
+CLASSIFY_SYSTEM = """You are the Analyst in a drug-safety review team. For one drug, you help a human drug-safety analyst decide which reported drug-reaction patterns deserve a closer look. FAERS statistics show reporting patterns, not that the drug causes anything.
 
 Answer three separate questions for each listed reaction:
 
@@ -57,8 +57,8 @@ def screen_table(signals: list[Signal], limit: int) -> str:
     return "\n".join(lines)
 
 
-class Hunter:
-    name = "hunter"
+class Analyst:
+    name = "analyst"
 
     def __init__(self, llm: NightshiftClient, model: str, parallel: int = 2):
         self.llm = llm
@@ -146,7 +146,7 @@ class Hunter:
         user = (f"{self.header(ctx)}\n\nReactions to classify (from query {ctx['screen_qid']}):\n"
                 f"{screen_table(rows, len(rows))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
         if feedback:
-            user += ("\n\nThe Judge reviewed your earlier findings for these reactions. For each rejected one, "
+            user += ("\n\nThe Reviewer reviewed your earlier findings for these reactions. For each rejected one, "
                      "answer its objection: change your answer if the objection holds, or keep it and say why in "
                      "\"reasoning\". Classify the missing ones it named:\n" + json.dumps(feedback, indent=1))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": CLASSIFY_SYSTEM},
