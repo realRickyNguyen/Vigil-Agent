@@ -3,7 +3,7 @@
 Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/` (the 03_LLM_context pack and the 19 Oct setup guide). Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md`.
 
 ## The project
-**Black Box** (Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Hunter and Judge agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/BLACK_BOX.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The organisers will not provide Cursor credits: the team develops mainly with Claude Code and Codex and uses Cursor's free plan for small tasks; log real Cursor work in `docs/CURSOR_LOG.md` on the day it happens, never backdated. Do not add Co-Authored-By trailers to commit messages.
+**Black Box** (Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Hunter and Judge agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/BLACK_BOX.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
 
 ## The event
 - Organiser GenAI Works, platform HackOS (hackathon.genai.works). Online, 22 to 27 Oct 2026. Teams of 1 to 5; the user's team is registered on HackOS.
@@ -14,13 +14,13 @@ Read this first in every session, then **`docs/HANDOFF.md`** (current state, how
 - Deliverables: demo video (1 to 4 min), slide deck, **public** GitHub repo with README, sponsor technology explanation (Zetaris, Meterless, Cursor, NVIDIA).
 
 ## Hard rules (disqualification risks)
-- Zetaris and Meterless must be load-bearing, not decorative. Use NVIDIA Nemotron via Meterless Nightshift. Cursor is **optional** since 23 Oct (organiser change, reported by the user); if used, describe it honestly.
+- Zetaris and Meterless must be load-bearing, not decorative. Use NVIDIA Nemotron via Meterless Nightshift. Cursor is **optional** since 23 Oct (organiser change, reported by the user) and the team does not use it; do not claim it in the README, deck or `metadata.json`.
 - Build rule (19 Oct guide): implement at least one **Meterless Engine** (H-MEM, Markovian, World Model, Scout Intent) in a working feature with a passing test. Power rule: the app must support **Meterless Nightshift as its primary AI provider**. A prompt file or unused dependency does not count.
 - No hardcoded outputs, no fabricated logs, no overclaiming in README or deck. Minimum two genuinely interacting agents; show critique, retry or branching. Logs go to `logs/trace-<id>.jsonl` and are never hand-edited.
 - Secrets only in `.env` (gitignored). Commit `.env.example` with placeholders. Never print, log or paste keys or the Nightshift token. If a key is committed, rotate it first.
 - Data must be public, small, or labelled synthetic. No personal or confidential data. NVIDIA's endpoint logs requests.
 - Declare any code or data committed before 22 Oct 00:00 UTC in `docs/PREEXISTING.md`. Only setup tooling predates it; all Black Box code was written from 22 Oct.
-- The team must be able to explain its code. Keep `docs/CURSOR_LOG.md` updated when Cursor writes real code.
+- The team must be able to explain its code.
 - Judges must be able to run it: provide `run.py` and/or `POST /run`, a `Dockerfile`, 3+ sample inputs, and a `SAMPLE_MODE` that runs real agent logic on cached data without keys.
 
 ## Machine and setup (Ricky's Windows laptop, as of 2026-10-20; teammates see docs/TEAM_SETUP.md)
@@ -30,9 +30,9 @@ Windows 11 Home, 15.8 GB RAM, **disk is tight** (C: about 8 GB free). Docker run
   - **Working lane setup (22 Oct):** the first lane runs `nvidia/nemotron-3-ultra-550b-a55b` (its card still shows the old ID `nemotron-3-super-120b-a1`); the Lightning lane is **stopped**; Preferences race width is **1**. Racing lanes broke pinned model IDs and failed requests when one lane replied empty; the Super model returns NVIDIA 404 for this key.
   - **A Nightshift restart re-seats lanes from `%LOCALAPPDATA%\ai.meterless.runtime\lanes.toml`.** Check the lanes after every restart.
   - Receipts with per-request routing detail are in `%APPDATA%\ai.meterless.runtime\meterless.json`.
-- **Cursor**: optional since 23 Oct and no credits are coming; uninstalled from this laptop for disk space (a teammate uses it).
+- **Cursor**: not used by the team since 23 Oct; uninstalled from this laptop for disk space.
 - `scripts/smoke_test.py` checks Zetaris GUI, Zetaris REST `SELECT 1` and a model reply (3 PASS expected). It proves connectivity only, not a working agent. Run it as `python -I scripts/smoke_test.py`.
-- Open items: read the Track 02 challenge statement, Meterless Engine (World Model) with a passing test, Skeptic agent, `SAMPLE_MODE` (needs organiser answer), Dockerfile and `POST /run`. Full list in `docs/HANDOFF.md`.
+- Open items: read the Track 02 challenge statement, contract v2 evaluation run, Skeptic agent, `SAMPLE_MODE` (needs organiser answer), Dockerfile and `POST /run`. Full list in `docs/HANDOFF.md`.
 
 ## Start and stop routines
 When the user says **"lets begin"**: start Docker Desktop and wait for the engine; `docker compose up -d` in `~/zetaris-platform`, wait about 2 minutes, run `./verify.sh`; launch `meterless-runtime.exe` and check `lanes.toml` still has the Ultra lane (ask the user to stop Lightning if it is running); run the smoke test; report failures.
@@ -45,7 +45,7 @@ When the user says **"we are done for today"**: `docker compose stop` (never `do
 - Do not run an Ubuntu `docker login` against a stuck engine; if `docker version` hangs inside Ubuntu, restart Docker Desktop and WSL first.
 
 ## Layout
-Built: `run.py`, `app/` (adapters, data, agents, orchestration, schemas, tracing), `scripts/zetaris/`, `eval/`, `tests/`, `input_examples/`, `logs/` (gitignored). Code map in `docs/HANDOFF.md`. Still to add: `Dockerfile`, `POST /run`, `SAMPLE_MODE`, `output_examples/` (real outputs only, never loaded at runtime). Zetaris REST call: `POST {ZETARIS_REST_URL}/sql-editor/sqls/run` with a bearer key, `X-Org-ID`, a fresh UUID `X-Request-ID`, and a UUID `queryId` in the body.
+Built: `run.py`, `app/` (adapters, data, agents, engines, orchestration, schemas, tracing), `scripts/zetaris/`, `eval/`, `tests/`, `input_examples/`, `logs/` (gitignored). Code map in `docs/HANDOFF.md`. Still to add: `Dockerfile`, `POST /run`, `SAMPLE_MODE`, `output_examples/` (real outputs only, never loaded at runtime). Zetaris REST call: `POST {ZETARIS_REST_URL}/sql-editor/sqls/run` with a bearer key, `X-Org-ID`, a fresh UUID `X-Request-ID`, and a UUID `queryId` in the body.
 
 ## More detail
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
@@ -58,4 +58,4 @@ Built: `run.py`, `app/` (adapters, data, agents, orchestration, schemas, tracing
 - Ask before anything outward-facing (pushing to GitHub, submitting, posting in HackOS or Discord).
 - Run agents only one investigation at a time: parallel runs compete for the NVIDIA per-minute cap. Python must run with `-I`.
 - Never weaken the Judge's code checks or the gold set to make a run look better. Gold labels were made by an AI and need a person's review before any accuracy number is quoted publicly.
-- Update `docs/HANDOFF.md` when the state changes, so the next session or Cursor can pick up the work.
+- Update `docs/HANDOFF.md` when the state changes, so the next session or a teammate can pick up the work.

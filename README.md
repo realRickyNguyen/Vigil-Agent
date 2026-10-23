@@ -120,7 +120,7 @@ flowchart TD
 - **Meterless Nightshift.** The only model provider. Every agent call goes through Nightshift's OpenAI-compatible gateway with the required headers, and the trace records which model actually served each call. 
 - **Meterless World Model engine.** `app/engines/world_model.py` is a Python port of the Meterless World Model reference (Apache-2.0): stable IDs, merge bands, provenance on every write, idempotent ingest, bitemporal edges and an ordered audit log, with the reference's eight conformance checks ported as tests. Black Box adds decisions that record the facts they rest on: each run stores the drug's label version and its settled verdicts, and when a later run sees a new label version, the earlier verdicts are reopened and listed in the dossier for a second look.
 - **NVIDIA Nemotron.** Both agents run on `nvidia/nemotron-3-ultra-550b-a55b` through Nightshift.
-- **Cursor** (optional for this hackathon). The team develops mainly with Claude Code and Codex, with Cursor's free plan for smaller tasks; any Cursor work is logged in [docs/CURSOR_LOG.md](docs/CURSOR_LOG.md).
+- **Cursor.** Optional for this hackathon, and the team does not use it. Development is done with Claude Code.
 
 ## Results so far
 

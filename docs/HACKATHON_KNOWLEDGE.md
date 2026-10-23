@@ -25,7 +25,7 @@ In-kind: NVIDIA DGX Spark for best use of Nemotron through Nightshift; SpaceX Cu
 Impact 30, Technical 20, Innovation 15, Demo 15, Product/UX 10, Sponsor Tech 10 (covers Zetaris, Meterless, Cursor, NVIDIA).
 
 ## Deliverables
-Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor technology explanation. Cursor: say how the team used it in the **README and `metadata.json`** (new in the Cursor sponsor file; what `metadata.json` should contain is unknown, ask on HackOS).
+Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor technology explanation. Cursor: say how the team used it in the **README and `metadata.json`** (new in the Cursor sponsor file; what `metadata.json` should contain is unknown, ask on HackOS). Cursor became optional on 23 Oct and the team does not use it, so the README says so plainly.
 
 ## Rules that can disqualify (confirmed)
 - Zetaris and Meterless must be load-bearing. Zetaris and Meterless must run on our own machine.
@@ -38,7 +38,7 @@ Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor tec
 - Three checks to apply to any idea: removal (would it work without Zetaris/Meterless?), collaboration (does one agent change another's work?), hardcoding (does a new input give a real answer?).
 
 ## How the stack fits together
-- **Cursor (Build).** **Optional since 23 Oct** (organiser change, reported by the user); no Cursor credits are provided. Not part of the running product. Keep Nightshift token and NVIDIA key out of Cursor settings.
+- **Cursor (Build).** **Optional since 23 Oct** (organiser change, reported by the user); no Cursor credits are provided. The team does not use it (decided 23 Oct); development is done with Claude Code. Not part of the running product. Keep Nightshift token and NVIDIA key out of Cursor settings.
 - **Zetaris (Data).** Runs locally in Docker. GUI http://localhost:3000, REST http://localhost:8888/api/v1.0 (org ID 1). App calls `POST /sql-editor/sqls/run` with bearer key, `X-Org-ID`, fresh UUID `X-Request-ID`. Sources become SQL tables (REST/JSON, files, databases).
 - **Nightshift (Power).** Local gateway at http://127.0.0.1:8088/v1, OpenAI-compatible. App needs base URL, Runtime token and the `meterless-app` header (the guide's curl also sends `meterless-scope: user`). The NVIDIA key lives inside Nightshift only. `meterless/auto` may pick a non-NVIDIA model, so pin a Nemotron lane for award evidence.
 - **Nemotron agents.** Roles in our own Python code calling a Nemotron model through Nightshift, with tools such as `run_sql`. Loop: user asks, model returns a tool call, code runs SQL on Zetaris, rows go back, repeat, answer.
@@ -108,9 +108,9 @@ Done: Docker/WSL, Zetaris install and API key, Zetaris GUI and PokéAPI recipe, 
 
 Open:
 - Track choice and reading the challenge statements on HackOS.
-- Cursor: optional since 23 Oct; no credits. Nothing to do unless the team uses it.
+- Cursor: optional since 23 Oct; the team does not use it. Nothing to do.
 - Meterless Engine feature with a passing test (needs a project idea). Nightshift as primary provider in the app (needs a project idea).
 - Judge-facing files: public repo, Dockerfile, `run.py` or `POST /run`, `SAMPLE_MODE`, 3+ sample inputs, README, `metadata.json`, demo video, deck.
-- Questions for organisers: Python port of an engine; what `metadata.json` needs; Cursor credit; how judges reach a local Zetaris.
+- Questions for organisers: Python port of an engine; what `metadata.json` needs; how judges reach a local Zetaris.
 
 See `docs/SETUP_CHECKLIST.md` for the full checklist.

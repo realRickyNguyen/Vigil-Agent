@@ -1,4 +1,4 @@
-# Instructions for coding agents (Codex, Cursor, Claude Code)
+# Instructions for coding agents
 
 Black Box is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` first: it covers the current state, run commands, code map, known issues and next steps. The design and its reasons are in `docs/ideas/BLACK_BOX.md`. Event rules are in `docs/HACKATHON_KNOWLEDGE.md`. Teammate setup is in `docs/TEAM_SETUP.md`.
 
@@ -15,6 +15,6 @@ Black Box is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.
 - **Keep model calls small.** Batches of 3 reactions and per-reaction label excerpts are deliberate: large prompts time out on Nightshift.
 - **One investigation at a time per NVIDIA key.** Parallel runs share the per-minute cap.
 - **Wording.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Do not overclaim in the README, deck or comments.
-- **Keep the handoff current.** When the state changes, update `docs/HANDOFF.md`. When Cursor writes real code, add a dated row to `docs/CURSOR_LOG.md`, and never backdate one.
+- **Keep the handoff current.** When the state changes, update `docs/HANDOFF.md`.
 - **Match the surrounding code.** Plain Python 3.11 standard library plus `pytest`; short docstrings that say why, not what.
 - **Ask a person** before pushing to `main`, opening the repo to the public, or posting anywhere.

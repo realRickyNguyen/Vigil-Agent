@@ -67,10 +67,7 @@ Each teammate's NVIDIA key has its own per-minute cap. Run one investigation at 
 
 - **Branches.** One branch per task, for example `feature/world-model` or `fix/single-ingredient-label`. Open a pull request into `main`, and have someone else glance at it before merging.
 - **Before every pull request:** offline tests pass; no `.env`, keys or `logs/` files are staged; `docs/HANDOFF.md` is updated if the state changed.
-- **AI tools.** We develop mainly with Claude Code and Codex. Cursor is on its free plan and used for small tasks.
+- **AI tools.** Development is done with Claude Code. The team does not use Cursor (decided 23 Oct).
   - Claude Code reads `CLAUDE.md`. Its machine-specific section describes Ricky's Windows laptop.
-  - Codex reads `AGENTS.md`.
-  - Cursor reads `.cursor/rules/` and `AGENTS.md`.
-
-  All three point to the same rules. Whoever uses Cursor for real work adds a dated row to `docs/CURSOR_LOG.md`.
+  - Any other coding agent should read `AGENTS.md`, which carries the same rules.
 - **Who does what.** Agree on owners for the next steps in [HANDOFF.md](HANDOFF.md). The organiser questions there need one person to post them on the HackOS help desk.

@@ -1,6 +1,6 @@
 # Handoff: Black Box, state as of Fri 23 Oct 2026, afternoon Sydney (early 23 Oct UTC)
 
-Start here if you are picking up the work, whether you are a teammate, Cursor's agent or a new Claude session. The design and its reasoning are in [ideas/BLACK_BOX.md](ideas/BLACK_BOX.md). Event rules are in [HACKATHON_KNOWLEDGE.md](HACKATHON_KNOWLEDGE.md).
+Start here if you are picking up the work, whether you are a teammate or a new Claude session. The design and its reasoning are in [ideas/BLACK_BOX.md](ideas/BLACK_BOX.md). Event rules are in [HACKATHON_KNOWLEDGE.md](HACKATHON_KNOWLEDGE.md).
 
 ## What it is
 
@@ -20,16 +20,16 @@ Input is a drug name. The app:
 | Hunter and Judge loop | Built. Last full run: montelukast in 9 minutes on Nemotron Ultra |
 | Decision contract v2 | **Code done and tested offline (37 tests), not yet run against Nightshift.** It separates label coverage, context and review priority; adds objection and next check per finding; closes disputes as `unresolved`; marks unreached items `pending` or `failed` |
 | Evaluation harness | Built: 100-row gold set over 5 drugs, scorer, runner. **Baseline (contract v1) scored 22 Oct:** `eval/reports/eval-20261022T063731Z.md`. 5 runs, one per drug: 93% round-1 and 95% final accuracy on clear gold items, but only 27 of 80 clear items were classified in round 1. The Judge fixed 1 item and kept 1 wrong. The two montelukast repeat runs were stopped, so there is no repeat-run agreement yet |
-| Meterless Engine (required) | **World Model: built, 13 offline tests, and one live run** (branch `feature/world-model`). Live montelukast run 22 Oct 07:54 UTC (`dossier-20261022T075444Z-c885cc`, Bryan's desktop): 15 settled verdicts recorded against the current label version; nothing reopened, as the label had not changed. Reopening itself is shown only in the offline tests so far. `app/engines/world_model.py` ports the Meterless reference (stable IDs, merge bands, provenance on every write, idempotent ingest, bitemporal edges, audit order); `tests/test_world_model.py` ports its 8 conformance checks. Our addition: decisions recorded with the facts they rest on. `pipeline.remember()` stores each run's label version and settled verdicts in `state/world-model.json` (gitignored); a later run on a changed label version reopens the earlier verdicts and lists them under `world_model.reopened` in the dossier |
+| Meterless Engine (required) | **World Model: built, 13 offline tests, and one live run** (merged into `main` 23 Oct). Live montelukast run 22 Oct 07:54 UTC (`dossier-20261022T075444Z-c885cc`, Bryan's desktop): 15 settled verdicts recorded against the current label version; nothing reopened, as the label had not changed. Reopening itself is shown only in the offline tests so far. `app/engines/world_model.py` ports the Meterless reference (stable IDs, merge bands, provenance on every write, idempotent ingest, bitemporal edges, audit order); `tests/test_world_model.py` ports its 8 conformance checks. Our addition: decisions recorded with the facts they rest on. `pipeline.remember()` stores each run's label version and settled verdicts in `state/world-model.json` (gitignored); a later run on a changed label version reopens the earlier verdicts and lists them under `world_model.reopened` in the dossier |
 | Skeptic agent | Not started. Plan: one operation, reporter-type composition for top candidates |
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
 | README | **Done** (22 Oct): user story, problem, inputs and outputs, why agents, Track 02 mapping, sponsors, results, limitations. Sourced statistics: 23% (Doernberg et al., JAMA Intern Med 2026, checked), about 27,000 alerts and 99.9% closed (GSK, Drug Safety 2026, checked), and FDA's "more than 2 million" reports a year. The exact 2,048,059 from the 2025 OSE report is **not verified**, so it isn't used |
 | Team briefing deck | **Done** (23 Oct), internal only: `C:\Users\Ricky\projects\black-box-deck\` on Ricky's laptop, **outside the repo** because it contains licensed BioRender assets and sponsor logos. Contents: `black_box_team_briefing.pptx` and `.pdf`, `speaker_notes.md` (plain-language notes, the source), `build_deck.ps1` (rebuild with the research-deck skill). 13 slides: track, why it matters, user, proposal, why agents, workflow diagram, sponsor tools, progress checklist, submission, video plan, summary |
 | Submission deck, video, `metadata.json` | Not started. Build the submission deck from the team briefing; the required contents are in `HACKATHON_KNOWLEDGE.md` |
 
-Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). Last pushed commit: `90ac97b` (outdated review pack removed). **Uncommitted local edits (23 Oct):** `CLAUDE.md`, `README.md`, `docs/HANDOFF.md`, `docs/HACKATHON_KNOWLEDGE.md`, `docs/CURSOR_LOG.md`, all marking Cursor as optional. Ricky asked to leave them uncommitted for now; commit them (no Co-Authored-By trailer) and push when he says so. Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). On 23 Oct Bryan's `feature/world-model` and `fix/nightshift-connection-reset` branches were merged into `main` (51 offline tests pass) and pushed. Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
 
-Tools: Cursor became optional on 23 Oct and no credits are coming; we develop mainly with Claude Code and Codex, and Cursor's free plan may be used for small tasks. `CLAUDE.md`, `AGENTS.md` and `.cursor/rules/` carry the same rules.
+Tools: the team does not use Cursor (decided 23 Oct, after the organisers made it optional). Development is done with Claude Code, which reads `CLAUDE.md`; `AGENTS.md` carries the same rules for any other coding agent.
 
 ## How to run
 
@@ -84,18 +84,19 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | `run.py` | CLI entry point; prints the review queue |
 | `app/config.py` | Settings from `.env`. Defaults: Ultra for both agents, 2 parallel model calls, 2 revision rounds |
 | `app/adapters/zetaris.py` | Zetaris REST client: retries, short query IDs for evidence, every query traced |
-| `app/adapters/meterless.py` | Nightshift client: required headers, retries, `served_by` logging, JSON extraction (handles Ultra's inline `</think>`) |
+| `app/adapters/meterless.py` | Nightshift client: required headers, retries (including dropped connections), `served_by` logging, JSON extraction (handles Ultra's inline `</think>`) |
 | `app/data/faers.py` | The Clerk: registers openFDA tables per drug, signal SQL, label fetch |
 | `app/data/label.py` | Label helpers: per-reaction sentence retrieval, literal term lookup |
 | `app/agents/rules.py` | Code routing for easy cases: administrative terms, treated condition, literal label match |
 | `app/agents/hunter.py` | Hunter: pick (1 call), then classify in batches of 3 with fallbacks |
 | `app/agents/judge.py` | Judge: code checks first, then model review in batches; objection and next check per finding |
-| `app/orchestration/pipeline.py` | The loop, dispute settling (`settle`), review queue and counts, dossier |
+| `app/orchestration/pipeline.py` | The loop, dispute settling (`settle`), review queue and counts, World Model record (`remember`), dossier |
+| `app/engines/world_model.py` | Meterless World Model engine (Python port of the reference) plus decisions that reopen when a fact they rest on changes |
 | `app/schemas.py` | `Finding` (contract v2), `Verdict`, `Signal`, status constants |
 | `app/tracing.py` | Append-only JSONL trace, thread-safe |
 | `scripts/zetaris/` | Baseline SQL and a runner that sends `.sql` files through the REST API |
 | `eval/` | Gold set, labelling rules, scorer, runner, backtest feasibility notes |
-| `tests/` | Offline tests: app logic and scorer |
+| `tests/` | Offline tests: app logic, scorer and World Model conformance |
 ## Rules to keep (from the hackathon and from what broke)
 
 - **Secrets only in `.env`.** Never print them. The NVIDIA key lives inside Nightshift only.
@@ -103,7 +104,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **Every number an agent cites must come from a Zetaris query ID in the trace.** The Judge's code checks enforce this; do not weaken them to make a run pass.
 - **Keep model calls small.** Large prompts on Nightshift time out or come back empty. Batches of 3 and per-reaction label excerpts are deliberate.
 - **Do not overclaim.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Gold accuracy is a development check labelled by an AI, not clinical validation.
-- **Cursor.** Optional since 23 Oct; no credits. Development is mainly Claude Code and Codex, with Cursor's free plan for small tasks if useful. Log real Cursor work in [CURSOR_LOG.md](CURSOR_LOG.md) on the day it happens. Never backdate it.
+- **No Cursor claims.** The team does not use Cursor. Do not say it did any work in the README, deck or `metadata.json`.
 
 ## Known issues
 
@@ -126,7 +127,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 
   The review file is on Ricky's laptop (`Downloads\BLACK_BOX_PANEL_REVIEW.md`), not in the repo.
 - **Ricky's laptop disk** filled up on 22 Oct. Cleanup so far:
-  - Cursor's install was cancelled. Cursor was to be uninstalled; a teammate uses Cursor instead.
+  - Cursor's install was cancelled. Cursor was later dropped by the whole team (23 Oct).
   - Nightshift's local Llama models went to the Recycle Bin.
   - Five unused Docker images and the build cache were removed.
 
@@ -145,7 +146,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
    - coverage: the baseline classified only a third of the clear gold items
 
    The repeat runs give the first stability figure.
-3. **World Model engine:** built on `feature/world-model`, offline tests and one live run done. Still to do: a pull request into `main`, and the organiser answer on whether a Python port counts for the build rule (open question 3).
+3. **World Model engine:** merged into `main` on 23 Oct, with offline tests and one live run. Still to do: the organiser answer on whether a Python port counts for the build rule (open question 3).
 4. **Tune the Hunter's selection** using the evaluation results (transparent criteria, a mix of candidates, no drug-specific hacks).
 5. **Skeptic with one operation:** reporter-type composition for the top review-next items. It provides context, never proof.
 6. **One investigation page:** ranked queue, coverage counts, evidence expansion.
@@ -154,6 +155,6 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 ## Open questions for the organisers
 
 1. How should judges run an app whose agents need a model, given the "SAMPLE_MODE without keys" rule? Options: a local Nightshift lane, labelled replay of recorded model replies, or judges using their own Nightshift.
-2. (Settled 23 Oct: Cursor is optional.) Does the sponsor explanation still need a Cursor paragraph, or a `metadata.json`?
+2. (Settled 23 Oct: Cursor is optional, and we do not use it.) Does the sponsor explanation need to mention Cursor at all?
 3. Is a Python implementation of a Meterless Engine, with our own tests, accepted for the build rule?
 4. What should `metadata.json` contain?
