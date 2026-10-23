@@ -173,6 +173,24 @@ def test_chat_retries_when_nightshift_drops_the_connection(monkeypatch):
     assert [k for _, k, _ in client.tracer.events] == ["llm_retry", "llm_call"]
 
 
+def test_trace_keeps_full_prompt_and_reply_but_not_the_token(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="secret-token-xyz", max_retries=0,
+                                                        meterless_url="http://x", meterless_app="a",
+                                                        model_timeout=1), FakeTracer())
+    messages = [{"role": "system", "content": "You are the Judge."}, {"role": "user", "content": "Drug: x"}]
+    reply = "thinking...</think>{\"verdicts\": []}"
+    monkeypatch.setattr(client, "_post", lambda body: {"model": "served", "choices": [
+        {"message": {"content": reply, "reasoning_content": "hidden steps"}}]})
+    client.chat("judge", "m", messages)
+    (_, kind, data), = client.tracer.events
+    assert kind == "llm_call" and data["messages"] == messages and data["reply"] == reply
+    assert data["reasoning"] == "hidden steps" and data["served_by"] == "served"
+    assert "secret-token-xyz" not in json.dumps(client.tracer.events)
+
+
 def hunter_ctx():
     passing = [Signal(n, a=10, b=1, c=1, d=1, prr=3.0, chi2=50 - i) for i, n in enumerate("ABCDEFGHIJ")]
     return {"drug": "x", "passing": passing, "label": {}, "label_qid": "q-l", "screen_qid": "q-s",
