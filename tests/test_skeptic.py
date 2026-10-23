@@ -78,10 +78,25 @@ def test_assess_outcomes():
     confounded = {"co_drug": "b", **pair_stats(counts(20, 1000, 100, 10000, 200, 10000, 1000, 100000))}
     interacting = {"co_drug": "c", **pair_stats(INTERACTION)}
     assert assess([holds])["outcome"] == "holds"
-    out = assess([holds, confounded, interacting])
-    assert out["outcome"] == "challenged"
-    assert out["adjusted_below_threshold"] == ["b"] and out["possible_interactions"] == ["c"]
+    out = assess([holds, confounded])
+    assert out["outcome"] == "challenged" and out["challenge_reasons"] == ["adjusted_below_threshold"]
+    assert out["adjusted_below_threshold"] == ["b"]
+    # An interaction is context only: it is reported but does not challenge.
+    out = assess([holds, interacting])
+    assert out["outcome"] == "holds" and out["possible_interactions"] == ["c"]
     assert assess([{"co_drug": "d", "error": "x"}])["outcome"] == "not_checked"
+
+
+def test_assess_challenges_a_pattern_shared_with_most_co_drugs():
+    # The co-drug alone has a 6% rate against about 1% elsewhere, so the reaction passes its screen too.
+    shared = pair_stats(counts(40, 1000, 300, 10000, 600, 10000, 1000, 100000))
+    assert shared["co_drug_passes_screen"] and shared["adjusted_prr"] >= 2
+    holds = {"co_drug": "a", **pair_stats(NO_INTERACTION)}
+    out = assess([holds, {"co_drug": "e", **shared}, {"co_drug": "f", **shared}])
+    assert out["outcome"] == "challenged" and out["challenge_reasons"] == ["shared_with_co_drugs"]
+    assert out["co_drugs_passing_screen"] == ["e", "f"]
+    assert assess([holds, {"co_drug": "e", **shared}, {"co_drug": "g", **pair_stats(NO_INTERACTION)}])["outcome"] == "holds"
+    assert assess([{"co_drug": "e", **shared}])["outcome"] == "holds"  # one co-drug is not "most"
 
 
 # --- the Skeptic round in the pipeline -------------------------------------------------------------

@@ -149,8 +149,10 @@ class Analyst:
         skeptic = {r: compact(ctx["skeptic"][r]) for r in reactions if r in ctx.get("skeptic", {})}
         if skeptic:
             user += ("\n\nThe Skeptic checked the drugs most often reported alongside this one (adjusted_prr: this "
-                     "drug's PRR adjusted for the co-drug; possible_interaction: more reports with both drugs than "
-                     "either alone predicts). Take it into account and cite its query IDs in \"evidence\" if you "
+                     "drug's PRR adjusted for the co-drug; co_drug_passes_screen: the reaction is also "
+                     "disproportionate for the co-drug, and if that holds for most co-drugs the pattern may belong to "
+                     "the patients' disease; possible_interaction: more reports with both drugs than either alone "
+                     "predicts, context only). Take it into account and cite its query IDs in \"evidence\" if you "
                      "rely on it:\n" + json.dumps(skeptic, indent=1))
         if feedback:
             user += ("\n\nThe Reviewer reviewed your earlier findings for these reactions. For each rejected one, "

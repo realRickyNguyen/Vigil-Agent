@@ -117,6 +117,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"))
+    # The namespace keeps the project's first name (Vigil) so earlier runs' state still loads.
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -200,7 +201,8 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
         ev = skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None)
         ctx["skeptic"][r] = ev
         ctx["evidence_ids"] |= set(ev["query_ids"])
-        tracer.event("skeptic", "co_drug_check", reaction=r, outcome=ev["outcome"], summary=ev.get("summary"),
+        tracer.event("skeptic", "co_drug_check", reaction=r, outcome=ev["outcome"],
+                     challenge_reasons=ev.get("challenge_reasons", []), summary=ev.get("summary"),
                      pairs=ev["pairs"], query_ids=ev["query_ids"], error=ev.get("error"))
     challenged = [state[r]["finding"] for r in picked if ctx["skeptic"][r]["outcome"] == "challenged"]
     counts = {"checked": len(picked), "challenged": len(challenged), "priority_changed": 0}
