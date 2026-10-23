@@ -220,6 +220,25 @@ def test_trace_keeps_full_prompt_and_reply_but_not_the_token(monkeypatch):
     assert kind == "llm_call" and data["messages"] == messages and data["reply"] == reply
     assert data["reasoning"] == "hidden steps" and data["served_by"] == "served"
     assert "secret-token-xyz" not in json.dumps(client.tracer.events)
+    assert data["nightshift"] is None  # no inline receipt in this reply
+
+
+def test_trace_records_nightshift_memory_and_scaffold_from_the_receipt():
+    from app.adapters.meterless import nightshift_steps
+    # Shape of a real Nightshift 1.2.1 reply on 23 Oct, trimmed to the fields we read.
+    reply = {"choices": [], "meterless": {"receipt": {
+        "receipt_id": "rcpt_req_1qp86xv3", "mode": "fast",
+        "hmem": {"ids": ["mem_a", "mem_b", "mem_c"], "injected": 3, "strategy": "comprehensive"},
+        "reasoning_scaffold": {"active": True, "variant": "with-plan"},
+        "phases": [{"phase": "planning"}, {"phase": "code_patch"}],
+        "egress": {"sent": {"context_sources": ["messages", "hmem:3 records"]}}}}}
+    assert nightshift_steps(reply) == {"receipt_id": "rcpt_req_1qp86xv3", "hmem_injected": 3,
+                                       "hmem_ids": ["mem_a", "mem_b", "mem_c"], "scaffold_active": True,
+                                       "scaffold_variant": "with-plan", "phases": ["planning", "code_patch"],
+                                       "context_sources": ["messages", "hmem:3 records"], "mode": "fast"}
+    plain = {"meterless": {"receipt": {"receipt_id": "r", "hmem": None, "reasoning_scaffold": None, "phases": []}}}
+    assert nightshift_steps(plain)["hmem_injected"] == 0 and not nightshift_steps(plain)["scaffold_active"]
+    assert nightshift_steps({"choices": []}) is None
 
 
 def hunter_ctx():

@@ -120,6 +120,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                                  for q in queue)}
 
     queries, degraded = {}, []
+    model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0}
     with tracer.path.open(encoding="utf-8") as fh:
         for line in fh:
             e = json.loads(line)
@@ -127,6 +128,12 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                 queries[e["query_id"]] = {"purpose": e["purpose"], "sql": e["sql"]}
             if e["event"] == "degraded":
                 degraded.append({"agent": e["agent"], "step": e["step"], "fallback": e["fallback"]})
+            if e["event"] == "llm_call":
+                ns = e.get("nightshift")
+                model_calls["total"] += 1
+                model_calls["without_receipt"] += ns is None
+                model_calls["with_memory_injected"] += bool(ns and ns["hmem_injected"])
+                model_calls["with_reasoning_scaffold"] += bool(ns and ns["scaffold_active"])
 
     dossier = {
         "run_id": tracer.run_id,
@@ -137,6 +144,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "counts": counts,
         "review_queue": queue,
         "degraded_steps": degraded,
+        # Nightshift steps our app did not ask for, counted from each call's receipt (see nightshift_steps).
+        "model_calls": model_calls,
         "hunter_summary": summary,
         "rounds": rounds,
         "world_model": world,

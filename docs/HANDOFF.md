@@ -42,7 +42,9 @@ Tools: the team does not use Cursor (decided 23 Oct, after the organisers made i
 - NIGHT › LANES: the first lane runs `nvidia/nemotron-3-ultra-550b-a55b` (its card still shows the old ID `nemotron-3-super-120b-a1`). The **Lightning lane is stopped**.
 - Setup › PREFERENCES: **race width 1**.
 - Why: racing two lanes made pinned model IDs meaningless, and an empty reply from one lane failed the whole request. The Super model itself returns NVIDIA 404 for this key.
-- The other preference changes we discussed (reasoning scaffold, fusion, judging, cache and so on set to off) have **not** been applied.
+- Setup › PREFERENCES › Quality track: **Reasoning scaffold off** (set 23 Oct; saved in `%LOCALAPPDATA%i.meterless.runtime\state\setpoints.json` with race width 1). Answer fusion, Answer judging and Best-of-N are still `auto`; set them off too, because if a restart returns race width to 6 they would merge or judge several lanes' answers.
+- **Why restarts bring Lightning back:** the active fleet is "Imported" (`fleet-state.json` → `imported-v2` in `fleets.toml`), a 22 Oct snapshot with the old Super ID (404 for our key) and Lightning, both autostart and racing. Fix: set the lanes as wanted and save them as a custom fleet, then activate it.
+- **H-MEM memory cannot be switched off as far as we know** (no setting found in the app, its files or the organiser guide). It injected 2 to 3 earlier answers into 32 of 34 calls on 23 Oct, after our app sends the prompt, so the injected text is not in our trace. Since 23 Oct every `llm_call` trace event has a `nightshift` field from the receipt Nightshift returns inline (memories injected and their IDs, scaffold state, phases, context sources), and each dossier counts it under `model_calls`. Ask the organisers whether H-MEM can be disabled per app.
 
 Then, from the repo root:
 

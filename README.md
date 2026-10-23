@@ -183,6 +183,7 @@ Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.json
   - Both limits are shown in the coverage counts.
 - **Aggregate data only:** no case-level review and no duplicate removal. Breakdowns such as reporter type give context, not adjustment for confounding.
 - **Labels:** the label is the one openFDA returns for the generic name, and that can be a combination product (a fix is planned).
+- **Nightshift memory:** Nightshift's H-MEM can add earlier answers to a prompt after the app sends it, and we found no way to turn it off. Each model call's trace event records how many memories were injected (from Nightshift's own receipt), and the dossier counts them under `model_calls`, so runs can be compared with that in view.
 - **Shared model:** the Hunter and Judge use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
 
 ## Data and privacy

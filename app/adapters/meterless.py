@@ -32,6 +32,24 @@ def extract_json(text: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
+def nightshift_steps(response: dict) -> dict | None:
+    """What Nightshift did to one call, from the compute receipt it returns inline (response["meterless"]
+    ["receipt"]). Nightshift can add its own steps: H-MEM injects earlier answers into the prompt after our app
+    sends it, so the injected text never appears in our trace, and the reasoning scaffold can add a planning call.
+    On 23 Oct memory was injected into 32 of 34 calls and we found no switch for it, so every call records it."""
+    receipt = (response.get("meterless") or {}).get("receipt")
+    if not receipt:
+        return None  # not served by Nightshift, or an older Nightshift without inline receipts
+    hmem = receipt.get("hmem") or {}
+    scaffold = receipt.get("reasoning_scaffold") or {}
+    return {"receipt_id": receipt.get("receipt_id"),
+            "hmem_injected": hmem.get("injected", 0), "hmem_ids": hmem.get("ids", []),
+            "scaffold_active": bool(scaffold.get("active")), "scaffold_variant": scaffold.get("variant"),
+            "phases": [p.get("phase") for p in receipt.get("phases") or []],
+            "context_sources": ((receipt.get("egress") or {}).get("sent") or {}).get("context_sources", []),
+            "mode": receipt.get("mode")}
+
+
 class NightshiftClient:
     def __init__(self, settings: Settings, tracer: Tracer):
         if not settings.meterless_token:
@@ -69,7 +87,7 @@ class NightshiftClient:
                                   served_by=j.get("model"), prompt_sha=prompt_sha,
                                   prompt_chars=sum(len(m["content"]) for m in messages),
                                   reply_chars=len(content), usage=j.get("usage"), ms=t.ms, attempt=attempt,
-                                  messages=messages, reply=content,
+                                  messages=messages, reply=content, nightshift=nightshift_steps(j),
                                   **({"reasoning": msg["reasoning_content"]} if msg.get("reasoning_content") else {}))
                 if not content.strip():
                     raise MeterlessError("empty reply")
