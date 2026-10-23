@@ -27,7 +27,7 @@ Input is a drug name. The app:
 | Team briefing deck | **Done** (23 Oct), internal only: `C:\Users\Ricky\projects\black-box-deck\` on Ricky's laptop, **outside the repo** because it contains licensed BioRender assets and sponsor logos. Contents: `black_box_team_briefing.pptx` and `.pdf`, `speaker_notes.md` (plain-language notes, the source), `build_deck.ps1` (rebuild with the research-deck skill). 13 slides: track, why it matters, user, proposal, why agents, workflow diagram, sponsor tools, progress checklist, submission, video plan, summary |
 | Submission deck, video, `metadata.json` | Not started. Build the submission deck from the team briefing; the required contents are in `HACKATHON_KNOWLEDGE.md` |
 
-Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). On 23 Oct Bryan's `feature/world-model` and `fix/nightshift-connection-reset` branches were merged into `main` (51 offline tests pass) and pushed. Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). On 23 Oct Bryan's `feature/world-model` and `fix/nightshift-connection-reset` branches were merged into `main` (51 offline tests pass) and pushed. Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; final ones go into `output_examples/` for submission (next step 8).
 
 Tools: the team does not use Cursor (decided 23 Oct, after the organisers made it optional). Development is done with Claude Code, which reads `CLAUDE.md`; `AGENTS.md` carries the same rules for any other coding agent.
 
@@ -152,6 +152,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 5. **Skeptic with one operation:** reporter-type composition for the top review-next items. It provides context, never proof.
 6. **One investigation page:** ranked queue, coverage counts, evidence expansion.
 7. **Submission package:** README, Dockerfile, `POST /run`, samples, video, deck, `metadata.json`, and a fresh-machine test.
+8. **Evidence for judges:** `logs/` is gitignored, so judges see no traces unless we publish them. Once the system is final, run each sample drug on it, then copy the chosen `trace-<run>.jsonl` and `dossier-<run>.json` **unedited** into `output_examples/` and point to them from the README. The app never reads `output_examples/`. Since 23 Oct every `llm_call` event holds the full prompt messages and the raw reply (including Ultra's inline reasoning), so a reader can see exactly what each agent was shown and answered. Traces made before that hold only sizes and a prompt hash, so publish only traces from the final system.
 
 ## Open questions for the organisers
 

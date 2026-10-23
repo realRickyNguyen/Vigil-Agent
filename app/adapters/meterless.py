@@ -62,10 +62,15 @@ class NightshiftClient:
                     j = self._post(body)
                 msg = j["choices"][0]["message"]
                 content = msg.get("content") or ""
+                # The full messages and reply go into the trace so a reader can see exactly what each agent
+                # was shown and what it answered, including Ultra's inline reasoning. Nothing secret is in
+                # them: the token travels only in the request headers, and all data is public openFDA.
                 self.tracer.event(agent, "llm_call", provider="meterless-nightshift", model=model,
                                   served_by=j.get("model"), prompt_sha=prompt_sha,
                                   prompt_chars=sum(len(m["content"]) for m in messages),
-                                  reply_chars=len(content), usage=j.get("usage"), ms=t.ms, attempt=attempt)
+                                  reply_chars=len(content), usage=j.get("usage"), ms=t.ms, attempt=attempt,
+                                  messages=messages, reply=content,
+                                  **({"reasoning": msg["reasoning_content"]} if msg.get("reasoning_content") else {}))
                 if not content.strip():
                     raise MeterlessError("empty reply")
                 return content
