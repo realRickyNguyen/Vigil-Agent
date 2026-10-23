@@ -16,15 +16,20 @@ from app.schemas import Finding, Signal
 
 # Includes reasoning tokens. Ultra used 2,100 to 4,100 per classify call on 22 Oct; 4,000 truncated one reply.
 MAX_TOKENS = 6000
-MAX_PICKS = 10
+# Selection (changed 23 Oct): the strongest rows by chi-squared are always assessed, and the model may add a few
+# from the rest of the shown rows. Before, the model chose 10 of the top 30 and the 22 Oct evaluation found only
+# 27 of 80 clear reference items were assessed in round 1. A fixed rule is transparent and names no drug.
+TOP_ALWAYS = 15
+EXTRA_PICKS = 5
 BATCH = 3  # reactions per classify call
+COMBINATION_NOTE_AT = 0.05  # combination share above which the agents are told about partner drugs
 
-PICK_SYSTEM = f"""You are the Analyst in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
+PICK_SYSTEM = """You are the Analyst in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
 
-Choose up to {MAX_PICKS} reactions a drug-safety reviewer should look at. Prefer strong signals (high PRR backed by many reports) and anything that could be a safety problem, including reactions that may simply be the disease the drug treats, so they can be ruled out. Cover different body systems rather than many terms for the same thing. Skip administrative terms such as product use issues.
+The strongest rows are already being assessed. From the further rows shown, choose up to EXTRA more reactions a drug-safety reviewer should also see: anything that could be a safety problem, especially in body systems the strongest rows do not cover. Skip administrative terms such as product use issues. Choose none if nothing stands out.
 
 Use only reactions from the table, spelled exactly as in the table. Reply with only a JSON object:
-{{"picked": [{{"reaction": str, "why": str}}]}}"""
+{"picked": [{"reaction": str, "why": str}]}"""
 
 CLASSIFY_SYSTEM = """You are the Analyst in a drug-safety review team. For one drug, you help a human drug-safety analyst decide which reported drug-reaction patterns deserve a closer look. FAERS statistics show reporting patterns, not that the drug causes anything.
 
@@ -58,40 +63,61 @@ def screen_table(signals: list[Signal], limit: int) -> str:
     return "\n".join(lines)
 
 
+def context_notes(ctx: dict) -> str:
+    """Facts about the data that change how a reaction should be read, for both agents' prompts."""
+    c = ctx.get("combination")
+    if not c or c["share"] < COMBINATION_NOTE_AT:
+        return ""
+    return (f"\nAbout {c['share']:.0%} of these reports name {ctx['drug']} inside a combination product (most "
+            f"often {', '.join(p['name'] for p in c['top_products'][:3])}; partner drugs: "
+            f"{', '.join(c['partners'][:3])}). A reaction may belong to a partner drug rather than {ctx['drug']}; "
+            f"say so where it applies.")
+
+
 class Analyst:
     name = "analyst"
 
-    def __init__(self, llm: NightshiftClient, model: str, parallel: int = 2):
+    def __init__(self, llm: NightshiftClient, model: str, parallel: int = 2, top: int = TOP_ALWAYS,
+                 extra: int = EXTRA_PICKS):
         self.llm = llm
         self.model = model
         self.parallel = parallel
+        self.top = top
+        self.extra = extra
 
     def header(self, ctx: dict) -> str:
         return (f"Drug: {ctx['drug']}\n"
                 f"FAERS reports mentioning the drug: {ctx['totals']['drug_reports']} of {ctx['totals']['all_reports']} "
-                f"(openFDA data updated {ctx['totals']['data_last_updated']}; query {ctx['totals']['query_id']}).")
+                f"(openFDA data updated {ctx['totals']['data_last_updated']}; query {ctx['totals']['query_id']})."
+                f"{context_notes(ctx)}")
 
     def pick(self, ctx: dict) -> list[str]:
+        """Up to self.extra more reactions from the shown rows below the always-assessed top."""
+        rows = ctx["passing"][self.top:ctx["screen_shown"]]
+        if not rows or not self.extra:
+            return []
         try:
-            return self._pick(ctx)
+            return self._pick(ctx, rows)
         except MeterlessError as e:
-            fallback = [s.reaction for s in ctx["passing"][:MAX_PICKS]]
             self.llm.tracer.event(self.name, "degraded", step="pick", error=str(e)[:200],
-                                  fallback="top reactions by chi2", reactions=fallback)
-            return fallback
+                                  fallback="no extra picks; the top rows by chi2 are still assessed")
+            return []
 
-    def _pick(self, ctx: dict) -> list[str]:
-        user = (f"{self.header(ctx)}\n\nDisproportionality screen (query {ctx['screen_qid']}). Rows pass the Evans "
-                f"screen (PRR >= 2, chi2 >= 4, at least 3 reports), strongest evidence (chi2) first, top {ctx['screen_shown']} of "
-                f"{ctx['screen_passing']}:\n{ctx['screen_table']}")
-        out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": PICK_SYSTEM},
+    def _pick(self, ctx: dict, rows: list[Signal]) -> list[str]:
+        top = ", ".join(s.reaction for s in ctx["passing"][:self.top])
+        user = (f"{self.header(ctx)}\n\nAlready being assessed (the {self.top} strongest rows by chi2): {top}\n\n"
+                f"Further rows of the disproportionality screen (query {ctx['screen_qid']}). Rows pass the Evans "
+                f"screen (PRR >= 2, chi2 >= 4, at least 3 reports), strongest evidence (chi2) first:\n"
+                f"{screen_table(rows, len(rows))}")
+        system = PICK_SYSTEM.replace("EXTRA", str(self.extra))
+        out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": system},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
-        known = {s.reaction for s in ctx["passing"]}
+        known = {s.reaction for s in rows}
         picked = [p["reaction"] for p in out.get("picked", []) if isinstance(p, dict) and p.get("reaction") in known]
         self.llm.tracer.event(self.name, "picked", reactions=picked,
                               dropped=[p for p in out.get("picked", []) if isinstance(p, dict)
                                        and p.get("reaction") not in known])
-        return list(dict.fromkeys(picked))[:MAX_PICKS]
+        return list(dict.fromkeys(picked))[:self.extra]
 
     def classify(self, ctx: dict, reactions: list[str], feedback: dict | None = None) -> tuple[list[Finding], str]:
         """Rules first, then the model in small parallel batches. Reactions the model could not classify
@@ -158,13 +184,19 @@ class Analyst:
                      "answer its objection: change your answer if the objection holds, or keep it and say why in "
                      "\"reasoning\". Classify the missing ones it named:\n" + json.dumps(feedback, indent=1))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": CLASSIFY_SYSTEM},
-                                                         {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
+                                                         {"role": "user", "content": user}], max_tokens=MAX_TOKENS,
+                                 fail_fast=len(reactions) > 1)
         wanted = set(reactions)
         findings = [Finding.from_dict(d) for d in out.get("findings", []) if isinstance(d, dict)]
         return [f for f in findings if f.reaction in wanted], str(out.get("summary", ""))
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
-        ctx["picked"] = self.pick(ctx)
+        always = [s.reaction for s in ctx["passing"][:self.top]]
+        chosen = self.pick(ctx)
+        ctx["selection"] = {"always": always, "chosen": chosen,
+                            "rule": f"the {self.top} strongest rows by chi2, plus up to {self.extra} chosen by the model"}
+        self.llm.tracer.event(self.name, "selection", **ctx["selection"])
+        ctx["picked"] = list(dict.fromkeys(always + chosen))
         return self.classify(ctx, ctx["picked"])
 
     def revise(self, ctx: dict, rejected: list[Finding], feedback: dict) -> tuple[list[Finding], str]:

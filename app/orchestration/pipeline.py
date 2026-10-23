@@ -43,7 +43,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     zetaris = ZetarisClient(settings, tracer)
     llm = NightshiftClient(settings, tracer)
     clerk = DataClerk(zetaris)
-    analyst = Analyst(llm, settings.analyst_model, settings.parallel)
+    analyst = Analyst(llm, settings.analyst_model, settings.parallel, settings.analyst_top, settings.analyst_extra)
     reviewer = Reviewer(llm, settings.reviewer_model, clerk, settings.parallel)
     skeptic = Skeptic(clerk, settings.skeptic_co_drugs)
 
@@ -54,16 +54,20 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     screen_res, signals = clerk.signals(drug)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     label_qid, label = clerk.label(drug)
+    combo_res, combination = clerk.combination_products(drug, totals["drug_reports"])
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
+        "label_choice": clerk.label_choice, "combination": combination,
         "screen_qid": screen_res.query_id, "screen_passing": len(passing),
         "screen_shown": min(SCREEN_ROWS, len(passing)),
         "screen_table": screen_table(passing, SCREEN_ROWS),
-        "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set()),
+        "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set())
+                        | ({combo_res.query_id} if combo_res else set()),
     }
     tracer.event("data_clerk", "evidence_ready", screened=len(signals), passing=len(passing),
                  label_sections=[k for k in label if k not in ("effective_time", "set_id")],
-                 label_effective=label.get("effective_time"), evidence_ids=sorted(ctx["evidence_ids"]))
+                 label_effective=label.get("effective_time"), label_choice=clerk.label_choice,
+                 combination=combination, evidence_ids=sorted(ctx["evidence_ids"]))
 
     # Analyst <-> Reviewer loop. Accepted findings are settled and never re-done; each round only handles the
     # Reviewer's rejections and missing reactions nobody has attempted yet. A dispute that cannot be settled
@@ -123,6 +127,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     tracer.event("world_model", "remembered", **world)
     counts = {"reactions_screened": len(signals), "passing_evans": len(passing),
               "shown_to_analyst": ctx["screen_shown"], "picked_by_analyst": len(ctx.get("picked", [])),
+              "chosen_by_analyst": len((ctx.get("selection") or {}).get("chosen", [])),
               "assessed": len(state), "decided_by_rule": sum(e["finding"].decided_by == "rule" for e in state.values()),
               **{s: sum(q["workflow_status"] == s for q in queue) for s in STATUS},
               "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
@@ -150,7 +155,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "drug": drug,
         "data": {"source": "openFDA FAERS and drug label via Zetaris", **{k: totals[k] for k in
                  ("drug_reports", "all_reports", "data_last_updated")},
-                 "label_effective": label.get("effective_time"), "label_set_id": label.get("set_id")},
+                 "label_effective": label.get("effective_time"), "label_set_id": label.get("set_id"),
+                 "label_choice": clerk.label_choice, "combination_products": combination},
         "counts": counts,
         "review_queue": queue,
         "degraded_steps": degraded,

@@ -19,7 +19,7 @@ import re
 import time
 
 from app.adapters.zetaris import ZetarisError
-from app.data.faers import DRUG_RE, DataClerk
+from app.data.faers import DRUG_RE, DataClerk, ingredient_parts
 
 # Salt and ester words, so "ALBUTEROL SULFATE" and "ALBUTEROL" count as one co-drug.
 SALTS = {"sodium", "disodium", "potassium", "calcium", "magnesium", "hydrochloride", "dihydrochloride", "hcl",
@@ -37,7 +37,7 @@ def base_names(term: str) -> list[str]:
     """Ingredient names in one openFDA generic name, lower case, salt words removed. A combination
     product gives one name per ingredient. A name that is only salt words is kept whole."""
     out = []
-    for part in re.split(r",| AND |/|\\", term.upper()):  # active substances join with a backslash
+    for part in ingredient_parts(term):  # drops dosage-form parts such as ", FILM COATED"
         words = part.lower().split()
         kept = [w for w in words if w not in SALTS]
         name = " ".join(kept or words)
@@ -55,9 +55,13 @@ def rank_co_drugs(rows: list[tuple[str, int]], drug: str, k: int) -> list[dict]:
         for name in base_names(term):
             if name in own or any(o in name.split() or name in o.split() for o in own) or not DRUG_RE.match(name):
                 continue
-            m = merged.setdefault(name, {"co_drug": name, "names": [], "reports_ranked": 0})
+            m = merged.setdefault(name, {"co_drug": name, "names": [], "reports_ranked": 0,
+                                         "combination_partner": False})
             m["names"].append(term)
             m["reports_ranked"] += reports
+            # Sold in one product with the drug (e.g. oxycodone in acetaminophen combinations): every report
+            # of that product names both, so the co-drug's numbers overlap with the drug's by construction.
+            m["combination_partner"] |= any(o in base_names(term) for o in own)
     return sorted(merged.values(), key=lambda m: -m["reports_ranked"])[:k]
 
 
@@ -139,7 +143,7 @@ def summary(ev: dict, drug: str, prr: float | None) -> str:
 def compact(ev: dict) -> dict:
     """What the Reviewer and Analyst see: the outcome, the key numbers per co-drug, and the query IDs."""
     keys = ("co_drug", "query_id", "share", "co_drug_prr", "co_drug_passes_screen", "adjusted_prr", "observed_both",
-            "expected_both", "omega025", "possible_interaction", "error")
+            "expected_both", "omega025", "possible_interaction", "combination_partner", "error")
     return {"outcome": ev["outcome"], "challenge_reasons": ev.get("challenge_reasons", []),
             "shared_with_co_drugs": ev.get("shared_with_co_drugs", False), "summary": ev.get("summary", ""),
             "co_drugs": [{k: p[k] for k in keys if k in p} for p in ev.get("pairs", [])]}
@@ -182,7 +186,7 @@ class Skeptic:
                 continue
             ev["query_ids"].append(res.query_id)
             ev["pairs"].append({"co_drug": cand["co_drug"], "query_id": res.query_id, "counts": counts,
-                                **pair_stats(counts)})
+                                "combination_partner": cand["combination_partner"], **pair_stats(counts)})
         ev.update(assess(ev["pairs"]))
         ev["summary"] = summary(ev, drug, prr)
         return ev

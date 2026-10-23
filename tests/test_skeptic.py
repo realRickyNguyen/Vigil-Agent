@@ -64,6 +64,7 @@ def test_base_names_merge_salts_and_split_combinations():
     assert base_names("ALBUTEROL SULFATE") == ["albuterol"]
     assert base_names("FLUTICASONE PROPIONATE AND SALMETEROL XINAFOATE") == ["fluticasone", "salmeterol"]
     assert base_names("POTASSIUM CHLORIDE") == ["potassium chloride"]  # only salt words: kept whole
+    assert base_names("ATORVASTATIN CALCIUM, FILM COATED") == ["atorvastatin"]  # a dosage form is not a co-drug
     assert base_names("FLUTICASONE PROPIONATE\\SALMETEROL XINAFOATE") == ["fluticasone", "salmeterol"]
 
 
@@ -73,6 +74,11 @@ def test_rank_co_drugs_drops_the_drug_itself_and_merges_salts():
     top = rank_co_drugs(rows, "montelukast", 3)
     assert [t["co_drug"] for t in top] == ["albuterol", "prednisone", "fluticasone"]
     assert top[0]["names"] == ["ALBUTEROL SULFATE", "ALBUTEROL"] and top[0]["reports_ranked"] == 2034
+    assert not top[0]["combination_partner"]
+    partner = rank_co_drugs([("OXYCODONE AND ACETAMINOPHEN", 300), ("OXYCODONE", 50), ("IBUPROFEN", 100)],
+                            "acetaminophen", 2)
+    assert partner[0]["co_drug"] == "oxycodone" and partner[0]["combination_partner"]
+    assert not partner[1]["combination_partner"]
 
 
 def test_pair_stats_adjusted_prr_and_co_drug_prr_match_hand_calculation():

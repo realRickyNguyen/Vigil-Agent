@@ -7,7 +7,7 @@ Shared baseline (scripts/zetaris/openfda_baseline.sql, Part A):
 Per drug, created at runtime:
   openfda_rest.faers_d2_<slug>_reactions_raw / openfda.faers_d2_<slug>_reactions
   openfda_rest.faers_d2_<slug>_total_raw     / openfda.faers_d2_<slug>_total
-  openfda_rest.label_d_<slug>_raw           current label from drug/label
+  openfda_rest.label_d2_<slug>_raw          the 10 newest labels for the drug; choose_label() picks one
 For the Skeptic, created at runtime and shared across runs:
   openfda_rest.faers_q_<hash>               one openFDA count query each (co-reported drugs, pair counts)
 The d2 tables use drug_search() (two fields). The older faers_d_<slug> tables used generic_name alone; they
@@ -111,9 +111,78 @@ def to_signal(rec: dict) -> Signal:
                   prr=float(rec["prr"]), chi2=float(rec["chi2"]))
 
 
+LABEL_CANDIDATES = 10
+
+
+# Words that describe a dosage form, not an ingredient: "ATORVASTATIN CALCIUM, FILM COATED" is one ingredient.
+FORM_WORDS = {"FILM", "COATED", "EXTENDED", "DELAYED", "MODIFIED", "IMMEDIATE", "RELEASE", "ORAL", "TABLET",
+              "TABLETS", "CAPSULE", "CAPSULES", "SOLUTION", "SUSPENSION", "INJECTION", "CHEWABLE", "ORALLY",
+              "DISINTEGRATING", "ER", "XR", "SR", "DR", "MG", "MCG", "ML", "USP", "KIT"}
+
+
+def ingredient_parts(name: str) -> list[str]:
+    """The parts of a product name that name ingredients. Combination names join them with AND, commas,
+    slashes, or (in activesubstancename) backslashes."""
+    parts = [p.strip() for p in re.split(r" AND |,|/|\\", name.upper())]
+    return [p for p in parts if p and not all(w in FORM_WORDS or re.fullmatch(r"[\d.%]+", w) for w in p.split())]
+
+
+def single_ingredient(name: str) -> bool:
+    return len(ingredient_parts(name)) <= 1
+
+
+def choose_label(records: list[dict]) -> tuple[dict, dict]:
+    """Pick one label from candidates sorted newest first: a single-ingredient prescription label if there is
+    one, else a single-ingredient label, else the newest. openFDA's first match used to win, which gave
+    metformin the ZITUVIMET (sitagliptin + metformin) label and could give montelukast an old label without
+    the 2020 boxed warning (15 of its 64 labels lack it). The rule names no drug."""
+    def describe(r):
+        o = r.get("openfda") or {}
+        names = o.get("generic_name") or []
+        return {"single": len(names) == 1 and single_ingredient(names[0]),
+                "rx": "HUMAN PRESCRIPTION DRUG" in (o.get("product_type") or [])}
+    tiers = [("single-ingredient prescription label", lambda d: d["single"] and d["rx"]),
+             ("single-ingredient label", lambda d: d["single"]), ("newest label", lambda d: True)]
+    for rule, ok in tiers:
+        for r in records:
+            if ok(describe(r)):
+                o = r.get("openfda") or {}
+                return r, {"rule": rule, "candidates": len(records), "set_id": r.get("set_id"),
+                           "effective_time": r.get("effective_time"), "generic_name": o.get("generic_name"),
+                           "brand_name": o.get("brand_name"), "product_type": o.get("product_type"),
+                           "has_boxed_warning": bool(r.get("boxed_warning"))}
+
+
+def combination_summary(rows: list[tuple[str, str, int]], drug: str, drug_reports: int) -> dict:
+    """How many of the drug's reports name it inside a combination product, from (field, product name, reports)
+    rows over the drug's reports. Bryan found this is 1% for atorvastatin but 46% for acetaminophen and 12% for
+    metformin; a reaction can then belong to the partner drug (opioid dependence under acetaminophen). One report
+    can name several products, and each field counts separately, so this takes the larger field's sum and is
+    approximate."""
+    word = re.compile(rf"\b{re.escape(drug.upper())}\b")
+    by_field: dict[str, dict[str, int]] = {}
+    for field, name, reports in rows:
+        if word.search(name.upper()) and not single_ingredient(name):
+            by_field.setdefault(field, {})[name] = by_field.get(field, {}).get(name, 0) + reports
+    if not by_field:
+        return {"share": 0.0, "reports": 0, "top_products": [], "partners": []}
+    field, products = max(by_field.items(), key=lambda kv: sum(kv[1].values()))
+    total = sum(products.values())
+    partners: dict[str, int] = {}
+    for name, reports in products.items():
+        for part in ingredient_parts(name):
+            if not word.search(part):
+                partners[part] = partners.get(part, 0) + reports
+    top = sorted(products.items(), key=lambda kv: -kv[1])[:5]
+    return {"share": round(min(total / drug_reports, 1.0), 3) if drug_reports else 0.0, "reports": total,
+            "field": field, "top_products": [{"name": n, "reports": r} for n, r in top],
+            "partners": [p for p, _ in sorted(partners.items(), key=lambda kv: -kv[1])[:5]]}
+
+
 class DataClerk:
     def __init__(self, zetaris: ZetarisClient):
         self.z = zetaris
+        self.label_choice = None
 
     def register_drug(self, drug: str) -> dict:
         """Create the per-drug REST tables and views if they do not exist yet."""
@@ -129,15 +198,16 @@ class DataClerk:
                 f"faers_d2_{s}_total_raw", f"{OPENFDA}/event.json?{search}&count=serious"),
                 f"register FAERS report total for {drug}"),
             "label_raw": self.z.ensure(rest_table(
-                f"label_d_{s}_raw", f"{OPENFDA}/label.json?search=openfda.generic_name:{q}&limit=1"),
-                f"register current label for {drug}"),
+                f"label_d2_{s}_raw", f"{OPENFDA}/label.json?search=openfda.generic_name:{q}"
+                                     f"&sort=effective_time:desc&limit={LABEL_CANDIDATES}"),
+                f"register the newest labels for {drug}"),
             "reactions": self.z.ensure(count_view(f"faers_d2_{s}_reactions", f"faers_d2_{s}_reactions_raw", "reaction"),
                                        f"flatten reaction counts for {drug}"),
             "total": self.z.ensure(count_view(f"faers_d2_{s}_total", f"faers_d2_{s}_total_raw", "serious_flag"),
                                    f"flatten report total for {drug}"),
         }
         # Cache every run: CACHE TABLE is cheap once cached, and the cache does not survive a Zetaris restart.
-        for raw in (f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw", f"label_d_{s}_raw"):
+        for raw in (f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw", f"label_d2_{s}_raw"):
             self.z.run(f"CACHE TABLE openfda_rest.{raw}", f"cache {raw}", ddl=True)
         return created
 
@@ -175,6 +245,21 @@ class DataClerk:
         self.z.ensure(rest_table(name, url), purpose)
         return name
 
+    def combination_products(self, drug: str, drug_reports: int) -> tuple[QueryResult | None, dict | None]:
+        """Product names across all of the drug's reports, by both name fields, summarised by
+        combination_summary(). None if the query fails; the run goes on without it."""
+        raws = [(field.split(".")[-2], self._count_table(drug_search(drug), field,
+                                                         f"register product names ({field.split('.')[-2]}) for {drug}",
+                                                         999)) for field in CO_DRUG_FIELDS]
+        try:
+            res = self.z.run(" UNION ALL ".join(f"SELECT '{f}' AS field, r.term AS product, r.`count` AS reports "
+                                                f"FROM openfda_rest.{raw} LATERAL VIEW explode(results) AS r"
+                                                for f, raw in raws), f"combination products for {drug}")
+        except ZetarisError:
+            return None, None
+        rows = [(rec["field"], rec["product"], int(float(rec["reports"]))) for rec in res.records()]
+        return res, combination_summary(rows, drug, int(float(drug_reports)))
+
     def co_drugs(self, drug: str, reaction: str, limit: int = 100) -> tuple[QueryResult, list[tuple[str, int]]]:
         """Drugs named on the reports of this drug and reaction, by exact generic name and by active substance.
         A report can appear under both fields, so the counts only rank candidates."""
@@ -206,9 +291,11 @@ class DataClerk:
         return res, {k: int(float(rec.get(k) or 0)) for k in PAIR_COUNTS}
 
     def label(self, drug: str) -> tuple[str | None, dict]:
-        """Current label sections. Fields vary between labels (and DESCRIBE truncates long schemas),
-        so fetch the whole label record as JSON and pick the sections present."""
-        raw = f"openfda_rest.label_d_{slug(drug)}_raw"
+        """Sections of the label choose_label() picks from the newest ones. Fields vary between labels (and
+        DESCRIBE truncates long schemas), so fetch whole label records as JSON and pick the sections present.
+        Which label was chosen, and why, is kept in self.label_choice for the trace and the dossier."""
+        raw = f"openfda_rest.label_d2_{slug(drug)}_raw"
+        self.label_choice = None
         try:
             res = self.z.run(f"SELECT to_json(r) AS label FROM {raw} LATERAL VIEW explode(results) AS r",
                              f"label text for {drug}")
@@ -216,7 +303,7 @@ class DataClerk:
             return None, {}
         if not res.rows:
             return res.query_id, {}
-        rec = json.loads(res.rows[0][0])
+        rec, self.label_choice = choose_label([json.loads(row[0]) for row in res.rows])
         out = {f: " ".join(rec[f]) for f in LABEL_FIELDS if rec.get(f)}
         out.update({k: rec[k] for k in ("effective_time", "set_id") if rec.get(k)})
         return res.query_id, out
