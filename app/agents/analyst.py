@@ -8,9 +8,9 @@ label sentences relevant to each reaction, and classify calls run in small paral
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from app.adapters.meterless import MeterlessError, NightshiftClient
+from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
 from app.agents.rules import route
-from app.data.label import excerpt_block
+from app.data.label import excerpt_block, norm
 from app.schemas import Finding, Signal
 
 # Includes reasoning tokens. Ultra used 2,100 to 4,100 per classify call on 22 Oct; 4,000 truncated one reply.
@@ -71,13 +71,21 @@ class Analyst:
                 f"(openFDA data updated {ctx['totals']['data_last_updated']}; query {ctx['totals']['query_id']}).")
 
     def pick(self, ctx: dict) -> list[str]:
+        fallback = [s.reaction for s in ctx["passing"][:MAX_PICKS]]
         try:
-            return self._pick(ctx)
+            picked = self._pick(ctx)
+        except MeterlessUnauthorized:
+            raise  # a bad Runtime token fails every call; stop the run instead of degrading
         except MeterlessError as e:
-            fallback = [s.reaction for s in ctx["passing"][:MAX_PICKS]]
             self.llm.tracer.event(self.name, "degraded", step="pick", error=str(e)[:200],
                                   fallback="top reactions by chi2", reactions=fallback)
             return fallback
+        if not picked and fallback:
+            # An empty pick would end the run with an empty dossier, so fall back as for a failed call.
+            self.llm.tracer.event(self.name, "degraded", step="pick", error="no reactions from the table were picked",
+                                  fallback="top reactions by chi2", reactions=fallback)
+            return fallback
+        return picked
 
     def _pick(self, ctx: dict) -> list[str]:
         user = (f"{self.header(ctx)}\n\nDisproportionality screen (query {ctx['screen_qid']}). Rows pass the Evans "
@@ -85,11 +93,13 @@ class Analyst:
                 f"{ctx['screen_passing']}:\n{ctx['screen_table']}")
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": PICK_SYSTEM},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
-        known = {s.reaction for s in ctx["passing"]}
-        picked = [p["reaction"] for p in out.get("picked", []) if isinstance(p, dict) and p.get("reaction") in known]
+        # Match names case- and space-insensitively, and keep the table's spelling.
+        known = {norm(s.reaction): s.reaction for s in ctx["passing"]}
+        replies = [p for p in out.get("picked", []) if isinstance(p, dict)]
+        picked = [known[norm(str(p.get("reaction") or ""))] for p in replies
+                  if norm(str(p.get("reaction") or "")) in known]
         self.llm.tracer.event(self.name, "picked", reactions=picked,
-                              dropped=[p for p in out.get("picked", []) if isinstance(p, dict)
-                                       and p.get("reaction") not in known])
+                              dropped=[p for p in replies if norm(str(p.get("reaction") or "")) not in known])
         return list(dict.fromkeys(picked))[:MAX_PICKS]
 
     def classify(self, ctx: dict, reactions: list[str], feedback: dict | None = None) -> tuple[list[Finding], str]:
@@ -126,20 +136,30 @@ class Analyst:
                   "missing": [m for m in feedback.get("missing", []) if m.get("reaction") in batch]}
             fb = fb if fb["rejected"] or fb["missing"] else None
         try:
-            f, s = self._classify_batch(ctx, batch, fb)
-            return f, s, []
+            found, summary = self._classify_batch(ctx, batch, fb)
+            failed = []
+        except MeterlessUnauthorized:
+            raise
         except MeterlessError as e:
             # Smaller calls succeed more often; a reaction that still fails is reported, not guessed.
             self.llm.tracer.event(self.name, "degraded", step="classify", batch=batch, error=str(e)[:200],
                                   fallback="one reaction per call")
-            found, failed = [], []
+            found, failed, summary = [], [], ""
             for r in batch:
                 try:
                     found += self._classify_batch(ctx, [r], fb)[0]
+                except MeterlessUnauthorized:
+                    raise
                 except MeterlessError as e2:
                     failed.append(r)
                     self.llm.tracer.event(self.name, "unclassified", reaction=r, error=str(e2)[:200])
-            return found, "", failed
+        # A reaction the reply left out is reported as unclassified too, instead of disappearing.
+        got = {f.reaction for f in found}
+        for r in batch:
+            if r not in got and r not in failed:
+                failed.append(r)
+                self.llm.tracer.event(self.name, "unclassified", reaction=r, error="the model's reply had no finding for it")
+        return found, summary, failed
 
     def _classify_batch(self, ctx: dict, reactions: list[str], feedback: dict | None) -> tuple[list[Finding], str]:
         rows = [s for s in ctx["passing"] if s.reaction in set(reactions)]
@@ -151,9 +171,17 @@ class Analyst:
                      "\"reasoning\". Classify the missing ones it named:\n" + json.dumps(feedback, indent=1))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": CLASSIFY_SYSTEM},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
-        wanted = set(reactions)
-        findings = [Finding.from_dict(d) for d in out.get("findings", []) if isinstance(d, dict)]
-        return [f for f in findings if f.reaction in wanted], str(out.get("summary", ""))
+        # Match names case- and space-insensitively and keep the table's spelling; the first finding per reaction wins.
+        wanted = {norm(r): r for r in reactions}
+        findings: dict[str, Finding] = {}
+        for d in out.get("findings", []):
+            if isinstance(d, dict):
+                f = Finding.from_dict(d)
+                name = wanted.get(norm(f.reaction))
+                if name and name not in findings:
+                    f.reaction = name
+                    findings[name] = f
+        return list(findings.values()), str(out.get("summary", ""))
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
         ctx["picked"] = self.pick(ctx)

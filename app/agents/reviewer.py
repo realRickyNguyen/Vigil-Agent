@@ -6,7 +6,8 @@ unresolved when the evidence available cannot settle it."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from app.adapters.meterless import MeterlessError, NightshiftClient
+from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
+from app.adapters.zetaris import ZetarisError
 from app.agents.analyst import BATCH, MAX_TOKENS, screen_table
 from app.data.faers import DataClerk
 from app.data.label import META, excerpt_block, label_sentence, named_in_label, norm
@@ -14,6 +15,9 @@ from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
 UNREVIEWED = "passed code checks; model review unavailable (Nightshift error), reasoning not reviewed"
+NO_VERDICT = "passed code checks; the model's reply had no usable verdict for it, reasoning not reviewed"
+RECHECK_FAILED = "numbers not verified: the Zetaris re-check query failed"
+DECISIONS = ("accept", "reject", "unresolved", "unreviewed")
 
 SYSTEM = """You are the Reviewer in a drug-safety review team. The Analyst has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
 
@@ -80,9 +84,14 @@ class Reviewer:
     def review(self, ctx: dict, findings: list[Finding], seen: set[str]) -> tuple[list[Verdict], list[dict], str]:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
         names reactions nobody has looked at yet."""
-        verdicts, checked = [], []
+        verdicts, checked, unchecked = [], [], {}
         for f in findings:
-            res, fresh = self.clerk.signal(ctx["drug"], f.reaction, agent=self.name)
+            try:
+                res, fresh = self.clerk.signal(ctx["drug"], f.reaction, agent=self.name)
+            except ZetarisError as e:
+                # Without the re-check the numbers cannot be verified, so the finding is not reviewed (no crash).
+                unchecked[f.reaction] = str(e)[:200]
+                continue
             checks = code_checks(f, fresh, ctx["label"], ctx["evidence_ids"] | {res.query_id})
             checked.append((f, checks, res.query_id))
 
@@ -106,16 +115,23 @@ class Reviewer:
         for f, checks, _ in checked:
             bad = failed(checks)
             v = llm.get(norm(f.reaction), {})
+            decision = str(v.get("decision") or "").strip().lower()
             extra = {"objection": str(v.get("objection") or ""), "next_check": str(v.get("next_check") or "")}
             if bad:
                 verdicts.append(Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks,
                                         objection=extra["objection"] or "; ".join(bad), next_check=extra["next_check"]))
-            elif v.get("decision") in ("reject", "unresolved", "unreviewed"):
-                reason = UNREVIEWED if v["decision"] == "unreviewed" else str(v.get("reason", ""))
-                verdicts.append(Verdict(f.reaction, v["decision"], reason, checks, **extra))
+            elif decision not in DECISIONS:
+                # No verdict for this finding (a short reply, a respelt name, an unknown word) is not an acceptance.
+                verdicts.append(Verdict(f.reaction, "unreviewed", NO_VERDICT, checks, **extra))
+            elif decision in ("reject", "unresolved", "unreviewed"):
+                reason = UNREVIEWED if decision == "unreviewed" else str(v.get("reason", ""))
+                verdicts.append(Verdict(f.reaction, decision, reason, checks, **extra))
             else:
                 verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks,
                                         **extra))
+        for f in findings:
+            if f.reaction in unchecked:
+                verdicts.append(Verdict(f.reaction, "unreviewed", f"{RECHECK_FAILED} ({unchecked[f.reaction]})", {}))
         return verdicts, missing, " ".join(s for s in summaries if s)
 
     def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None) -> dict:
@@ -129,6 +145,8 @@ class Reviewer:
                      f"Analyst findings with code checks:\n{json.dumps(batch, indent=1)}"}]
         try:
             return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS)
+        except MeterlessUnauthorized:
+            raise  # a bad Runtime token fails every call; stop the run instead of marking items not reviewed
         except MeterlessError as e:
             if len(batch) > 1:
                 # Smaller calls succeed more often: review one finding per call before giving up.
