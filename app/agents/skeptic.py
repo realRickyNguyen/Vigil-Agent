@@ -4,15 +4,19 @@ Code, not a model. For each of the top co-reported drugs it asks three questions
 - does this drug's PRR stay at 2 or above once the co-drug is adjusted for (Mantel-Haenszel, two strata)?
 - do reports naming both drugs show more of the reaction than either drug alone predicts (the Omega
   interaction measure, Noren et al., Stat Med 2008)?
-A finding is challenged when the adjusted PRR falls below 2 for some co-drug (the co-drug may explain it), or
-when the reaction also passes the screen for most co-drugs (the pattern is shared with other drugs the same
-patients take, which points to their disease or population). The interaction flag is reported as context
-only: on 23 Oct it fired on every montelukast pair, because patients on several asthma drugs are sicker, and
-Omega cannot tell that from an interaction. A challenged finding goes back to the Reviewer with this evidence.
+A finding is challenged only when the adjusted PRR falls below 2 for some co-drug (the co-drug may explain
+it). Two other results are reported as context, not challenges, because on 23 Oct neither discriminated:
+- possible_interaction fired on every montelukast pair: patients on several asthma drugs are sicker, and Omega
+  cannot tell that from an interaction;
+- shared_with_co_drugs (the reaction also passes the screen for most co-drugs) fired on all 7 checked items of
+  montelukast, atorvastatin and metformin, including two the gold set calls possible new signals, because the
+  top co-drugs go to the same patients and share their conditions. It changed no outcome on its own.
+A challenged finding goes back to the Reviewer with this evidence.
 The Skeptic never changes a priority itself: spontaneous reports show reporting patterns, and adjusting for
 one co-drug at a time is not full adjustment."""
 import math
 import re
+import time
 
 from app.adapters.zetaris import ZetarisError
 from app.data.faers import DRUG_RE, DataClerk
@@ -103,10 +107,10 @@ def assess(pairs: list[dict]) -> dict:
     co_signals = [p["co_drug"] for p in ok if p["co_drug_passes_screen"]]
     # "Most" needs at least two co-drugs checked, so one co-drug alone never makes a pattern "shared".
     shared = len(ok) >= 2 and len(co_signals) > len(ok) / 2
-    reasons = (["adjusted_below_threshold"] if adjusted_below else []) + (["shared_with_co_drugs"] if shared else [])
+    reasons = ["adjusted_below_threshold"] if adjusted_below else []
     return {"outcome": "not_checked" if not ok else "challenged" if reasons else "holds",
             "challenge_reasons": reasons, "adjusted_below_threshold": adjusted_below,
-            "co_drugs_passing_screen": co_signals,
+            "shared_with_co_drugs": shared, "co_drugs_passing_screen": co_signals,
             "possible_interactions": [p["co_drug"] for p in ok if p["possible_interaction"]]}
 
 
@@ -125,10 +129,10 @@ def summary(ev: dict, drug: str, prr: float | None) -> str:
             f"{p['co_drug_prr']}{' and passes the screen' if p['co_drug_passes_screen'] else ''}; reports with both "
             f"drugs: {p['observed_both']} observed vs {p['expected_both']} expected without interaction "
             f"(Omega lower bound {p['omega025']}{', a possible interaction' if p['possible_interaction'] else ''}).")
-    if "shared_with_co_drugs" in ev.get("challenge_reasons", []):
+    if ev.get("shared_with_co_drugs"):
         parts.append(f"The reaction also passes the screen for {len(ev['co_drugs_passing_screen'])} of "
                      f"{len(ev['pairs'])} co-drugs ({', '.join(ev['co_drugs_passing_screen'])}), so the pattern is "
-                     f"shared with other drugs these patients take.")
+                     f"shared with other drugs these patients take (context, not a challenge).")
     return " ".join(parts)
 
 
@@ -137,12 +141,19 @@ def compact(ev: dict) -> dict:
     keys = ("co_drug", "query_id", "share", "co_drug_prr", "co_drug_passes_screen", "adjusted_prr", "observed_both",
             "expected_both", "omega025", "possible_interaction", "error")
     return {"outcome": ev["outcome"], "challenge_reasons": ev.get("challenge_reasons", []),
-            "summary": ev.get("summary", ""),
+            "shared_with_co_drugs": ev.get("shared_with_co_drugs", False), "summary": ev.get("summary", ""),
             "co_drugs": [{k: p[k] for k in keys if k in p} for p in ev.get("pairs", [])]}
+
+
+def upstream_5xx(e: ZetarisError) -> bool:
+    """Zetaris answers 400 when openFDA itself failed with a 5xx; that is worth one retry, other errors are not.
+    On 23 Oct openFDA returned HTTP 500 once for an atorvastatin co-drug list that worked otherwise."""
+    return re.search(r"response code: 5\d\d", str(e)) is not None
 
 
 class Skeptic:
     name = "skeptic"
+    retry_pause = 5  # seconds before retrying an openFDA 5xx
 
     def __init__(self, clerk: DataClerk, co_drugs: int = 3):
         self.clerk = clerk
@@ -151,7 +162,13 @@ class Skeptic:
     def check(self, drug: str, reaction: str, prr: float | None) -> dict:
         ev = {"reaction": reaction, "pairs": [], "query_ids": []}
         try:
-            res, rows = self.clerk.co_drugs(drug, reaction)
+            try:
+                res, rows = self.clerk.co_drugs(drug, reaction)
+            except ZetarisError as e:
+                if not upstream_5xx(e):
+                    raise
+                time.sleep(self.retry_pause)
+                res, rows = self.clerk.co_drugs(drug, reaction)
         except ZetarisError as e:
             return {**ev, "outcome": "failed", "error": str(e)[:200]}
         ev["query_ids"].append(res.query_id)

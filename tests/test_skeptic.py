@@ -119,16 +119,42 @@ def test_assess_outcomes():
     assert assess([{"co_drug": "d", "error": "x"}])["outcome"] == "not_checked"
 
 
-def test_assess_challenges_a_pattern_shared_with_most_co_drugs():
+def test_a_pattern_shared_with_most_co_drugs_is_context_not_a_challenge():
     # The co-drug alone has a 6% rate against about 1% elsewhere, so the reaction passes its screen too.
     shared = pair_stats(counts(40, 1000, 300, 10000, 600, 10000, 1000, 100000))
     assert shared["co_drug_passes_screen"] and shared["adjusted_prr"] >= 2
     holds = {"co_drug": "a", **pair_stats(NO_INTERACTION)}
     out = assess([holds, {"co_drug": "e", **shared}, {"co_drug": "f", **shared}])
-    assert out["outcome"] == "challenged" and out["challenge_reasons"] == ["shared_with_co_drugs"]
-    assert out["co_drugs_passing_screen"] == ["e", "f"]
-    assert assess([holds, {"co_drug": "e", **shared}, {"co_drug": "g", **pair_stats(NO_INTERACTION)}])["outcome"] == "holds"
-    assert assess([{"co_drug": "e", **shared}])["outcome"] == "holds"  # one co-drug is not "most"
+    assert out["outcome"] == "holds" and out["challenge_reasons"] == []
+    assert out["shared_with_co_drugs"] and out["co_drugs_passing_screen"] == ["e", "f"]
+    assert not assess([holds, {"co_drug": "e", **shared}, {"co_drug": "g", **holds}])["shared_with_co_drugs"]
+    assert not assess([{"co_drug": "e", **shared}])["shared_with_co_drugs"]  # one co-drug is not "most"
+
+
+class FlakyClerk:
+    """co_drugs fails with the given errors first, then answers."""
+    def __init__(self, errors):
+        self.errors, self.calls = list(errors), 0
+
+    def co_drugs(self, drug, reaction):
+        self.calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return QueryResult("q-list", "", ["drug", "reports"], []), []
+
+
+def test_co_drug_list_is_retried_once_on_an_openfda_5xx(monkeypatch):
+    from app.adapters.zetaris import ZetarisError
+    from app.agents.skeptic import Skeptic
+    monkeypatch.setattr("app.agents.skeptic.time.sleep", lambda s: None)
+    upstream = ZetarisError("HTTP 400: REST API call failed: Server returned HTTP response code: 500 for URL: x")
+    clerk = FlakyClerk([upstream])
+    ev = Skeptic(clerk).check("x", "R", 3.0)
+    assert clerk.calls == 2 and ev["outcome"] == "not_checked" and ev["query_ids"] == ["q-list"]
+    clerk = FlakyClerk([upstream, upstream])  # only one retry
+    assert Skeptic(clerk).check("x", "R", 3.0)["outcome"] == "failed" and clerk.calls == 2
+    clerk = FlakyClerk([ZetarisError("HTTP 400: table or view not found")])  # not an openFDA 5xx: no retry
+    assert Skeptic(clerk).check("x", "R", 3.0)["outcome"] == "failed" and clerk.calls == 1
 
 
 # --- the Skeptic round in the pipeline -------------------------------------------------------------
@@ -183,7 +209,7 @@ def test_skeptic_round_holds_needs_no_model_call():
     ctx, state = round_state(["A"])
     reviewer, analyst = FakeReviewer([]), FakeAnalyst()
     out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds"}), reviewer, analyst, Tracer(), 3)
-    assert out == {"checked": 1, "challenged": 0, "priority_changed": 0}
+    assert out == {"checked": 1, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
     assert reviewer.calls == [] and "q-A" in ctx["evidence_ids"]
     assert review_queue(state, ctx["passing"], [], [], ctx["skeptic"])[0]["co_reported_drugs"]["outcome"] == "holds"
 
@@ -196,7 +222,7 @@ def test_skeptic_round_challenge_goes_reviewer_analyst_reviewer():
     assert reviewer.calls == [["A", "B"], ["A"]] and len(analyst.calls) == 1
     assert state["A"]["status"] == "reviewed" and state["A"]["finding"].review_priority == "insufficient_evidence"
     assert state["B"]["finding"].review_priority == "review_next"
-    assert out == {"checked": 2, "challenged": 2, "priority_changed": 1}
+    assert out == {"checked": 2, "challenged": 2, "challenge_not_reviewed": 0, "priority_changed": 1}
     assert [h["round"] for h in state["A"]["history"]] == ["skeptic", "skeptic_revision"]
 
 
@@ -213,3 +239,14 @@ def test_skeptic_round_checks_only_the_top_accepted_review_next_items():
     out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds", "B": "holds"}), FakeReviewer([]), FakeAnalyst(),
                         Tracer(), 1)
     assert out["checked"] == 1 and list(ctx["skeptic"]) == ["A"]  # A has the highest chi2
+
+
+def test_failed_challenge_review_keeps_the_round_1_verdict():
+    ctx, state = round_state(["A"])
+    out = skeptic_round(ctx, state, FakeSkeptic({"A": "challenged"}), FakeReviewer([{"A": "unreviewed"}]),
+                        FakeAnalyst(), Tracer(), 3)
+    assert state["A"]["status"] == "reviewed" and state["A"]["verdict"].decision == "accept"
+    assert state["A"]["finding"].review_priority == "review_next"
+    assert "could not be reviewed" in state["A"]["note"]
+    assert [h["decision"] for h in state["A"]["history"]] == ["unreviewed"]
+    assert out["challenge_not_reviewed"] == 1 and out["priority_changed"] == 0

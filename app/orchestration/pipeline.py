@@ -190,7 +190,9 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
                   top: int) -> dict:
     """The Skeptic checks the strongest accepted review_next findings against their co-reported drugs.
     A challenged finding goes back to the Reviewer with that evidence. If the Reviewer rejects it, the Analyst
-    gets one revision and the Reviewer one more look; a dispute still open after that ends as unresolved."""
+    gets one revision and the Reviewer one more look; a dispute still open after that ends as unresolved.
+    If the Reviewer's look at the challenge itself fails (model call failed), the round-1 verdict stands and the
+    item says the challenge was not reviewed, rather than losing its earlier review."""
     stats = {s.reaction: s for s in ctx["passing"]}
     picked = sorted((r for r, e in state.items()
                      if e["status"] == "reviewed" and e["finding"].review_priority == "review_next"),
@@ -204,7 +206,8 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
                      challenge_reasons=ev.get("challenge_reasons", []), summary=ev.get("summary"),
                      pairs=ev["pairs"], query_ids=ev["query_ids"], error=ev.get("error"))
     challenged = [state[r]["finding"] for r in picked if ctx["skeptic"][r]["outcome"] == "challenged"]
-    counts = {"checked": len(picked), "challenged": len(challenged), "priority_changed": 0}
+    counts = {"checked": len(picked), "challenged": len(challenged), "challenge_not_reviewed": 0,
+              "priority_changed": 0}
     if not challenged:
         return counts
 
@@ -217,10 +220,16 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
         retry = []
         for f in findings:
             v, entry = by[f.reaction], state[f.reaction]
-            status, note = settle(f, v, entry["history"])
             entry["history"].append({"round": step, "claim": dict(zip(("label_coverage", "context", "review_priority"),
                                                                         f.key())),
                                      "decision": v.decision, "reason": v.reason, "objection": v.objection})
+            if step == "skeptic" and v.decision == "unreviewed":
+                entry["note"] = ("the Skeptic's challenge could not be reviewed (model call failed); "
+                                 "the round-1 verdict stands")
+                counts["challenge_not_reviewed"] += 1
+                tracer.event("orchestrator", "challenge_not_reviewed", reaction=f.reaction, reason=entry["note"])
+                continue
+            status, note = settle(f, v, entry["history"][:-1])
             entry.update(finding=f, verdict=v, status=status, note=note)
             if status == "rejected":
                 retry.append(f)
