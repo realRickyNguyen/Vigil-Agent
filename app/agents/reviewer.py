@@ -19,17 +19,17 @@ SYSTEM = """You are the Reviewer in a drug-safety review team. The Analyst has a
 
 Code has already re-run each finding's numbers on the database, found the label sentence for each "label_term" (in "label_quote"), and checked that the fields are consistent; see "checks". Your job is the reasoning.
 
-For each finding, decide:
-- "accept": the context, coverage and priority are defensible from the evidence shown.
-- "reject": something is wrong and the Analyst can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
+For each finding, first give "objection", the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap). Then decide:
+- "accept": the context, coverage and priority are defensible from the evidence shown, and the Analyst's reading is more likely than your objection.
+- "reject": something is wrong and the Analyst can fix it, including when your objection is the more likely reading. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; a reaction marked clinical_event and not covered is the treated condition or a symptom, sign, measure or complication of it; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
 - "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
 
-For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
+Give "next_check": the single most useful check an analyst could run next.
 
 Then list up to 3 "missing" reactions from the rows nobody has assessed yet that a reviewer would expect to see. Leave "missing" empty if nothing important is missing.
 
 Reply with only a JSON object:
-{"verdicts": [{"reaction": str, "decision": "accept" or "reject" or "unresolved", "reason": str, "objection": str, "next_check": str}], "missing": [{"reaction": str, "why": str}], "summary": str}"""
+{"verdicts": [{"reaction": str, "objection": str, "decision": "accept" or "reject" or "unresolved", "reason": str, "next_check": str}], "missing": [{"reaction": str, "why": str}], "summary": str}"""
 
 
 def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set[str]) -> dict:

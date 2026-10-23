@@ -87,7 +87,7 @@ Zetaris results matched an independent Python calculation. That validates the ar
 | Data Clerk | Code | Registers sources in Zetaris, runs the screen, fetches the label | Built |
 | Rules | Code | Settles easy cases: administrative terms, the treated condition named in indications, the reaction named literally in the label | Built |
 | Analyst | Nemotron Ultra via Nightshift | Picks up to 10 of the 30 strongest screen rows, then assesses them (context, coverage, priority, reasoning, next check) in batches of 3, seeing only the label sentences relevant to each reaction | Built |
-| Reviewer | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: accept, reject with an objection, or unresolved; names missing reactions | Built |
+| Reviewer | Code checks, then Nemotron Ultra | Code: numbers re-queried from Zetaris, evidence IDs real, label term present, fields consistent. Model: writes its strongest objection first, then accepts, rejects with the objection (also when it is the more likely reading), or marks unresolved; names missing reactions | Built |
 | Skeptic | Zetaris queries plus Nemotron | One evidence operation (reporter-type composition) for the top review-next items. Context only, never proof | Planned |
 
 **Loop:**

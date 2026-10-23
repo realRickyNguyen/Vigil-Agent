@@ -98,7 +98,7 @@ flowchart TD
 
 - **Data Clerk (code):** for any drug name, registers openFDA REST sources as Zetaris tables at runtime, computes the report-based 2×2 table (PRR, chi-squared, Evans screen) in SQL, and fetches the current label.
 - **Analyst (Nemotron Ultra via Nightshift):** picks up to 10 of the 30 strongest signals, then assesses each one in small batches. It sees only the label sentences relevant to that reaction, plus the indication and the boxed warning.
-- **Reviewer (code, then Nemotron Ultra):** runs the code checks first. It then accepts, rejects with an objection the Analyst must answer, or marks a finding unresolved when the evidence can't settle it. It also names important reactions nobody has looked at yet.
+- **Reviewer (code, then Nemotron Ultra):** runs the code checks first. It then writes the strongest objection to each finding before deciding. It accepts, rejects with that objection for the Analyst to answer (also when the objection is the more likely reading), or marks a finding unresolved when the evidence can't settle it. It also names important reactions nobody has looked at yet.
 - **Loop:** at most 2 revision rounds. Accepted findings are never redone. If the agents go round in circles, or an objection is still standing when the rounds run out, the finding closes as **unresolved** rather than being accepted by default.
 - **Resilience:** small parallel batches, retries, one-item-per-call fallbacks. Anything that still fails is reported as `failed` or `not_reviewed`, never guessed.
 

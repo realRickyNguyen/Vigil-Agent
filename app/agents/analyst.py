@@ -33,17 +33,18 @@ Answer three separate questions for each listed reaction:
    - "non_clinical": about the product, its use, exposure or the report, not a clinical event.
    - "treated_condition": the condition the drug treats, a symptom, sign, measure or complication of it, or an outcome the drug is given to prevent.
    - "clinical_event": any other clinical event.
+   Judge context from the conditions in the indications, not from whether the label lists the term. A symptom, sign, measure or complication of a treated condition is "treated_condition" even when the label never names it, for example blood pressure increased for an antihypertensive, or seizure for an antiepileptic.
 2. "label_coverage": does the current label describe this reaction as something the drug may cause or worsen?
    - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label).
    - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term).
    - "not_found": nothing in the label text shown describes it.
-   - "not_assessed": the term is non_clinical or the treated condition.
+   - "not_assessed": the term is non_clinical, or it is the treated condition and the label does not describe it as something the drug may cause or worsen.
 3. "review_priority":
    - "review_next": a clinical_event that is not_found or unclear in the label, with enough reports to be worth an analyst's time.
    - "insufficient_evidence": not covered, but the term is too vague or the numbers too thin to act on.
    - "lower_priority": covered by the label, the treated condition, or non_clinical.
 
-Also give "reasoning" (one sentence: why this priority) and "next_check" (one concrete check an analyst could run next, for example a specific breakdown of the reports or a label section to compare).
+Also give "reasoning" (one sentence: why this priority) and "next_check" (one concrete check an analyst could run next, for example a specific breakdown of the reports or a label section to compare). For the treated condition, "next_check" can say how to rule out a worsening caused by the drug.
 
 Rules: use only the data in the message; never invent numbers, reactions or label text; copy "reaction", "a" and "prr" exactly from the table; "evidence" lists the query IDs you relied on; "summary" is at most two sentences.
 
