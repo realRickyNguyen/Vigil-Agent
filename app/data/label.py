@@ -56,8 +56,19 @@ def sentences(label: dict) -> list[tuple[str, str]]:
             for s in re.split(r"(?<=[.;])\s+", text) if len(s.strip()) > 10]
 
 
+def window(t: str, start: int, stop: int, i: int, n: int, limit: int = SENTENCE_CHARS) -> str:
+    """t[start:stop] if it fits in `limit` characters, otherwise `limit` characters of it that contain t[i:i + n],
+    marked with '...' where cut. Adverse-reaction lists are one long sentence, so cutting from the start can
+    lose the very term a quote or excerpt is for (22 Oct: PNEUMONIA in montelukast's paediatric list)."""
+    if stop - start <= limit:
+        return t[start:stop]
+    lo = max(start, min(i - (limit - n) // 2, stop - limit))
+    hi = min(stop, lo + limit)
+    return ("..." if lo > start else "") + t[lo:hi] + ("..." if hi < stop else "")
+
+
 def label_sentence(text: str, term: str) -> str | None:
-    """The sentence in text that contains term (case-insensitive), or None."""
+    """The sentence in text that contains term (case-insensitive), or None. A long sentence is cut around the term."""
     t = norm(text)
     i = t.find(norm(term)) if term else -1
     if i < 0:
@@ -65,7 +76,15 @@ def label_sentence(text: str, term: str) -> str | None:
     dot = t.rfind(". ", 0, i)
     start = dot + 2 if dot >= 0 else 0
     end = t.find(". ", i)
-    return t[start:(end + 1 if end >= 0 else len(t))][:SENTENCE_CHARS]
+    return window(t, start, end + 1 if end >= 0 else len(t), i, len(norm(term)))
+
+
+def around(sentence: str, words: list[str]) -> str:
+    """At most SENTENCE_CHARS of a sentence, around the first of the given word stems it contains."""
+    low = sentence.lower()
+    hits = sorted((m.start(), len(w)) for w in words for m in [re.search(rf"\b{re.escape(w)}", low)] if m)
+    i, n = hits[0] if hits else (0, 0)
+    return window(sentence, 0, len(sentence), i, n)
 
 
 def find_term(reaction: str, label: dict) -> tuple[str, str] | None:
@@ -105,7 +124,8 @@ def retrieve(reaction: str, label: dict, k: int = EXCERPTS_PER_REACTION) -> list
             out.append(i)
         if len(out) == k:
             break
-    return [(sents[i][0], sents[i][1][:SENTENCE_CHARS]) for i in sorted(out)]
+    sts = stems(reaction)
+    return [(sents[i][0], around(sents[i][1], sts)) for i in sorted(out)]
 
 
 def excerpt_block(reactions: list[str], label: dict, label_qid: str | None) -> str:
