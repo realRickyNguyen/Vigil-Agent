@@ -11,9 +11,10 @@ from app.agents.analyst import Analyst  # noqa: E402
 from app.agents.rules import route  # noqa: E402
 from app.data.label import excerpt_block, retrieve  # noqa: E402
 from app.agents.reviewer import code_checks, failed  # noqa: E402
-from app.data.faers import DataClerk, drug_search, signal_sql, slug, sql_str, validate_drug  # noqa: E402
+from app.data.faers import (DataClerk, drug_search, signal_sql, single_ingredient_name, slug, sql_str,  # noqa: E402
+                            validate_drug)
 from app.orchestration.pipeline import review_queue, settle  # noqa: E402
-from app.schemas import Finding, Signal, Verdict  # noqa: E402
+from app.schemas import Finding, QueryResult, Signal, Verdict  # noqa: E402
 
 LABEL = {"boxed_warning": "WARNING: SERIOUS NEUROPSYCHIATRIC EVENTS  Serious neuropsychiatric (NP) events have been reported."}
 FRESH = Signal("NIGHTMARE", a=1200, b=170000, c=9000, d=20500000, prr=7.14, chi2=9807.4)
@@ -54,8 +55,12 @@ def test_drug_search_uses_both_fields_fully_encoded():
 
 
 class RecordingZetaris:
-    def __init__(self):
+    """Records SQL; answers the label-names query with the names openFDA returned for atorvastatin on 23 Oct."""
+    NAMES = [["ATORVASTATIN CALCIUM", 226], ["ATORVASTATIN CALCIUM, FILM COATED", 14], ["AMLODIPINE AND ATORVASTATIN", 13]]
+
+    def __init__(self, names=None):
         self.sql = []
+        self.names = self.NAMES if names is None else names
 
     def ensure(self, sql, purpose):
         self.sql.append(sql)
@@ -63,6 +68,8 @@ class RecordingZetaris:
 
     def run(self, sql, purpose, **kw):
         self.sql.append(sql)
+        if sql.startswith("SELECT") and "label_names_" in sql:
+            return QueryResult("q-names", sql, ["name", "labels"], self.names)
 
 
 def test_register_drug_uses_new_tables_and_combined_search():
@@ -72,9 +79,30 @@ def test_register_drug_uses_new_tables_and_combined_search():
     assert len(event_tables) == 2 and all(drug_search("atorvastatin") in s for s in event_tables)
     assert all("faers_d2_atorvastatin_" in s for s in event_tables)
     assert not any("faers_d_atorvastatin" in s for s in z.sql)  # old one-field tables are never reused
-    label = next(s for s in z.sql if "label.json" in s)
-    assert "search=openfda.generic_name:%22atorvastatin%22" in label  # label search unchanged
+    names, label = [s for s in z.sql if "label.json" in s]
+    assert "search=openfda.generic_name:%22atorvastatin%22&count=openfda.generic_name.exact" in names
+    assert "openfda.generic_name.exact%3A%22ATORVASTATIN%20CALCIUM%22" in label
+    assert "HUMAN%20PRESCRIPTION%20DRUG" in label and "sort=effective_time:desc&limit=1" in label
+    assert "label_s_atorvastatin_" in label
     assert "faers_d2_x_reactions" in signal_sql("x")
+
+
+def test_single_ingredient_name_skips_combinations_and_strengths():
+    names = [("METFORMIN HYDROCHLORIDE", 238), ("METFORMIN HCL", 24), ("SITAGLIPTIN AND METFORMIN HYDROCHLORIDE", 15),
+             ("GLYBURIDE-METFORMIN HYDROCHLORIDE", 7), ("METFORMIN ER 500 MG", 12)]
+    assert single_ingredient_name("metformin", names) == "METFORMIN HYDROCHLORIDE"
+    assert single_ingredient_name("metformin", [("SITAGLIPTIN AND METFORMIN HYDROCHLORIDE", 15)]) is None
+    assert single_ingredient_name("isotretinoin", [("ISOTRETINOIN", 19)]) == "ISOTRETINOIN"
+    assert single_ingredient_name("atorvastatin", [("ATORVASTATIN CALCIUM, FILM COATED", 14),
+                                                   ("ATORVASTATIN CALCIUM", 226)]) == "ATORVASTATIN CALCIUM"
+    assert single_ingredient_name("statin", [("ATORVASTATIN CALCIUM", 226)]) is None  # whole words only
+
+
+def test_label_falls_back_to_first_match_without_a_single_ingredient_name():
+    z = RecordingZetaris(names=[["SITAGLIPTIN AND METFORMIN HYDROCHLORIDE", 15]])
+    DataClerk(z).register_drug("metformin")
+    label = [s for s in z.sql if "label.json" in s][-1]
+    assert "label_d_metformin_raw" in label and "search=openfda.generic_name:%22metformin%22&limit=1" in label
 
 
 def test_extract_json_ignores_think_and_fences():
