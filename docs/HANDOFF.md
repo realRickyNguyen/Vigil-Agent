@@ -1,4 +1,4 @@
-# Handoff: Black Box, state as of Thu 22 Oct 2026, about 17:00 Sydney (06:00 UTC)
+# Handoff: Black Box, state as of Fri 23 Oct 2026, afternoon Sydney (early 23 Oct UTC)
 
 Start here if you are picking up the work, whether you are a teammate, Cursor's agent or a new Claude session. The design and its reasoning are in [ideas/BLACK_BOX.md](ideas/BLACK_BOX.md). Event rules are in [HACKATHON_KNOWLEDGE.md](HACKATHON_KNOWLEDGE.md).
 
@@ -23,11 +23,13 @@ Input is a drug name. The app:
 | Meterless Engine (required) | **Not started.** Plan: minimal World Model with a behaviour test |
 | Skeptic agent | Not started. Plan: one operation, reporter-type composition for top candidates |
 | `SAMPLE_MODE`, Dockerfile, `POST /run`, UI | Not started. `SAMPLE_MODE` needs an organiser answer first (see open questions) |
-| README, deck, video, `metadata.json` | Not started |
+| README | **Done** (22 Oct): user story, problem, inputs and outputs, why agents, Track 02 mapping, sponsors, results, limitations. Sourced statistics: 23% (Doernberg et al., JAMA Intern Med 2026, checked), about 27,000 alerts and 99.9% closed (GSK, Drug Safety 2026, checked), and FDA's "more than 2 million" reports a year. The exact 2,048,059 from the 2025 OSE report is **not verified**, so it isn't used |
+| Team briefing deck | **Done** (23 Oct), internal only: `C:\Users\Ricky\projects\black-box-deck\` on Ricky's laptop, **outside the repo** because it contains licensed BioRender assets and sponsor logos. Contents: `black_box_team_briefing.pptx` and `.pdf`, `speaker_notes.md` (plain-language notes, the source), `build_deck.ps1` (rebuild with the research-deck skill). 13 slides: track, why it matters, user, proposal, why agents, workflow diagram, sponsor tools, progress checklist, submission, video plan, summary |
+| Submission deck, video, `metadata.json` | Not started. Build the submission deck from the team briefing; the required contents are in `HACKATHON_KNOWLEDGE.md` |
 
-Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
+Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). Last pushed commit: `90ac97b` (outdated review pack removed). **Uncommitted local edits (23 Oct):** `CLAUDE.md`, `README.md`, `docs/HANDOFF.md`, `docs/HACKATHON_KNOWLEDGE.md`, `docs/CURSOR_LOG.md`, all marking Cursor as optional. Ricky asked to leave them uncommitted for now; commit them (no Co-Authored-By trailer) and push when he says so. Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; choose which to publish as evidence before the repo goes public.
 
-Tools: no Cursor credits are coming, so we use Cursor's free plan for small tasks and develop mainly with Claude Code and Codex. `CLAUDE.md`, `AGENTS.md` and `.cursor/rules/` carry the same rules.
+Tools: Cursor became optional on 23 Oct and no credits are coming; we develop mainly with Claude Code and Codex, and Cursor's free plan may be used for small tasks. `CLAUDE.md`, `AGENTS.md` and `.cursor/rules/` carry the same rules.
 
 ## How to run
 
@@ -101,7 +103,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **Every number an agent cites must come from a Zetaris query ID in the trace.** The Judge's code checks enforce this; do not weaken them to make a run pass.
 - **Keep model calls small.** Large prompts on Nightshift time out or come back empty. Batches of 3 and per-reaction label excerpts are deliberate.
 - **Do not overclaim.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Gold accuracy is a development check labelled by an AI, not clinical validation.
-- **Cursor.** No credits are coming; Cursor runs on the free plan for small tasks, and development is mainly Claude Code and Codex. Log real Cursor work in [CURSOR_LOG.md](CURSOR_LOG.md) on the day it happens. Never backdate it.
+- **Cursor.** Optional since 23 Oct; no credits. Development is mainly Claude Code and Codex, with Cursor's free plan for small tasks if useful. Log real Cursor work in [CURSOR_LOG.md](CURSOR_LOG.md) on the day it happens. Never backdate it.
 
 ## Known issues
 
@@ -112,6 +114,24 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **The total uses the sum of the serious-flag counts,** which is about 0.05% below openFDA's report total.
 - **Montelukast is not a clean "caught it early" backtest:** its warnings were in the precautions by 2012. openFDA also returns only the latest version of each case, so date filters do not reconstruct the past. The backtest is off the critical path; see `eval/BACKTEST_FEASIBILITY.md`.
 - **A run takes about 9 minutes,** mostly Nightshift latency. Roughly a third of model calls fail and are retried or fall back.
+
+## Context from 22 to 23 Oct
+
+- **Outside review.** An outside LLM panel scored the design 50/100. Its main points, which the next steps follow:
+  - Pitch it as a review shortlist, not as discovering side effects.
+  - Separate label coverage, priority and workflow status (done in contract v2).
+  - Build one minimal World Model with a behaviour test.
+  - Add one evidence-seeking Skeptic step.
+  - Drop the montelukast "caught it early" backtest.
+
+  The review file is on Ricky's laptop (`Downloads\BLACK_BOX_PANEL_REVIEW.md`), not in the repo.
+- **Ricky's laptop disk** filled up on 22 Oct. Cleanup so far:
+  - Cursor's install was cancelled. Cursor was to be uninstalled; a teammate uses Cursor instead.
+  - Nightshift's local Llama models went to the Recycle Bin.
+  - Five unused Docker images and the build cache were removed.
+
+  Space returns only after `scripts/compact-wsl-disks.ps1` runs as administrator with Docker quit, and after the Recycle Bin is emptied. Check C: free space before large runs.
+- **Services** were stopped at the end of 22 Oct. Use the "lets begin" routine in `CLAUDE.md`, then check that the Nightshift lanes are still Ultra-only.
 
 ## Next steps, in order
 
@@ -134,6 +154,6 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 ## Open questions for the organisers
 
 1. How should judges run an app whose agents need a model, given the "SAMPLE_MODE without keys" rule? Options: a local Nightshift lane, labelled replay of recorded model replies, or judges using their own Nightshift.
-2. No Cursor credits were provided. We develop mainly with Claude Code and Codex and use Cursor's free plan for smaller tasks, disclosed in the README. Does that satisfy the "Cursor as development environment" rule?
+2. (Settled 23 Oct: Cursor is optional.) Does the sponsor explanation still need a Cursor paragraph, or a `metadata.json`?
 3. Is a Python implementation of a Meterless Engine, with our own tests, accepted for the build rule?
 4. What should `metadata.json` contain?

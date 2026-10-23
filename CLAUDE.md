@@ -14,7 +14,7 @@ Read this first in every session, then **`docs/HANDOFF.md`** (current state, how
 - Deliverables: demo video (1 to 4 min), slide deck, **public** GitHub repo with README, sponsor technology explanation (Zetaris, Meterless, Cursor, NVIDIA).
 
 ## Hard rules (disqualification risks)
-- Zetaris and Meterless must be load-bearing, not decorative. Cursor is the required dev environment. Use NVIDIA Nemotron via Meterless Nightshift.
+- Zetaris and Meterless must be load-bearing, not decorative. Use NVIDIA Nemotron via Meterless Nightshift. Cursor is **optional** since 23 Oct (organiser change, reported by the user); if used, describe it honestly.
 - Build rule (19 Oct guide): implement at least one **Meterless Engine** (H-MEM, Markovian, World Model, Scout Intent) in a working feature with a passing test. Power rule: the app must support **Meterless Nightshift as its primary AI provider**. A prompt file or unused dependency does not count.
 - No hardcoded outputs, no fabricated logs, no overclaiming in README or deck. Minimum two genuinely interacting agents; show critique, retry or branching. Logs go to `logs/trace-<id>.jsonl` and are never hand-edited.
 - Secrets only in `.env` (gitignored). Commit `.env.example` with placeholders. Never print, log or paste keys or the Nightshift token. If a key is committed, rotate it first.
@@ -30,9 +30,9 @@ Windows 11 Home, 15.8 GB RAM, **disk is tight** (C: about 8 GB free). Docker run
   - **Working lane setup (22 Oct):** the first lane runs `nvidia/nemotron-3-ultra-550b-a55b` (its card still shows the old ID `nemotron-3-super-120b-a1`); the Lightning lane is **stopped**; Preferences race width is **1**. Racing lanes broke pinned model IDs and failed requests when one lane replied empty; the Super model returns NVIDIA 404 for this key.
   - **A Nightshift restart re-seats lanes from `%LOCALAPPDATA%\ai.meterless.runtime\lanes.toml`.** Check the lanes after every restart.
   - Receipts with per-request routing detail are in `%APPDATA%\ai.meterless.runtime\meterless.json`.
-- **Cursor**: installed (downloaded 2026-10-20). Credit redemption is still an organiser placeholder (check HackOS Resources > "Space XAI and Cursor", Help Cursor, the 21 Oct onboarding).
+- **Cursor**: optional since 23 Oct and no credits are coming; uninstalled from this laptop for disk space (a teammate uses it).
 - `scripts/smoke_test.py` checks Zetaris GUI, Zetaris REST `SELECT 1` and a model reply (3 PASS expected). It proves connectivity only, not a working agent. Run it as `python -I scripts/smoke_test.py`.
-- Open items: read the Track 02 challenge statement, Meterless Engine (World Model) with a passing test, Skeptic agent, `SAMPLE_MODE` (needs organiser answer), Dockerfile and `POST /run`, Cursor credit. Full list in `docs/HANDOFF.md`.
+- Open items: read the Track 02 challenge statement, Meterless Engine (World Model) with a passing test, Skeptic agent, `SAMPLE_MODE` (needs organiser answer), Dockerfile and `POST /run`. Full list in `docs/HANDOFF.md`.
 
 ## Start and stop routines
 When the user says **"lets begin"**: start Docker Desktop and wait for the engine; `docker compose up -d` in `~/zetaris-platform`, wait about 2 minutes, run `./verify.sh`; launch `meterless-runtime.exe` and check `lanes.toml` still has the Ultra lane (ask the user to stop Lightning if it is running); run the smoke test; report failures.

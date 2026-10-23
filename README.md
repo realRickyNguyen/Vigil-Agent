@@ -119,7 +119,7 @@ flowchart TD
 - **Zetaris.** The data layer and where the statistics are computed. openFDA endpoints are registered as Zetaris REST tables **at runtime for whatever drug is asked about**, cached, flattened into views, and joined in SQL to produce the 2×2 disproportionality table. The Judge re-queries Zetaris to verify every number the Hunter cites. Without Zetaris there is no screen and no verification.
 - **Meterless Nightshift.** The only model provider. Every agent call goes through Nightshift's OpenAI-compatible gateway with the required headers, and the trace records which model actually served each call. *Planned: a Meterless **World Model** engine holding facts, claims, evidence links and decision states, with a test showing that a changed label version reopens a dependent verdict.*
 - **NVIDIA Nemotron.** Both agents run on `nvidia/nemotron-3-ultra-550b-a55b` through Nightshift.
-- **Cursor.** The organisers did not provide Cursor credits, so the team uses Cursor's free plan for smaller tasks and develops mainly with Claude Code and Codex. Cursor work is logged in [docs/CURSOR_LOG.md](docs/CURSOR_LOG.md).
+- **Cursor** (optional for this hackathon). The team develops mainly with Claude Code and Codex, with Cursor's free plan for smaller tasks; any Cursor work is logged in [docs/CURSOR_LOG.md](docs/CURSOR_LOG.md).
 
 ## Results so far
 
