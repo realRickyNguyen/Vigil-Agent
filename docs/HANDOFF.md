@@ -88,11 +88,11 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | `run.py` | CLI entry point; prints the review queue |
 | `app/config.py` | Settings from `.env`. Defaults: Ultra for both agents, 2 parallel model calls, 2 revision rounds |
 | `app/adapters/zetaris.py` | Zetaris REST client: retries, short query IDs for evidence, every query traced |
-| `app/adapters/meterless.py` | Nightshift client: required headers, retries (including dropped connections), `served_by` logging, JSON extraction (handles Ultra's inline `</think>`) |
-| `app/data/faers.py` | The Data Clerk: registers openFDA tables per drug, signal SQL, label fetch |
+| `app/adapters/meterless.py` | Nightshift client: required headers, retries (including dropped connections), `fail_fast` on the provider deadline for batches, `served_by` and Nightshift receipt logging (H-MEM, scaffold), JSON extraction (handles Ultra's inline `</think>`) |
+| `app/data/faers.py` | The Data Clerk: registers openFDA tables per drug (two-field `drug_search`), signal SQL, label choice (`choose_label`), combination share, the Skeptic's co-drug and pair counts |
 | `app/data/label.py` | Label helpers: per-reaction sentence retrieval, literal term lookup |
 | `app/agents/rules.py` | Code routing for easy cases: administrative terms, treated condition, literal label match |
-| `app/agents/analyst.py` | Analyst: pick (1 call), then classify in batches of 3 with fallbacks |
+| `app/agents/analyst.py` | Analyst: the top 15 rows by chi2 plus up to 5 of its own picks, then classify in batches of 3 with fallbacks |
 | `app/agents/reviewer.py` | Reviewer: code checks first, then model review in batches; objection and next check per finding |
 | `app/orchestration/pipeline.py` | The loop, dispute settling (`settle`), Skeptic round (`skeptic_round`), review queue and counts, World Model record (`remember`), dossier |
 | `app/agents/skeptic.py` | Skeptic: co-drug ranking (salts merged), adjusted PRR, co-drug PRR, Omega, outcome rule |
@@ -113,14 +113,15 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 
 ## Known issues
 
-- **The metformin label is a combination product** (ZITUVIMET, sitagliptin + metformin). The Data Clerk's label search should prefer single-ingredient labels, for example by searching `openfda.generic_name.exact:"METFORMIN HYDROCHLORIDE"`.
+- **Fixed 23 Oct: label choice.** The Data Clerk fetches the 10 newest labels (`label_d2_<slug>_raw`, sorted by `effective_time`) and `choose_label()` takes the newest single-ingredient prescription label. Metformin used to get ZITUVIMET (sitagliptin + metformin). The 22 Oct gold labels for metformin were made against that combination label, so metformin scores need care until a person re-checks them.
+- **Combination products** are recorded per run (`combination_products` in the dossier): about 1% of atorvastatin's reports, 7% of metformin's (a lower bound) and 47% of acetaminophen's. Above 5% both agents are told a reaction may belong to the partner drug, and the Skeptic marks co-drugs sold in one product with the drug.
 - **Fixed 23 Oct: the drug search used openFDA's `generic_name` alone,** which openFDA fills only when it can match the product record. Bryan showed against FDA's raw quarterly files that it found 39% of atorvastatin's reports (46% levothyroxine, 87% metformin, 99%+ montelukast). `drug_search()` now uses `generic_name` OR `activesubstance.activesubstancename` (atorvastatin through Zetaris: 249,468 to 519,224 reports), with new table names (`faers_d2_<slug>_…`) because old REST tables cannot be dropped. The 22 Oct evaluation used the old search; re-run it before quoting numbers. Combination products are included by both fields (46% of acetaminophen's reports, 12% of metformin's).
 - **The drug search counts every report that mentions the drug, not only those where it was the suspect.** This broadens the report set; it is not the same as inflating the PRR.
 - **The baseline covers only the 999 most-reported reactions** (openFDA's no-key limit, which we tested). Rarer reactions are not screened.
 - **Per-drug Zetaris REST tables cannot be deleted through SQL.** They pile up in `openfda_rest`. Remove them in Data Explorer if needed.
 - **The total uses the sum of the serious-flag counts,** which is about 0.05% below openFDA's report total.
 - **Montelukast is not a clean "caught it early" backtest:** its warnings were in the precautions by 2012. openFDA also returns only the latest version of each case, so date filters do not reconstruct the past. The backtest is off the critical path; see `eval/BACKTEST_FEASIBILITY.md`.
-- **A run takes about 9 minutes,** mostly Nightshift latency. Roughly a third of model calls fail and are retried or fall back.
+- **Run time:** 9 minutes on 22 Oct, 30 to 55 minutes on 23 Oct, mostly Nightshift provider_deadline failures (43 in one run) plus H-MEM and the scaffold. Since 23 Oct a multi-item batch that hits the deadline is split at once instead of retried (`fail_fast`), and the scaffold is off in Nightshift.
 
 ## Context from 22 to 23 Oct
 
