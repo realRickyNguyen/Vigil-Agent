@@ -423,7 +423,7 @@ DKA_LABEL = {"indications_and_usage": "Metformin is indicated to improve glycemi
 
 def test_not_found_is_allowed_for_a_contraindication_only_name():
     sig = Signal("DIABETIC KETOACIDOSIS", a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
-    f = Finding(reaction=sig.reaction, a=10, prr=3.0, label_coverage="not_found", context="treated_condition",
+    f = Finding(reaction=sig.reaction, a=10, prr=3.0, label_coverage="not_found", context="clinical_event",
                 review_priority="lower_priority", reasoning="x", evidence=["q-1"])
     assert failed(code_checks(f, sig, DKA_LABEL, {"q-1"})) == []
     lactic = Finding(reaction="LACTIC ACIDOSIS", a=10, prr=3.0, label_coverage="not_found", context="clinical_event",
@@ -442,9 +442,14 @@ class OneVerdictLLM:
 
 
 class SignalClerk:
-    def signal(self, drug, reaction, agent="reviewer"):
+    def recheck(self, drug, reactions, agent="reviewer"):
         from types import SimpleNamespace
-        return SimpleNamespace(query_id="q-r"), Signal(reaction, a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+        return SimpleNamespace(query_id="q-r"), {r: Signal(r, a=10, b=1, c=1, d=1, prr=3.0, chi2=50) for r in reactions}
+
+
+def test_recheck_is_one_query_for_all_findings():
+    sql = signal_sql("metformin", min_a=1, reactions=["DIARRHOEA", "CROHN'S DISEASE"])
+    assert "dr.reaction IN ('DIARRHOEA', 'CROHN\\'S DISEASE')" in sql and "dr.reports >= 1" in sql
 
 
 def test_reviewer_marks_a_finding_left_out_of_its_reply_unreviewed():
@@ -613,3 +618,23 @@ def test_extra_picks_are_classified_after_the_top_rows():
     ctx = analyst_ctx()
     findings, _ = Analyst(Picker(), "m", top=3, extra=2).run(ctx)
     assert ctx["selection"]["chosen"] == ["F"] and sorted(f.reaction for f in findings) == ["A", "B", "C", "F"]
+
+
+def test_coverage_must_fit_the_context():
+    sig = Signal("HYPERGLYCAEMIA", a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+    f = lambda cov, ctx_: Finding(reaction=sig.reaction, a=10, prr=3.0, label_coverage=cov, context=ctx_,
+                                  review_priority="lower_priority", reasoning="x", evidence=["q-1"])
+    assert any(m.startswith("coverage_fits_context") for m in
+               failed(code_checks(f("not_found", "treated_condition"), sig, {}, {"q-1"})))
+    assert failed(code_checks(f("not_assessed", "treated_condition"), sig, {}, {"q-1"})) == []
+    assert any(m.startswith("coverage_fits_context") for m in
+               failed(code_checks(f("unclear", "non_clinical"), sig, {}, {"q-1"})))
+
+
+def test_prompt_examples_avoid_the_evaluation_drugs():
+    from app.agents.analyst import CLASSIFY_SYSTEM, PICK_SYSTEM
+    from app.agents.reviewer import SYSTEM
+    text = (CLASSIFY_SYSTEM + PICK_SYSTEM + SYSTEM).lower()
+    for word in ("diabetes", "glucose", "antidepressant", "statin", "asthma", "acne", "metformin", "sertraline",
+                 "montelukast", "atorvastatin", "isotretinoin"):
+        assert word not in text, word

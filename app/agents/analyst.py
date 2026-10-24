@@ -44,7 +44,7 @@ Answer three separate questions for each listed reaction:
    - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term).
    - "not_found": nothing in the label text shown describes it.
    - "not_assessed": the term is non_clinical, or it is the treated condition and the label does not say the drug may cause or worsen it.
-   Check coverage for a treated condition too: the label may warn that the drug can cause or worsen it (for example low blood glucose with a diabetes drug, or anxiety with an antidepressant). Then it is "covered".
+   Decide "context" first, from what the term is, whatever the label says: a symptom, sign, measure or complication of the treated disease stays "treated_condition" even when the label does not mention it. Then, for a treated condition, check whether the label warns that the drug can cause or worsen it (for example low blood pressure with a blood-pressure drug). If it does, coverage is "covered"; if not, "not_assessed". Never mark a treated condition "not_found".
 3. "review_priority":
    - "review_next": a clinical_event that is not_found or unclear in the label, with enough reports to be worth an analyst's time.
    - "insufficient_evidence": not covered, but the term is too vague or the numbers too thin to act on.

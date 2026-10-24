@@ -84,9 +84,11 @@ def count_view(view: str, raw: str, term_alias: str) -> str:
             f"FROM openfda_rest.{raw}\nLATERAL VIEW explode(results) AS r")
 
 
-def signal_sql(s: str, reaction: str | None = None, min_a: int = 3) -> str:
+def signal_sql(s: str, reaction: str | None = None, min_a: int = 3, reactions: list[str] | None = None) -> str:
     """2x2 disproportionality table per reaction: PRR and Yates-corrected chi-squared."""
     where = f"dr.reports >= {min_a}" + (f" AND dr.reaction = {sql_str(reaction)}" if reaction else "")
+    if reactions:
+        where += f" AND dr.reaction IN ({', '.join(sql_str(r) for r in reactions)})"
     return f"""SELECT reaction, a, b, c, d,
   ROUND((a / (a + b)) / (c / (c + d)), 2) AS prr,
   ROUND((a + b + c + d) * POWER(GREATEST(ABS(a * d - b * c) - (a + b + c + d) / 2, 0), 2)
@@ -254,6 +256,13 @@ class DataClerk:
                          f"re-check {reaction} for {drug}", agent=agent)
         recs = res.records()
         return res, (to_signal(recs[0]) if recs else None)
+
+    def recheck(self, drug: str, reactions: list[str], agent: str = "reviewer") -> tuple[QueryResult, dict]:
+        """signal() for many reactions in one Zetaris query: {reaction: Signal}, absent if not in the screen.
+        On 24 Oct twenty one-reaction re-checks took 3.5 to 4 minutes of a 6-minute review."""
+        res = self.z.run(signal_sql(slug(drug), min_a=1, reactions=reactions),
+                         f"re-check {len(reactions)} reactions for {drug}", agent=agent)
+        return res, {s.reaction: s for s in map(to_signal, res.records())}
 
     def _count_table(self, search: str, count: str, purpose: str, limit: int | None = None) -> str:
         """A REST table for one openFDA count query, named by a hash of its URL so that runs and drugs

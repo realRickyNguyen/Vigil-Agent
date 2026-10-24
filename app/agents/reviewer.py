@@ -26,7 +26,7 @@ For each finding, decide:
 - "reject": something is wrong and the Analyst can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
 - "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
 
-A treated condition that the label says the drug may cause or worsen (for example low blood glucose with a diabetes drug) is correctly "covered". A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support.
+A treated condition that the label says the drug may cause or worsen (for example low blood pressure with a blood-pressure drug) is correctly "covered". A symptom, sign, measure or complication of the treated disease is "treated_condition" even when the label does not mention it; reject it as a clinical_event sent for review just because the label does not list it. A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support.
 
 Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. "attenuated_by" is context too: co-drugs that lower the PRR by 30% or more without taking it below 2. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
 
@@ -45,6 +45,12 @@ def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set
     c = {}
     c["valid_fields"] = (f.label_coverage in COVERAGE and f.context in CONTEXT and f.review_priority in PRIORITY,
                          f"{f.context} / {f.label_coverage} / {f.review_priority}")
+    # A treated condition is covered (the label warns the drug can cause or worsen it) or not assessed; a
+    # non-clinical term is never assessed against the label.
+    allowed = {"treated_condition": ("covered", "not_assessed"), "non_clinical": ("not_assessed",)}
+    if f.context in allowed:
+        c["coverage_fits_context"] = (f.label_coverage in allowed[f.context],
+                                      f"{f.context} must be {' or '.join(allowed[f.context])}")
     if fresh is None:
         c["in_database"] = (False, "reaction not found in the screen for this drug")
     else:
@@ -91,9 +97,9 @@ class Reviewer:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
         names reactions nobody has looked at yet."""
         verdicts, checked = [], []
+        res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
         for f in findings:
-            res, fresh = self.clerk.signal(ctx["drug"], f.reaction, agent=self.name)
-            checks = code_checks(f, fresh, ctx["label"], ctx["evidence_ids"] | {res.query_id})
+            checks = code_checks(f, fresh.get(f.reaction), ctx["label"], ctx["evidence_ids"] | {res.query_id})
             checked.append((f, checks, res.query_id))
 
         skeptic = ctx.get("skeptic", {})
