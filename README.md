@@ -163,6 +163,13 @@ cp .env.example .env
 
 Fill in the Zetaris and Nightshift values. The NVIDIA key goes into Nightshift, not `.env`.
 
+Set up Nightshift before the first run. Nightshift 1.2.1 ignores the model an app asks for and routes each call by its own settings, so leave it only the model Vigil uses.
+- one lane running `nvidia/nemotron-3-ultra-550b-a55b`, with every other lane stopped
+- Setup › Preferences › race width 1
+- Setup › Preferences › Quality track, with the quality race and the reasoning scaffold both off, then restart Nightshift
+
+Without these, calls can go to other models, and about half are answered unstreamed and cut off at 45 s. Each run checks this and warns, in the console and in the dossier's `nightshift_warnings`, when a call was served by another model or with the scaffold on.
+
 ```bash
 python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 ```

@@ -41,6 +41,8 @@ def main() -> int:
         if q.get("review_priority") == "review_next" or q["workflow_status"] == "unresolved":
             print(f"      objection: {(q.get('strongest_objection') or q.get('status_note') or '-')[:140]}")
             print(f"      next check: {(q.get('next_check') or '-')[:140]}")
+    for warning in d.get("nightshift_warnings") or []:
+        print(f"\nNightshift setup warning. {warning}")
     print(f"\nRounds: {d['rounds']}")
     print(f"Dossier: logs/dossier-{d['run_id']}.json   Trace: logs/{d['trace']}")
     return 0

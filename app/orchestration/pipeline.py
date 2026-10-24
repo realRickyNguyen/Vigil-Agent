@@ -121,8 +121,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
               "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
                                  for q in queue)}
 
-    queries, degraded = {}, []
-    model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0}
+    queries, degraded, setup_warnings = {}, [], []
+    model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
+                   "served_by_other_model": 0}
     with tracer.path.open(encoding="utf-8") as fh:
         for line in fh:
             e = json.loads(line)
@@ -136,6 +137,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                 model_calls["without_receipt"] += ns is None
                 model_calls["with_memory_injected"] += bool(ns and ns["hmem_injected"])
                 model_calls["with_reasoning_scaffold"] += bool(ns and ns["scaffold_active"])
+                model_calls["served_by_other_model"] += bool(e.get("served_by") and e["served_by"] != e.get("model"))
+            if e["event"] == "nightshift_warning" and e["warning"] not in setup_warnings:
+                setup_warnings.append(e["warning"])
 
     dossier = {
         "run_id": tracer.run_id,
@@ -148,6 +152,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "degraded_steps": degraded,
         # Nightshift steps our app did not ask for, counted from each call's receipt (see nightshift_steps).
         "model_calls": model_calls,
+        # Empty when Nightshift is set up as the README says; see setup_problems in the adapter.
+        "nightshift_warnings": setup_warnings,
         "analyst_summary": summary,
         "rounds": rounds,
         "world_model": world,

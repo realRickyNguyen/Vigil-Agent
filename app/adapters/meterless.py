@@ -5,6 +5,7 @@ The NVIDIA key stays inside Nightshift."""
 import hashlib
 import http.client
 import json
+import logging
 import re
 import time
 import urllib.error
@@ -13,6 +14,8 @@ import uuid
 
 from app.config import Settings
 from app.tracing import Timer, Tracer
+
+log = logging.getLogger(__name__)
 
 
 class MeterlessError(RuntimeError):
@@ -59,6 +62,21 @@ def nightshift_steps(response: dict) -> dict | None:
             "mode": receipt.get("mode")}
 
 
+def setup_problems(requested: str, served_by: str | None, steps: dict | None) -> list[str]:
+    """Signs that Nightshift is not set up as the README's "Run it" section says. Nightshift 1.2.1 ignores the
+    model an app asks for and routes each call by its own mode, so on a default install calls can go to other
+    models, and its quality lane answers some of them unstreamed and cuts them off at 45 s."""
+    problems = []
+    if served_by and served_by != requested:
+        problems.append(f"Nightshift served {served_by} instead of the requested {requested}. Set up its lanes as "
+                        "the README's Run it section says, with only that model's lane running.")
+    if steps and steps.get("scaffold_active"):
+        problems.append("Nightshift added its reasoning scaffold, so its Quality track is not set up as the README's "
+                        "Run it section says. With the quality race on, about half of the calls are answered "
+                        "unstreamed and cut off at 45 s.")
+    return problems
+
+
 def read_sse(lines) -> dict:
     """Assemble Nightshift's SSE frames into the shape of a buffered reply, so chat() reads both the same way.
     Nightshift has already sent 200 when a stream fails, so the failure arrives as an error frame instead.
@@ -102,6 +120,15 @@ class NightshiftClient:
             raise MeterlessError("METERLESS_RUNTIME_TOKEN is not set")
         self.s = settings
         self.tracer = tracer
+        self._warned: set[str] = set()
+
+    def _warn_setup(self, agent: str, model: str, served_by: str | None, steps: dict | None) -> None:
+        """Warn once per problem, at the first call that shows it, rather than leave a run of quiet timeouts."""
+        for problem in setup_problems(model, served_by, steps):
+            if problem not in self._warned:
+                self._warned.add(problem)
+                self.tracer.event(agent, "nightshift_warning", warning=problem)
+                log.warning(problem)
 
     def _post(self, body: dict) -> dict:
         # A fresh scope per call keeps Nightshift's H-MEM out. Its memory is walled by scope, and under the
@@ -148,12 +175,14 @@ class NightshiftClient:
                 # The full messages and reply go into the trace so a reader can see exactly what each agent
                 # was shown and what it answered, including Ultra's inline reasoning. Nothing secret is in
                 # them: the token travels only in the request headers, and all data is public openFDA.
+                steps = nightshift_steps(j)
                 self.tracer.event(agent, "llm_call", provider="meterless-nightshift", model=model,
                                   served_by=j.get("model"), prompt_sha=prompt_sha,
                                   prompt_chars=sum(len(m["content"]) for m in messages),
                                   reply_chars=len(content), usage=j.get("usage"), ms=t.ms, attempt=attempt,
-                                  messages=messages, reply=content, nightshift=nightshift_steps(j),
+                                  messages=messages, reply=content, nightshift=steps,
                                   **({"reasoning": msg["reasoning_content"]} if msg.get("reasoning_content") else {}))
+                self._warn_setup(agent, model, j.get("model"), steps)
                 if not content.strip():
                     raise MeterlessError("empty reply")
                 return content

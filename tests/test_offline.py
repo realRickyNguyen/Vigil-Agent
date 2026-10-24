@@ -245,7 +245,8 @@ def test_trace_keeps_full_prompt_and_reply_but_not_the_token(monkeypatch):
     monkeypatch.setattr(client, "_post", lambda body: {"model": "served", "choices": [
         {"message": {"content": reply, "reasoning_content": "hidden steps"}}]})
     client.chat("reviewer", "m", messages)
-    (_, kind, data), = client.tracer.events
+    # The call is served by another model than the one asked for, so a setup warning follows it.
+    (_, kind, data), = [e for e in client.tracer.events if e[1] == "llm_call"]
     assert kind == "llm_call" and data["messages"] == messages and data["reply"] == reply
     assert data["reasoning"] == "hidden steps" and data["served_by"] == "served"
     assert "secret-token-xyz" not in json.dumps(client.tracer.events)
