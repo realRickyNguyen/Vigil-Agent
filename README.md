@@ -124,12 +124,14 @@ flowchart TD
 
 ## Results so far
 
-A development evaluation against a hand-labelled set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 22 Oct with the first version of the decision contract:
-- **Accuracy:** 93% of the Analyst's first-round assessments and 95% of final assessments matched the reference label, among the clear reference items the agents assessed.
-- **Coverage is the main gap:** the first round assessed only 27 of the 80 clear reference items.
-- **The Reviewer mostly confirmed:** across these runs it fixed one finding, kept one wrong one, and added 16 reactions the Analyst had skipped.
+A development evaluation against a reference set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 24 Oct with each drug once and montelukast twice more.
+- **Accuracy:** 93% of the Analyst's first-round assessments (26 of 28) and 89% of final assessments (49 of 55) matched the reference label, among the clear reference items the agents assessed. Rules settled 27 of these, all correctly, and the model was right on 22 of 28.
+- **The errors:** of the 6 final errors, 3 are reference rows written from older label versions whose wording today's labels no longer contain, 2 are judgement calls between a broader and a narrower term, and 1 is a model error (a contraindication counted as label coverage).
+- **Coverage is the main gap:** the first round assessed 24 of the 80 clear reference items, and 43 had a final answer.
+- **The Reviewer mostly confirmed:** it kept 26 correct findings and 2 wrong ones, and added 5 or 6 reactions per run that the Analyst had skipped.
+- **Stable and faster:** three montelukast runs agreed on 95% of the reactions they shared, and each run took 8 to 11 minutes.
 
-These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/](eval/reports/).
+These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/eval-20261024T022640Z.md](eval/reports/eval-20261024T022640Z.md).
 
 ## Status
 

@@ -39,8 +39,9 @@ The hackathon requires Zetaris and Meterless to run on your own machine, so each
    - one lane running `nvidia/nemotron-3-ultra-550b-a55b`
    - every other lane stopped
    - Preferences › race width 1
+   - Preferences › Quality track, with the quality race and the reasoning scaffold both off. They are saved in `%LOCALAPPDATA%\ai.meterless.runtime\state\setpoints.json` as `"raceParallelism": 1`, `"qualityRace": "off"` and `"reasoningScaffold": "off"`, and take effect after a Nightshift restart. With the quality race on, Nightshift answers about half our calls without streaming and cuts them off at 45 s.
 
-   Racing lanes breaks model pinning. Check the lanes again after every Nightshift restart.
+   Racing lanes breaks model pinning. Check the lanes and the Quality track again after every Nightshift restart.
 3. **`.env`.** Copy `.env.example` to `.env` and fill in the Zetaris URL, key and org ID, and the Nightshift URL and Runtime token (shown in the Nightshift Console). Never commit `.env`.
 4. **The shared Zetaris baseline**, once per Zetaris install:
 

@@ -1,0 +1,652 @@
+{
+ "scores": [
+  {
+   "run_id": "20261024T012008Z-d0edf3",
+   "drug": "atorvastatin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 5,
+    "correct": 5,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 8,
+    "correct": 8,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 5
+   },
+   "added_after_missing": {
+    "count": 5,
+    "scored": 3,
+    "correct": 3,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 3
+    },
+    "rule": {
+     "correct": 5
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 5,
+    "gold": {
+     "possible_new_signal (ambiguous)": 2,
+     "not in gold": 2,
+     "possible_new_signal": 1
+    }
+   },
+   "unresolved": [
+    "DIABETES MELLITUS"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "ACUTE KIDNEY INJURY",
+    "END STAGE RENAL DISEASE",
+    "HYPERKALAEMIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 1,
+    "on_label -> on_label": 6,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T012947Z-922942",
+   "drug": "isotretinoin",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 5,
+    "correct": 5,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 9,
+    "correct": 9,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 5
+   },
+   "added_after_missing": {
+    "count": 5,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 5
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 2,
+    "gold": {
+     "possible_new_signal": 1,
+     "possible_new_signal (ambiguous)": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "ACNE",
+    "DRY EYE",
+    "EPISTAXIS"
+   ],
+   "open_items": {
+    "pending": 2
+   },
+   "confusion_final": {
+    "on_label -> on_label": 8,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 2
+    },
+    {
+     "round": 3,
+     "reviewed": 2,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 2
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T013903Z-af1125",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 18,
+   "round1": {
+    "scored": 6,
+    "correct": 4,
+    "accuracy": 0.667
+   },
+   "final": {
+    "scored": 9,
+    "correct": 5,
+    "accuracy": 0.556
+   },
+   "reviewer_effect": {
+    "kept_wrong": 2,
+    "kept_correct": 4
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 3,
+    "correct": 1,
+    "accuracy": 0.333
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 4,
+     "correct": 1
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 3,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 9,
+    "gold": {
+     "on_label": 3,
+     "possible_new_signal (ambiguous)": 1,
+     "likely_indication_or_disease (ambiguous)": 1,
+     "not in gold": 4
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 2,
+   "not_in_gold": [
+    "DEHYDRATION",
+    "PANCREATITIS",
+    "PANCREATITIS ACUTE",
+    "RENAL FAILURE",
+    "SHOCK"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 1,
+    "likely_indication_or_disease -> on_label": 1,
+    "on_label -> on_label": 4,
+    "on_label -> possible_new_signal": 3
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T014941Z-3ead20",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 3,
+    "correct": 3,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 7,
+    "correct": 7,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 3
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 5
+    },
+    "rule": {
+     "correct": 2
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 2,
+    "gold": {
+     "possible_new_signal (ambiguous)": 1,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "SLEEP DISORDER DUE TO A GENERAL MEDICAL CONDITION"
+   ],
+   "ambiguous_classified": 1,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "DEPRESSION",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "MIDDLE INSOMNIA",
+    "NIGHTMARE",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 5,
+    "not_meaningful -> not_meaningful": 1,
+    "on_label -> on_label": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 1,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T015918Z-fcfc12",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 5,
+    "correct": 5,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 10,
+    "correct": 8,
+    "accuracy": 0.8
+   },
+   "reviewer_effect": {
+    "kept_correct": 5
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 5,
+    "correct": 3,
+    "accuracy": 0.6
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 2,
+     "correct": 3
+    },
+    "rule": {
+     "correct": 5
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 3,
+    "gold": {
+     "on_label": 1,
+     "not in gold": 2
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 1,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HALLUCINATION",
+    "HYPONATRAEMIA",
+    "PSYCHOTIC DISORDER",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "on_label -> likely_indication_or_disease": 1,
+    "on_label -> on_label": 8,
+    "on_label -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T020829Z-ec767d",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 2,
+    "correct": 2,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 6,
+    "correct": 6,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 2
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 3
+    },
+    "rule": {
+     "correct": 3
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "possible_new_signal (ambiguous)": 2,
+     "not in gold": 2
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "DEPRESSION",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "MIDDLE INSOMNIA",
+    "NIGHTMARE",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 3,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T021601Z-e25cfa",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 2,
+    "correct": 2,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 6,
+    "correct": 6,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 2
+   },
+   "added_after_missing": {
+    "count": 5,
+    "scored": 4,
+    "correct": 4,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 2
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 3,
+    "gold": {
+     "possible_new_signal (ambiguous)": 1,
+     "not in gold": 2
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 2,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "MIDDLE INSOMNIA",
+    "NIGHTMARE",
+    "SLEEP APNOEA SYNDROME",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 2,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 2
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 10,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  }
+ ],
+ "agreement": [
+  {
+   "runs": [
+    "20261024T014941Z-3ead20",
+    "20261024T020829Z-ec767d",
+    "20261024T021601Z-e25cfa"
+   ],
+   "pairs": [
+    {
+     "a": "20261024T014941Z-3ead20",
+     "b": "20261024T020829Z-ec767d",
+     "reaction_overlap_jaccard": 0.778,
+     "accepted_in_both": 13,
+     "same_classification": 12,
+     "disagreements": [
+      [
+       "ANXIETY",
+       "on_label",
+       "possible_new_signal"
+      ]
+     ]
+    },
+    {
+     "a": "20261024T014941Z-3ead20",
+     "b": "20261024T021601Z-e25cfa",
+     "reaction_overlap_jaccard": 0.6,
+     "accepted_in_both": 11,
+     "same_classification": 11,
+     "disagreements": []
+    },
+    {
+     "a": "20261024T020829Z-ec767d",
+     "b": "20261024T021601Z-e25cfa",
+     "reaction_overlap_jaccard": 0.778,
+     "accepted_in_both": 13,
+     "same_classification": 12,
+     "disagreements": [
+      [
+       "ANXIETY",
+       "possible_new_signal",
+       "on_label"
+      ]
+     ]
+    }
+   ],
+   "classification_agreement": 0.946
+  }
+ ]
+}
