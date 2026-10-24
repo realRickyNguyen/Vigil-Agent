@@ -11,7 +11,9 @@ it). Two other results are reported as context, not challenges, because on 23 Oc
 - shared_with_co_drugs (the reaction also passes the screen for most co-drugs) fired on all 7 checked items of
   montelukast, atorvastatin and metformin, including two the gold set calls possible new signals, because the
   top co-drugs go to the same patients and share their conditions. It changed no outcome on its own.
-A challenged finding goes back to the Reviewer with this evidence.
+A third context result, attenuated_by, names co-drugs that lower the PRR by 30% or more without taking it below 2.
+A challenged finding goes back to the Reviewer with this evidence; an unchallenged one is marked "no_challenge",
+which is not a confirmation.
 The Skeptic never changes a priority itself: spontaneous reports show reporting patterns, and adjusting for
 one co-drug at a time is not full adjustment."""
 import math
@@ -31,6 +33,7 @@ SALTS = {"sodium", "disodium", "potassium", "calcium", "magnesium", "hydrochlori
 ALPHA = 0.5          # Omega shrinkage, as in Noren et al. 2008
 Z975 = 1.959964      # 97.5th percentile of the standard normal, for Omega's lower 95% bound
 PRR_THRESHOLD = 2.0  # the screen's PRR threshold (Evans)
+ATTENUATION = 0.7  # adjusted PRR at or below 70% of the unadjusted one is reported as context
 
 
 def base_names(term: str) -> list[str]:
@@ -105,15 +108,20 @@ def pair_stats(c: dict) -> dict:
             "omega": round(omega, 2), "omega025": round(omega025, 2), "possible_interaction": omega025 > 0}
 
 
-def assess(pairs: list[dict]) -> dict:
+def assess(pairs: list[dict], prr: float | None = None) -> dict:
+    """"no_challenge" means no co-drug took the adjusted PRR below 2. It does not mean the finding was confirmed."""
     ok = [p for p in pairs if "error" not in p]
     adjusted_below = [p["co_drug"] for p in ok if p["adjusted_prr"] is not None and p["adjusted_prr"] < PRR_THRESHOLD]
     co_signals = [p["co_drug"] for p in ok if p["co_drug_passes_screen"]]
     # "Most" needs at least two co-drugs checked, so one co-drug alone never makes a pattern "shared".
     shared = len(ok) >= 2 and len(co_signals) > len(ok) / 2
+    # A large drop that stays above 2 is context for the analyst, not a challenge: montelukast SPUTUM DISCOLOURED
+    # went from 25.7 to 5.1 to 8.7 on 23 Oct. Shown so it is not hidden behind the threshold.
+    attenuated = [p["co_drug"] for p in ok if prr and p["adjusted_prr"] is not None
+                  and p["co_drug"] not in adjusted_below and p["adjusted_prr"] <= ATTENUATION * prr]
     reasons = ["adjusted_below_threshold"] if adjusted_below else []
-    return {"outcome": "not_checked" if not ok else "challenged" if reasons else "holds",
-            "challenge_reasons": reasons, "adjusted_below_threshold": adjusted_below,
+    return {"outcome": "not_checked" if not ok else "challenged" if reasons else "no_challenge",
+            "challenge_reasons": reasons, "adjusted_below_threshold": adjusted_below, "attenuated_by": attenuated,
             "shared_with_co_drugs": shared, "co_drugs_passing_screen": co_signals,
             "possible_interactions": [p["co_drug"] for p in ok if p["possible_interaction"]]}
 
@@ -133,6 +141,9 @@ def summary(ev: dict, drug: str, prr: float | None) -> str:
             f"{p['co_drug_prr']}{' and passes the screen' if p['co_drug_passes_screen'] else ''}; reports with both "
             f"drugs: {p['observed_both']} observed vs {p['expected_both']} expected without interaction "
             f"(Omega lower bound {p['omega025']}{', a possible interaction' if p['possible_interaction'] else ''}).")
+    if ev.get("attenuated_by"):
+        parts.append(f"Adjusting for {', '.join(ev['attenuated_by'])} lowers the PRR by 30% or more but not below "
+                     f"2 (context, not a challenge: part of the pattern may come from these co-drugs).")
     if ev.get("shared_with_co_drugs"):
         parts.append(f"The reaction also passes the screen for {len(ev['co_drugs_passing_screen'])} of "
                      f"{len(ev['pairs'])} co-drugs ({', '.join(ev['co_drugs_passing_screen'])}), so the pattern is "
@@ -145,6 +156,7 @@ def compact(ev: dict) -> dict:
     keys = ("co_drug", "query_id", "share", "co_drug_prr", "co_drug_passes_screen", "adjusted_prr", "observed_both",
             "expected_both", "omega025", "possible_interaction", "combination_partner", "error")
     return {"outcome": ev["outcome"], "challenge_reasons": ev.get("challenge_reasons", []),
+            "attenuated_by": ev.get("attenuated_by", []),
             "shared_with_co_drugs": ev.get("shared_with_co_drugs", False), "summary": ev.get("summary", ""),
             "co_drugs": [{k: p[k] for k in keys if k in p} for p in ev.get("pairs", [])]}
 
@@ -187,6 +199,6 @@ class Skeptic:
             ev["query_ids"].append(res.query_id)
             ev["pairs"].append({"co_drug": cand["co_drug"], "query_id": res.query_id, "counts": counts,
                                 "combination_partner": cand["combination_partner"], **pair_stats(counts)})
-        ev.update(assess(ev["pairs"]))
+        ev.update(assess(ev["pairs"], prr))
         ev["summary"] = summary(ev, drug, prr)
         return ev

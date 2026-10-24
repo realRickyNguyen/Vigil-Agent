@@ -10,11 +10,12 @@ from app.adapters.meterless import MeterlessError, NightshiftClient
 from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
 from app.agents.skeptic import compact
 from app.data.faers import DataClerk
-from app.data.label import META, excerpt_block, label_sentence, named_in_label, norm
+from app.data.label import INDICATION, META, SAFETY, excerpt_block, find_term, label_sentence, norm
 from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
 UNREVIEWED = "passed code checks; model review unavailable (Nightshift error), reasoning not reviewed"
+NO_VERDICT = "passed code checks; the Reviewer's reply gave no valid verdict for it, reasoning not reviewed"
 
 SYSTEM = """You are the Reviewer in a drug-safety review team. The Analyst has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
 
@@ -27,7 +28,9 @@ For each finding, decide:
 
 A treated condition that the label says the drug may cause or worsen (for example low blood glucose with a diabetes drug) is correctly "covered". A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support.
 
-Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
+Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. "attenuated_by" is context too: co-drugs that lower the PRR by 30% or more without taking it below 2. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
+
+FAERS counts have no denominator: reject reasoning or a next_check that compares a PRR or report count with an incidence or clinical-trial frequency, unless the check names another data source with a denominator. Do not make that comparison in your own objection or next_check either.
 
 For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
 
@@ -58,7 +61,9 @@ def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set
         f.label_quote = label_sentence(section, f.label_term or "")
         c["term_in_label"] = (f.label_quote is not None, f"term '{f.label_term}' in {f.label_section}")
     if f.label_coverage == "not_found":
-        named = named_in_label(f.reaction, label)
+        # A name in the contraindications is a condition the drug must not be used in, not an effect,
+        # so "not_found" stays possible for it (metformin DIABETIC KETOACIDOSIS).
+        named = find_term(f.reaction, label, only=(INDICATION,) + SAFETY) is not None
         c["not_named_in_label"] = (not named, f"label text {'contains' if named else 'does not contain'} "
                                               f"'{f.reaction.lower()}'")
     if f.review_priority == "review_next":
@@ -94,6 +99,8 @@ class Reviewer:
         skeptic = ctx.get("skeptic", {})
         payload = [{**f.to_dict(), "checks": {k: {"passed": ok, "detail": d} for k, (ok, d) in ch.items()},
                     "recheck_query": qid,
+                    **({"seriousness": ctx["seriousness"][f.reaction]} if f.reaction in ctx.get("seriousness", {})
+                       else {}),
                     **({"co_reported_drugs": compact(skeptic[f.reaction])} if f.reaction in skeptic else {})}
                    for f, ch, qid in checked]
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}
@@ -121,14 +128,17 @@ class Reviewer:
             elif v.get("decision") in ("reject", "unresolved", "unreviewed"):
                 reason = UNREVIEWED if v["decision"] == "unreviewed" else str(v.get("reason", ""))
                 verdicts.append(Verdict(f.reaction, v["decision"], reason, checks, **extra))
-            else:
+            elif v.get("decision") == "accept":
                 verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks,
                                         **extra))
+            else:
+                # The reply left this finding out or gave an unknown decision: passing code checks is not a review.
+                verdicts.append(Verdict(f.reaction, "unreviewed", NO_VERDICT, checks, **extra))
         return verdicts, missing, " ".join(s for s in summaries if s)
 
     def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None) -> dict:
         extra = (f"Strongest screen rows nobody has classified yet (query {ctx['screen_qid']}):\n"
-                 f"{screen_table(unpicked, UNPICKED_ROWS)}\n\n" if unpicked else
+                 f"{screen_table(unpicked, UNPICKED_ROWS, ctx.get('seriousness'))}\n\n" if unpicked else
                  "Another batch reviews missing reactions; return \"missing\": [].\n\n")
         names = [p["reaction"] for p in batch]
         messages = [{"role": "system", "content": SYSTEM},

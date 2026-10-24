@@ -52,15 +52,26 @@ Answer three separate questions for each listed reaction:
 
 Also give "reasoning" (one sentence: why this priority) and "next_check" (one concrete check an analyst could run next, for example a specific breakdown of the reports or a label section to compare).
 
+The "serious" and "death" columns, when shown, are the share of the reports with this drug and reaction that were flagged serious or reported a death. The flag belongs to the whole report, which may list other reactions. Use them in "reasoning" to say how much a review_next item matters; they say nothing about label coverage or about whether the drug caused the reaction.
+
+FAERS counts have no denominator. Never compare a PRR or a report count with an incidence or a clinical-trial frequency, and never propose that comparison as a next_check unless the check names another data source that has a denominator.
+
 Rules: use only the data in the message; never invent numbers, reactions or label text; copy "reaction", "a" and "prr" exactly from the table; "evidence" lists the query IDs you relied on; "summary" is at most two sentences.
 
 Reply with only a JSON object:
 {"findings": [{"reaction": str, "a": int, "prr": float, "context": str, "label_coverage": str, "review_priority": str, "label_section": str or null, "label_term": str or null, "reasoning": str, "next_check": str, "evidence": [str]}], "summary": str}"""
 
 
-def screen_table(signals: list[Signal], limit: int) -> str:
-    lines = ["reaction | a (reports with drug) | PRR | chi2"]
-    lines += [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2}" for s in signals[:limit]]
+def screen_table(signals: list[Signal], limit: int, severity: dict | None = None) -> str:
+    """The screen rows; with severity, also the share of each row's reports flagged serious or reporting a death."""
+    if not severity:
+        lines = ["reaction | a (reports with drug) | PRR | chi2"]
+        return "\n".join(lines + [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2}" for s in signals[:limit]])
+    pct = lambda v: "n/a" if v is None else f"{v:.0%}"
+    lines = ["reaction | a (reports with drug) | PRR | chi2 | serious | death  (share of the a reports flagged "
+             "serious / reporting a death; the flag is for the whole report, not this reaction)"]
+    lines += [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2} | {pct(severity.get(s.reaction, {}).get('serious_share'))} "
+              f"| {pct(severity.get(s.reaction, {}).get('death_share'))}" for s in signals[:limit]]
     return "\n".join(lines)
 
 
@@ -109,7 +120,7 @@ class Analyst:
         user = (f"{self.header(ctx)}\n\nAlready being assessed (the {self.top} strongest rows by chi2): {top}\n\n"
                 f"Further rows of the disproportionality screen (query {ctx['screen_qid']}). Rows pass the Evans "
                 f"screen (PRR >= 2, chi2 >= 4, at least 3 reports), strongest evidence (chi2) first:\n"
-                f"{screen_table(rows, len(rows))}")
+                f"{screen_table(rows, len(rows), ctx.get('seriousness'))}")
         system = PICK_SYSTEM.replace("EXTRA", str(self.extra))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": system},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
@@ -155,7 +166,20 @@ class Analyst:
             fb = fb if fb["rejected"] or fb["missing"] else None
         try:
             f, s = self._classify_batch(ctx, batch, fb)
-            return f, s, []
+            # A reply that leaves a reaction out must not make it vanish from the queue: ask once more for
+            # that reaction alone, then report it as failed.
+            failed = []
+            for r in [r for r in batch if r not in {x.reaction for x in f}]:
+                self.llm.tracer.event(self.name, "omitted", reaction=r, fallback="one reaction per call")
+                try:
+                    again = self._classify_batch(ctx, [r], fb)[0]
+                except MeterlessError:
+                    again = []
+                f += again
+                if not again:
+                    failed.append(r)
+                    self.llm.tracer.event(self.name, "unclassified", reaction=r, error="omitted from the reply")
+            return f, s, failed
         except MeterlessError as e:
             # Smaller calls succeed more often; a reaction that still fails is reported, not guessed.
             self.llm.tracer.event(self.name, "degraded", step="classify", batch=batch, error=str(e)[:200],
@@ -172,13 +196,14 @@ class Analyst:
     def _classify_batch(self, ctx: dict, reactions: list[str], feedback: dict | None) -> tuple[list[Finding], str]:
         rows = [s for s in ctx["passing"] if s.reaction in set(reactions)]
         user = (f"{self.header(ctx)}\n\nReactions to classify (from query {ctx['screen_qid']}):\n"
-                f"{screen_table(rows, len(rows))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
+                f"{screen_table(rows, len(rows), ctx.get('seriousness'))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
         skeptic = {r: compact(ctx["skeptic"][r]) for r in reactions if r in ctx.get("skeptic", {})}
         if skeptic:
             user += ("\n\nThe Skeptic checked the drugs most often reported alongside this one (adjusted_prr: this "
                      "drug's PRR adjusted for the co-drug; shared_with_co_drugs: the reaction is also "
                      "disproportionate for most co-drugs, context only; possible_interaction: more reports with both "
-                     "drugs than either alone predicts, context only). Take it into account and cite its query IDs in \"evidence\" if you "
+                     "drugs than either alone predicts, context only; attenuated_by: co-drugs that lower the PRR by 30% or more "
+                     "without taking it below 2, context only). Take it into account and cite its query IDs in \"evidence\" if you "
                      "rely on it:\n" + json.dumps(skeptic, indent=1))
         if feedback:
             user += ("\n\nThe Reviewer reviewed your earlier findings for these reactions. For each rejected one, "

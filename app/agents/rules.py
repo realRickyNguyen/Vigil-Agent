@@ -19,10 +19,22 @@ SOCIAL = re.compile(
     r"FINANCIAL (DIFFICULTY|PROBLEM)|^DISABILITY$|^BEDRIDDEN$|WHEELCHAIR USER|WALKING AID USER")
 
 
+# Exposure in pregnancy or breastfeeding: not an adverse event itself, but not "nothing to review" either
+# (isotretinoin has a pregnancy-prevention programme). Checked before ADMINISTRATIVE, which also matches them.
+PREGNANCY_EXPOSURE = re.compile(r"EXPOSURE.*(PREGNANCY|BREAST MILK)|(FOETAL|FETAL|MATERNAL|PATERNAL) EXPOSURE")
+
+
 def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
     """A rule finding for this reaction, or None if it needs the model."""
     base = dict(reaction=s.reaction, a=s.a, prr=s.prr, evidence=evidence, decided_by="rule",
                 review_priority="lower_priority")
+    if PREGNANCY_EXPOSURE.search(s.reaction):
+        return Finding(**base, label_coverage="not_assessed", context="non_clinical",
+                       reasoning="Rule: exposure during pregnancy or breastfeeding, not an adverse event in itself; "
+                                 "the outcomes reported with it decide whether it matters.",
+                       next_check="Count pregnancy outcomes (abortion, congenital anomaly, foetal disorders) in the "
+                                  "same reports, and check the label's pregnancy section and any pregnancy-prevention "
+                                  "programme.")
     if ADMINISTRATIVE.search(s.reaction):
         return Finding(**base, label_coverage="not_assessed", context="non_clinical",
                        reasoning="Rule: administrative MedDRA term about product use or reporting, not a clinical event.",

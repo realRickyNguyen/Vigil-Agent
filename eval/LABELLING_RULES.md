@@ -58,3 +58,14 @@ The label text was searched with regular expressions over all label sections, no
 - Rows still in the top 20 keep their v1 decision unless the new label no longer supports the v1 evidence. Each row's `origin` says which applies: `kept from v1` (83), `re-checked against the new label` (7), `new in the top 20` (10).
 - Re-checked: montelukast pneumonia and bronchitis (the newest label has no pediatric adverse-reaction list), metformin acute kidney injury (named only in the combination label's sitagliptin part) and weight decreased, sertraline intentional overdose, paranoia and drug abuse (evidence wording changed).
 - Labelled by Claude (AI) from the label text and the screen only, **before looking at any output of the 23 Oct evaluation runs**. Earlier runs on 23 Oct had been looked at, for a few items. **Not yet reviewed by a person.**
+
+## Rows flagged for the human review (24 Oct 2026)
+
+An outside design review (Astra High, `docs/reviews/astra-high-review-2026-10-24.md`, section 5) disputed several gold rows. Two of them conflict with these rules as written, so the person reviewing the gold set should decide them first. **The gold files are unchanged:** changing labels right after seeing results would bias the scores.
+
+| Row in `gold_v2.jsonl` | Gold now | The conflict |
+|---|---|---|
+| 45, metformin METABOLIC ACIDOSIS | `on_label`, clear | The evidence is lactic acidosis, a narrower term. Rule 2 says a narrower label term does not cover a broader reaction, which points to `possible_new_signal` or at least `ambiguous`. |
+| 85, sertraline INTENTIONAL SELF-INJURY | `on_label`, clear | The evidence is suicidal behaviour. Self-injury without suicidal intent may not be covered by it; at least `ambiguous`, unless another label passage covers it. |
+
+The review's other disagreements (atorvastatin renal terms covered only "secondary to rhabdomyolysis", metformin blood glucose terms, chest discomfort and chest pain, isotretinoin pregnancy exposure, montelukast pneumonia and bronchitis against a label for ages 15 and over) are judgement calls for the same reviewer.

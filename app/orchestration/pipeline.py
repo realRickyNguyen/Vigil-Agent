@@ -55,15 +55,19 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     label_qid, label = clerk.label(drug)
     combo_res, combination = clerk.combination_products(drug, totals["drug_reports"])
+    severity_res, severity = clerk.seriousness(drug)
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
-        "label_choice": clerk.label_choice, "combination": combination,
+        "label_choice": clerk.label_choice, "combination": combination, "seriousness": severity,
         "screen_qid": screen_res.query_id, "screen_passing": len(passing),
         "screen_shown": min(SCREEN_ROWS, len(passing)),
-        "screen_table": screen_table(passing, SCREEN_ROWS),
+        "screen_table": screen_table(passing, SCREEN_ROWS, severity),
         "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set())
-                        | ({combo_res.query_id} if combo_res else set()),
+                        | ({combo_res.query_id} if combo_res else set())
+                        | ({severity_res.query_id} if severity_res else set()),
     }
+    if severity_res is None:
+        tracer.event("data_clerk", "degraded", step="seriousness", fallback="no serious or death shares this run")
     tracer.event("data_clerk", "evidence_ready", screened=len(signals), passing=len(passing),
                  label_sections=[k for k in label if k not in ("effective_time", "set_id")],
                  label_effective=label.get("effective_time"), label_choice=clerk.label_choice,
@@ -120,7 +124,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items)
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
-    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"))
+    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity)
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -156,7 +160,10 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "data": {"source": "openFDA FAERS and drug label via Zetaris", **{k: totals[k] for k in
                  ("drug_reports", "all_reports", "data_last_updated")},
                  "label_effective": label.get("effective_time"), "label_set_id": label.get("set_id"),
-                 "label_choice": clerk.label_choice, "combination_products": combination},
+                 "label_choice": clerk.label_choice, "combination_products": combination,
+                 "seriousness_query": severity_res.query_id if severity_res else None,
+                 "seriousness_note": "serious and death shares are of each reaction's reports; the flags describe "
+                                     "the whole report, which may list other reactions"},
         "counts": counts,
         "review_queue": queue,
         "degraded_steps": degraded,
@@ -293,14 +300,16 @@ STATUS_ORDER = {"unresolved": 0, "reviewed": 1, "not_reviewed": 2, "pending": 3,
 
 
 def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str],
-                 skeptic: dict | None = None) -> list[dict]:
+                 skeptic: dict | None = None, severity: dict | None = None) -> list[dict]:
     """The analyst's queue: every assessed reaction with its priority, objection and next check, plus
-    reactions that were named for review but never reached, ranked review_next first."""
+    reactions that were named for review but never reached, ranked review_next first. The serious and death
+    shares are shown, not used for ranking: they describe whole reports, not the reaction."""
     stats = {s.reaction: s for s in passing}
+    sev = lambda r: {"seriousness": severity[r]} if severity and r in severity else {}
     queue = []
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
-        queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None,
+        queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None, **sev(r),
                       "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
                       "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
                       "history": e["history"],
@@ -308,13 +317,14 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,
-                      "chi2": s.chi2 if s else None, "workflow_status": "pending", "review_priority": None,
+                      "chi2": s.chi2 if s else None, **sev(m["reaction"]), "workflow_status": "pending",
+                      "review_priority": None,
                       "status_note": f"named by the Reviewer in the last round, not reached: {m.get('why', '')}"})
     for r in sorted(set(failed) - set(state)):
         s = stats.get(r)
         queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
-                      "chi2": s.chi2 if s else None, "workflow_status": "failed", "review_priority": None,
-                      "status_note": "the Analyst's model call failed after every fallback"})
+                      "chi2": s.chi2 if s else None, **sev(r), "workflow_status": "failed", "review_priority": None,
+                      "status_note": "the Analyst's model gave no classification for it after every fallback"})
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
     return queue

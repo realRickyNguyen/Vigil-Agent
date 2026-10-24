@@ -28,6 +28,8 @@ LABEL_FIELDS = ("boxed_warning", "warnings_and_cautions", "warnings", "precautio
 # Both fields that name a co-drug, so the list matches what drug_search() finds.
 CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
+SERIOUS_FLAGS = {"serious": "serious:1", "death": "seriousnessdeath:1"}
+COUNT_LIMIT = 999  # openFDA's largest count list without a key
 PAIR_COUNTS = ("n", "n_r", "n_x", "n_xr", "n_y", "n_yr", "n_xy", "n_xyr")
 
 
@@ -153,6 +155,22 @@ def choose_label(records: list[dict]) -> tuple[dict, dict]:
                            "has_boxed_warning": bool(r.get("boxed_warning"))}
 
 
+def seriousness_summary(records: list[dict]) -> dict:
+    """{reaction: {"serious", "death", "serious_share", "death_share"}} from the seriousness() query rows."""
+    def count(rec, k):
+        if rec.get(k) is not None:
+            return int(float(rec[k]))
+        return None if int(float(rec.get(f"{k}_terms") or 0)) >= COUNT_LIMIT else 0
+
+    out = {}
+    for rec in records:
+        a = int(float(rec["a"]))
+        c = {k: count(rec, k) for k in SERIOUS_FLAGS}
+        out[rec["reaction"]] = {**c, **{f"{k}_share": (round(v / a, 3) if v is not None and a else None)
+                                        for k, v in c.items()}}
+    return out
+
+
 def combination_summary(rows: list[tuple[str, str, int]], drug: str, drug_reports: int) -> dict:
     """How many of the drug's reports name it inside a combination product, from (field, product name, reports)
     rows over the drug's reports. Bryan found this is 1% for atorvastatin but 46% for acetaminophen and 12% for
@@ -259,6 +277,30 @@ class DataClerk:
             return None, None
         rows = [(rec["field"], rec["product"], int(float(rec["reports"]))) for rec in res.records()]
         return res, combination_summary(rows, drug, int(float(drug_reports)))
+
+    def seriousness(self, drug: str) -> tuple[QueryResult | None, dict]:
+        """Per reaction: how many of this drug's reports naming it were flagged serious, and how many report a
+        death. Two openFDA counts (the drug's reactions among serious reports, among death reports), joined to the
+        reaction counts in Zetaris. The flags belong to the whole report, not to one reaction. Each list holds the
+        999 most frequent reactions; a reaction missing from a full list is below its cutoff (None), from a
+        shorter list it has none (0). Empty if the query fails; the run goes on without it."""
+        s = slug(drug)
+        raws = {k: self._count_table(f"{drug_search(drug)}+AND+{flag}", REACTION_FIELD,
+                                     f"register {k} reaction counts for {drug}", 999)
+                for k, flag in SERIOUS_FLAGS.items()}
+        flat = {k: f"(SELECT r.term AS reaction, r.`count` AS reports FROM openfda_rest.{raw} "
+                   f"LATERAL VIEW explode(results) AS r)" for k, raw in raws.items()}
+        sql = (f"SELECT dr.reaction, dr.reports AS a, se.reports AS serious, de.reports AS death, "
+               f"(SELECT COUNT(*) FROM {flat['serious']} x) AS serious_terms, "
+               f"(SELECT COUNT(*) FROM {flat['death']} y) AS death_terms\n"
+               f"FROM openfda.faers_d2_{s}_reactions dr\n"
+               f"LEFT JOIN {flat['serious']} se ON se.reaction = dr.reaction\n"
+               f"LEFT JOIN {flat['death']} de ON de.reaction = dr.reaction")
+        try:
+            res = self.z.run(sql, f"serious and fatal reports per reaction for {drug}")
+        except ZetarisError:
+            return None, {}
+        return res, seriousness_summary(res.records())
 
     def co_drugs(self, drug: str, reaction: str, limit: int = 100) -> tuple[QueryResult, list[tuple[str, int]]]:
         """Drugs named on the reports of this drug and reaction, by exact generic name and by active substance.

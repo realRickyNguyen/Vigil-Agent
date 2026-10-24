@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agents.skeptic import assess, base_names, pair_stats, rank_co_drugs  # noqa: E402
+from app.agents.skeptic import assess, base_names, compact, pair_stats, rank_co_drugs  # noqa: E402
 from app.data.faers import CO_DRUG_FIELDS, REACTION_FIELD, DataClerk, drug_search, phrase  # noqa: E402
 from app.schemas import QueryResult  # noqa: E402
 from app.orchestration.pipeline import review_queue, skeptic_round  # noqa: E402
@@ -115,13 +115,13 @@ def test_assess_outcomes():
     # Drug alone 1% like background, co-drug 2%, both 2%: the co-drug explains it, no interaction.
     confounded = {"co_drug": "b", **pair_stats(counts(20, 1000, 100, 10000, 200, 10000, 1000, 100000))}
     interacting = {"co_drug": "c", **pair_stats(INTERACTION)}
-    assert assess([holds])["outcome"] == "holds"
+    assert assess([holds])["outcome"] == "no_challenge"
     out = assess([holds, confounded])
     assert out["outcome"] == "challenged" and out["challenge_reasons"] == ["adjusted_below_threshold"]
     assert out["adjusted_below_threshold"] == ["b"]
     # An interaction is context only: it is reported but does not challenge.
     out = assess([holds, interacting])
-    assert out["outcome"] == "holds" and out["possible_interactions"] == ["c"]
+    assert out["outcome"] == "no_challenge" and out["possible_interactions"] == ["c"]
     assert assess([{"co_drug": "d", "error": "x"}])["outcome"] == "not_checked"
 
 
@@ -131,7 +131,7 @@ def test_a_pattern_shared_with_most_co_drugs_is_context_not_a_challenge():
     assert shared["co_drug_passes_screen"] and shared["adjusted_prr"] >= 2
     holds = {"co_drug": "a", **pair_stats(NO_INTERACTION)}
     out = assess([holds, {"co_drug": "e", **shared}, {"co_drug": "f", **shared}])
-    assert out["outcome"] == "holds" and out["challenge_reasons"] == []
+    assert out["outcome"] == "no_challenge" and out["challenge_reasons"] == []
     assert out["shared_with_co_drugs"] and out["co_drugs_passing_screen"] == ["e", "f"]
     assert not assess([holds, {"co_drug": "e", **shared}, {"co_drug": "g", **holds}])["shared_with_co_drugs"]
     assert not assess([{"co_drug": "e", **shared}])["shared_with_co_drugs"]  # one co-drug is not "most"
@@ -214,10 +214,10 @@ def round_state(reactions):
 def test_skeptic_round_holds_needs_no_model_call():
     ctx, state = round_state(["A"])
     reviewer, analyst = FakeReviewer([]), FakeAnalyst()
-    out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds"}), reviewer, analyst, Tracer(), 3)
+    out = skeptic_round(ctx, state, FakeSkeptic({"A": "no_challenge"}), reviewer, analyst, Tracer(), 3)
     assert out == {"checked": 1, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
     assert reviewer.calls == [] and "q-A" in ctx["evidence_ids"]
-    assert review_queue(state, ctx["passing"], [], [], ctx["skeptic"])[0]["co_reported_drugs"]["outcome"] == "holds"
+    assert review_queue(state, ctx["passing"], [], [], ctx["skeptic"])[0]["co_reported_drugs"]["outcome"] == "no_challenge"
 
 
 def test_skeptic_round_challenge_goes_reviewer_analyst_reviewer():
@@ -242,7 +242,7 @@ def test_skeptic_round_unsettled_dispute_ends_unresolved():
 def test_skeptic_round_checks_only_the_top_accepted_review_next_items():
     ctx, state = round_state(["A", "B", "C"])
     state["C"]["finding"].review_priority = "lower_priority"
-    out = skeptic_round(ctx, state, FakeSkeptic({"A": "holds", "B": "holds"}), FakeReviewer([]), FakeAnalyst(),
+    out = skeptic_round(ctx, state, FakeSkeptic({"A": "no_challenge", "B": "no_challenge"}), FakeReviewer([]), FakeAnalyst(),
                         Tracer(), 1)
     assert out["checked"] == 1 and list(ctx["skeptic"]) == ["A"]  # A has the highest chi2
 
@@ -256,3 +256,15 @@ def test_failed_challenge_review_keeps_the_round_1_verdict():
     assert "could not be reviewed" in state["A"]["note"]
     assert [h["decision"] for h in state["A"]["history"]] == ["unreviewed"]
     assert out["challenge_not_reviewed"] == 1 and out["priority_changed"] == 0
+
+
+def test_large_drop_above_threshold_is_context_not_a_challenge():
+    pair = lambda name, adj: {"co_drug": name, "adjusted_prr": adj, "co_drug_passes_screen": False,
+                              "possible_interaction": False}
+    out = assess([pair("a", 5.1), pair("b", 20.0), pair("c", 1.5)], prr=25.7)
+    assert out["outcome"] == "challenged" and out["adjusted_below_threshold"] == ["c"]
+    assert out["attenuated_by"] == ["a"]  # c is already a challenge; b dropped by less than 30%
+    out = assess([pair("a", 5.1)], prr=25.7)
+    assert out["outcome"] == "no_challenge" and out["attenuated_by"] == ["a"]
+    assert assess([pair("a", 5.1)])["attenuated_by"] == []  # no unadjusted PRR, nothing to compare
+    assert "attenuated_by" in compact({**out, "pairs": []})

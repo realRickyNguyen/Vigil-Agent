@@ -413,3 +413,137 @@ def test_checks_new_signal_must_pass_screen():
     weak = Signal("RASH", a=2, b=1, c=1, d=1, prr=1.5, chi2=1.0)
     f = finding(reaction="RASH", a=2, prr=1.5, **NEW)
     assert any(m.startswith("passes_screen") for m in failed(code_checks(f, weak, LABEL, {"q-1"})))
+
+
+DKA_LABEL = {"indications_and_usage": "Metformin is indicated to improve glycemic control in type 2 diabetes.",
+             "contraindications": "Acute or chronic metabolic acidosis, including diabetic ketoacidosis.",
+             "warnings_and_cautions": "Lactic acidosis has occurred. Hypoglycemia can occur with insulin.",
+             "effective_time": "20260909"}
+
+
+def test_not_found_is_allowed_for_a_contraindication_only_name():
+    sig = Signal("DIABETIC KETOACIDOSIS", a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+    f = Finding(reaction=sig.reaction, a=10, prr=3.0, label_coverage="not_found", context="treated_condition",
+                review_priority="lower_priority", reasoning="x", evidence=["q-1"])
+    assert failed(code_checks(f, sig, DKA_LABEL, {"q-1"})) == []
+    lactic = Finding(reaction="LACTIC ACIDOSIS", a=10, prr=3.0, label_coverage="not_found", context="clinical_event",
+                     review_priority="lower_priority", reasoning="x", evidence=["q-1"])
+    assert any(m.startswith("not_named_in_label") for m in
+               failed(code_checks(lactic, Signal("LACTIC ACIDOSIS", 10, 1, 1, 1, 3.0, 50), DKA_LABEL, {"q-1"})))
+
+
+class OneVerdictLLM:
+    """A Reviewer reply that judges only the first finding of the batch."""
+    def __init__(self, reply):
+        self.tracer, self.reply = FakeTracer(), reply
+
+    def chat_json(self, agent, model, messages, **kw):
+        return self.reply
+
+
+class SignalClerk:
+    def signal(self, drug, reaction, agent="reviewer"):
+        from types import SimpleNamespace
+        return SimpleNamespace(query_id="q-r"), Signal(reaction, a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+
+
+def test_reviewer_marks_a_finding_left_out_of_its_reply_unreviewed():
+    from app.agents.reviewer import Reviewer
+    ctx = {**analyst_ctx(), "evidence_ids": {"q-s"}}
+    fs = [Finding(reaction=r, a=10, prr=3.0, label_coverage="not_found", context="clinical_event",
+                  review_priority="review_next", reasoning="x", next_check="y", evidence=["q-s"]) for r in "AB"]
+    llm = OneVerdictLLM({"verdicts": [{"reaction": "A", "decision": "accept", "reason": "ok"},
+                                      {"reaction": "B", "decision": "maybe"}]})
+    verdicts, _, _ = Reviewer(llm, "m", SignalClerk(), parallel=1).review(ctx, fs, set())
+    assert [(v.reaction, v.decision) for v in verdicts] == [("A", "accept"), ("B", "unreviewed")]
+    assert "no valid verdict" in verdicts[1].reason
+
+
+class OmittingLLM(FakeLLM):
+    """Leaves `omit` out of any reply that also names another reaction."""
+    def __init__(self, omit):
+        super().__init__()
+        self.omit = omit
+
+    def chat_json(self, agent, model, messages, **kw):
+        out = super().chat_json(agent, model, messages, **kw)
+        if len(out["findings"]) > 1:
+            out["findings"] = [f for f in out["findings"] if f["reaction"] != self.omit]
+        return out
+
+
+def test_analyst_retries_a_reaction_left_out_of_the_reply():
+    ctx = analyst_ctx()
+    findings, _ = Analyst(OmittingLLM("B"), "m").classify(ctx, ["A", "B", "C"])
+    assert sorted(f.reaction for f in findings) == ["A", "B", "C"] and not ctx.get("unclassified")
+
+
+def test_analyst_reports_a_reaction_the_model_never_returns_as_failed():
+    class NeverB(FakeLLM):
+        def chat_json(self, agent, model, messages, **kw):
+            out = super().chat_json(agent, model, messages, **kw)
+            out["findings"] = [f for f in out["findings"] if f["reaction"] != "B"]
+            return out
+    ctx = analyst_ctx()
+    h = Analyst(NeverB(), "m")
+    findings, _ = h.classify(ctx, ["A", "B", "C"])
+    assert sorted(f.reaction for f in findings) == ["A", "C"] and ctx["unclassified"] == ["B"]
+    assert any(k == "omitted" for _, k, _ in h.llm.tracer.events)
+
+
+def test_label_quote_always_contains_the_term():
+    from app.data.label import label_sentence
+    long = "Adverse reactions: " + "lactic acidosis and other events, " * 15 + "nausea, diarrhea and vomiting."
+    q = label_sentence(long, "diarrhea")
+    assert "diarrhea" in q and len(q) <= 300
+    assert label_sentence("Short sentence with headache. Next one.", "headache") == "short sentence with headache."
+
+
+def test_retrieval_finds_label_words_for_lab_terms():
+    assert any("hypoglycemia" in s.lower() for _, s in retrieve("BLOOD GLUCOSE DECREASED", DKA_LABEL))
+    assert not any("hypoglycemia" in s.lower() for _, s in retrieve("BLOOD LACTIC ACID INCREASED", DKA_LABEL))
+
+
+def test_pregnancy_exposure_gets_a_pregnancy_check_not_dismissal():
+    f = route(Signal("EXPOSURE DURING PREGNANCY", a=10, b=1, c=1, d=1, prr=3.0, chi2=50), {}, ["q"])
+    assert f.context == "non_clinical" and "pregnancy outcomes" in f.next_check
+    assert "None needed" not in f.next_check
+    assert route(Signal("FOETAL EXPOSURE DURING PREGNANCY", 10, 1, 1, 1, 3.0, 50), {}, ["q"]).next_check == f.next_check
+    assert route(Signal("PRODUCT USE ISSUE", 10, 1, 1, 1, 3.0, 50), {}, ["q"]).next_check == "None needed for safety review."
+
+
+def test_prompts_forbid_comparing_reporting_with_incidence():
+    from app.agents.analyst import CLASSIFY_SYSTEM
+    from app.agents.reviewer import SYSTEM
+    assert "no denominator" in CLASSIFY_SYSTEM and "no denominator" in SYSTEM
+
+
+def test_seriousness_summary_and_table():
+    from app.agents.analyst import screen_table
+    from app.data.faers import seriousness_summary
+    recs = [{"reaction": "A", "a": "200", "serious": "150", "death": "10", "serious_terms": "999", "death_terms": "40"},
+            {"reaction": "B", "a": "50", "serious": None, "death": None, "serious_terms": "999", "death_terms": "40"}]
+    sev = seriousness_summary(recs)
+    assert sev["A"] == {"serious": 150, "death": 10, "serious_share": 0.75, "death_share": 0.05}
+    # B is below the full serious list's cutoff (unknown) and absent from the short death list (none)
+    assert sev["B"] == {"serious": None, "death": 0, "serious_share": None, "death_share": 0.0}
+    table = screen_table([Signal("A", 200, 1, 1, 1, 3.0, 50), Signal("B", 50, 1, 1, 1, 2.5, 9)], 5, sev)
+    assert "A | 200 | 3.0 | 50 | 75% | 5%" in table and "B | 50 | 2.5 | 9 | n/a | 0%" in table
+    assert "whole report" in table.splitlines()[0]
+
+
+def test_seriousness_query_counts_serious_and_fatal_reports():
+    from app.data.faers import COUNT_LIMIT
+    from app.schemas import QueryResult
+
+    class Z(RecordingZetaris):
+        def run(self, sql, purpose, **kw):
+            self.sql.append(sql)
+            return QueryResult("q-sev", sql, [], [])
+    z = Z()
+    res, sev = DataClerk(z).seriousness("metformin")
+    assert res.query_id == "q-sev" and sev == {}
+    rest = [s for s in z.sql if "CREATE LIGHTNING REST TABLE" in s]
+    assert any("serious%3A1" in s or "serious:1" in s for s in rest)
+    assert any("seriousnessdeath:1" in s for s in rest) and all(f"limit={COUNT_LIMIT}" in s for s in rest)
+    assert "LEFT JOIN" in z.sql[-1] and "faers_d2_metformin_reactions" in z.sql[-1]

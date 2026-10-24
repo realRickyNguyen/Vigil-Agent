@@ -21,6 +21,24 @@ UK_US = [("oesophag", "esophag"), ("oedem", "edem"), ("haemorrh", "hemorrh"), ("
 STOP = {"a", "an", "and", "of", "the", "to", "due", "in", "on", "with", "without", "general", "medical",
         "condition", "disorder", "abnormal", "increased", "decreased", "nos", "syndrome", "type", "other",
         "site", "full", "count", "test", "level"}
+# MedDRA lab and vital-sign terms whose label wording shares no word with them: on 23 Oct both agents were shown
+# blood-lactate sentences for metformin BLOOD GLUCOSE DECREASED instead of the hypoglycemia warning.
+# (pattern on the US-spelled, lower-case term, extra word prefixes to search for)
+SYNONYMS = [
+    (r"glucose (decreased|low)", ["hypoglyc"]), (r"glucose (increased|high)", ["hyperglyc"]),
+    (r"potassium (decreased|low)", ["hypokal"]), (r"potassium (increased|high)", ["hyperkal"]),
+    (r"sodium (decreased|low)", ["hyponat"]), (r"sodium (increased|high)", ["hypernat"]),
+    (r"calcium (decreased|low)", ["hypocalc"]), (r"calcium (increased|high)", ["hypercalc"]),
+    (r"magnesium (decreased|low)", ["hypomag"]),
+    (r"platelet count decreased", ["thrombocytop"]),
+    (r"(white blood cell|leukocyte) count decreased", ["leukop", "neutrop"]),
+    (r"neutrophil count decreased", ["neutrop", "agranul"]),
+    (r"(hemoglobin|haematocrit|hematocrit|red blood cell count) decreased", ["anemi"]),
+    (r"blood pressure (increased|high)", ["hypertens"]), (r"blood pressure (decreased|low)", ["hypotens"]),
+    (r"heart rate (increased|high)", ["tachycard"]), (r"heart rate (decreased|low)", ["bradycard"]),
+    (r"(transaminase|aminotransferase|hepatic enzyme|liver function test)s? (increased|abnormal)",
+     ["transam", "hepat", "liver"]),
+]
 EXCERPTS_PER_REACTION = 3
 SENTENCE_CHARS = 300
 INDICATION_CHARS = 600
@@ -46,6 +64,8 @@ def stems(reaction: str) -> list[str]:
         if len(w) > 4 and w.endswith("s"):
             w = w[:-1]
         out.append(w[:6] if len(w) > 6 else w)
+    term = us(norm(reaction))
+    out += [extra for pattern, extras in SYNONYMS if re.search(pattern, term) for extra in extras]
     return list(dict.fromkeys(out))
 
 
@@ -59,15 +79,21 @@ def sentences(label: dict) -> list[tuple[str, str]]:
 
 
 def label_sentence(text: str, term: str) -> str | None:
-    """The sentence in text that contains term (case-insensitive), or None."""
-    t = norm(text)
-    i = t.find(norm(term)) if term else -1
+    """The sentence in text that contains term (case-insensitive), or None. A long sentence is cut to
+    SENTENCE_CHARS around the term, so the quote always contains it: on 23 Oct metformin's DIARRHOEA quote
+    was the first 300 characters of a long adverse-reactions sentence and never said diarrhea."""
+    t, n = norm(text), norm(term)
+    i = t.find(n) if term else -1
     if i < 0:
         return None
     dot = t.rfind(". ", 0, i)
     start = dot + 2 if dot >= 0 else 0
     end = t.find(". ", i)
-    return t[start:(end + 1 if end >= 0 else len(t))][:SENTENCE_CHARS]
+    end = end + 1 if end >= 0 else len(t)
+    if end - start > SENTENCE_CHARS:
+        start = max(start, min(i - (SENTENCE_CHARS - len(n)) // 2, end - SENTENCE_CHARS))
+        end = min(end, start + max(SENTENCE_CHARS, len(n)))
+    return t[start:end]
 
 
 def find_term(reaction: str, label: dict, only: tuple[str, ...] | None = None) -> tuple[str, str] | None:
