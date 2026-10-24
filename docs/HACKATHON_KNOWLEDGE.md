@@ -52,7 +52,7 @@ Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor tec
 - Scout Intent: classifies requests, flags risk, routes tools, guards against prompt injection. Test: `npm run evals` in its folder.
 - Prompt library: meterless.ai/engines.html (IDEATE, IMPLEMENT, COMBINE, HARDEN, POWER). The POWER "Add Meterless as a provider" prompt covers the provider contract (real bearer token, `meterless-app` header, model ids from `GET /v1/models`, 401/403 shown as unauthorized, 180 s timeout).
 - No-key demo ran correctly here (cold run 12 chunks, warm run 8) using H-MEM plus Markovian with a **mock LLM**.
-- **Unknown:** whether organisers accept a Python port of an engine with its own pytest. Our app is planned in Python. Options: port with ported tests, or a small TypeScript component. Ask on HackOS.
+- **Answered (24 Oct, from the 19 Oct setup guide, section 3.2 and "Verify your Build setup"):** the engine is implemented in your own application, in the language you prefer, and verified by "the engine's relevant conformance suite, evaluation, or a reproducible feature test". A Python port with passing pytest meets it.
 - Reported (one agent's reading of the specs, unverified): World Model's runner has 7 checks (stable IDs, merge bands, provenance required on writes, idempotent ingest, bitemporal supersession, strictly increasing audit sequence); a Python port of those parts is about a day of work.
 - Untrusted clone location: `C:\Users\Ricky\untrusted\meterless\repo` (about 160 MB with dev dependencies). Not part of this repo.
 
@@ -111,6 +111,6 @@ Open:
 - Cursor: optional since 23 Oct; the team does not use it. Nothing to do.
 - Meterless Engine feature with a passing test (needs a project idea). Nightshift as primary provider in the app (needs a project idea).
 - Judge-facing files: public repo, Dockerfile, `run.py` or `POST /run`, `SAMPLE_MODE`, 3+ sample inputs, README, `metadata.json`, demo video, deck.
-- Questions for organisers: Python port of an engine; what `metadata.json` needs; how judges reach a local Zetaris.
+- Questions for organisers: what `metadata.json` needs; how judges reach a local Zetaris.
 
 See `docs/SETUP_CHECKLIST.md` for the full checklist.
