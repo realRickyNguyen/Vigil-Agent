@@ -4,6 +4,7 @@ the meterless-app header and meterless-scope: user. The NVIDIA key stays inside 
 import hashlib
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -54,12 +55,39 @@ def nightshift_steps(response: dict) -> dict | None:
             "mode": receipt.get("mode")}
 
 
+RATE_LIMIT_RETRIES = 3  # NVIDIA 429s clear with time, unlike the provider deadline
+RATE_LIMIT_PAUSE = 15  # seconds, times the number of 429s in a row
+
+
 class NightshiftClient:
     def __init__(self, settings: Settings, tracer: Tracer):
         if not settings.meterless_token:
             raise MeterlessError("METERLESS_RUNTIME_TOKEN is not set")
         self.s = settings
         self.tracer = tracer
+        # Shared by every worker thread: after a 429, all calls wait until the cool-down ends. On 24 Oct a third
+        # back-to-back run with four parallel calls got 33 NVIDIA 429s; each retry 5 s later hit the cap again.
+        self._lock = threading.Lock()
+        self._cooldown_until = 0.0
+        self._rate_limited = 0
+
+    def _wait_for_cooldown(self) -> None:
+        with self._lock:
+            wait = self._cooldown_until - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+
+    def _rate_limited_now(self) -> float:
+        """Start or extend the shared cool-down; returns its length in seconds."""
+        with self._lock:
+            self._rate_limited += 1
+            pause = RATE_LIMIT_PAUSE * min(self._rate_limited, 3)
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + pause)
+            return pause
+
+    def _rate_ok(self) -> None:
+        with self._lock:
+            self._rate_limited = 0
 
     def _post(self, body: dict) -> dict:
         headers = {"Content-Type": "application/json",
@@ -78,10 +106,12 @@ class NightshiftClient:
         all provider_deadline 502s at about 50 s each, with the same batch retried up to three times."""
         body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
         prompt_sha = hashlib.sha256(json.dumps(messages).encode()).hexdigest()[:12]
-        last = None
+        last, attempt, limited = None, 0, 0
         # On 22 Oct about half of Nightshift's Lightning calls returned "empty_response" or hit the
         # provider deadline. The agents fall back to smaller calls when all attempts fail.
-        for attempt in range(self.s.max_retries + 1):
+        while True:
+            self._wait_for_cooldown()
+            rate_limited = False
             try:
                 with Timer() as t:
                     j = self._post(body)
@@ -98,6 +128,7 @@ class NightshiftClient:
                                   **({"reasoning": msg["reasoning_content"]} if msg.get("reasoning_content") else {}))
                 if not content.strip():
                     raise MeterlessError("empty reply")
+                self._rate_ok()
                 return content
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:300]
@@ -105,18 +136,31 @@ class NightshiftClient:
                     self.tracer.event(agent, "llm_error", model=model, error=f"unauthorized ({e.code})")
                     raise MeterlessUnauthorized(f"Nightshift rejected the Runtime token ({e.code})")
                 last = f"HTTP {e.code}: {detail}"
+                # Nightshift passes NVIDIA's 429 on as a 502 with meterless_detail "nvidia_429".
+                rate_limited = e.code == 429 or "nvidia_429" in detail
                 if fail_fast and "provider_deadline" in detail:
                     self.tracer.event(agent, "llm_deadline", model=model, attempt=attempt, error=last,
                                       action="split the batch")
                     raise MeterlessDeadline(last)
-                if e.code not in (408, 429) and e.code < 500:
+                if not rate_limited and e.code != 408 and e.code < 500:
                     break
             # ConnectionError covers Nightshift closing the socket mid-request (ConnectionResetError,
             # RemoteDisconnected), which on 22 Oct crashed a whole run at the Analyst's first call.
             except (urllib.error.URLError, TimeoutError, ConnectionError, MeterlessError, KeyError) as e:
                 last = f"{type(e).__name__}: {e}"
+            if rate_limited:
+                limited += 1
+                if limited > RATE_LIMIT_RETRIES:
+                    break
+                pause = self._rate_limited_now()
+                self.tracer.event(agent, "llm_retry", model=model, attempt=attempt, error=last,
+                                  reason="rate_limited", wait_s=pause)
+                continue
             self.tracer.event(agent, "llm_retry", model=model, attempt=attempt, error=last)
-            time.sleep(5 * (attempt + 1))  # NVIDIA trial lanes have a per-minute cap
+            attempt += 1
+            if attempt > self.s.max_retries:
+                break
+            time.sleep(5 * attempt)
         raise MeterlessError(last)
 
     def chat_json(self, agent: str, model: str, messages: list[dict], **kw) -> dict:

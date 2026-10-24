@@ -23,10 +23,10 @@ from app.tracing import Tracer
 # Nightshift's deadline about half the time; for montelukast the top 30 by chi2 still include the
 # neuropsychiatric terms that rank in the 40s by PRR.
 SCREEN_ROWS = 30
-# Seconds a step needs, at least, to start within the run budget (one round of single-reaction calls, or the
-# Skeptic's Zetaris queries plus one challenge review). Below that the step is skipped and says so.
+# Seconds a step needs, at least, to start within the run budget (one round of single-reaction calls, or one
+# review of the Skeptic's challenges). Below that the step is skipped and says so.
 REVISION_NEEDS = 120
-SKEPTIC_NEEDS = 150
+CHALLENGE_NEEDS = 90
 
 NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
@@ -95,6 +95,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
     state: dict = {}  # reaction -> {"finding", "verdict", "status", "history"}
     rounds, new_missing = [], []
+    background, prefetch = ThreadPoolExecutor(max_workers=1), None
     for rnd in range(1, settings.reviewer_rounds + 2):
         verdicts, missing, reviewer_summary = reviewer.review(ctx, findings, attempted)
         by = {v.reaction: v for v in verdicts}
@@ -117,6 +118,11 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         rounds.append({"round": rnd, "reviewed": len(findings), "rejected": len(retry),
                        "unresolved": sum(by[f.reaction].decision == "unresolved" for f in findings),
                        "missing": len(new_missing)})
+        if rnd == 1 and settings.skeptic_items:
+            # The Skeptic's targets are findings the Reviewer has just accepted, which the revision round does
+            # not touch, so its Zetaris checks run while the Analyst revises the rejected ones.
+            targets = skeptic_targets(ctx, state, settings.skeptic_items)
+            prefetch = background.submit(lambda t=targets: (t, skeptic_checks(ctx, skeptic, t)))
         if (not retry and not new_missing) or rnd > settings.reviewer_rounds:
             break
         if left() < REVISION_NEEDS:
@@ -141,12 +147,16 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                 "the run's time budget ran out before the Analyst could answer the Reviewer's objection" if skipped
                 else "review rounds ran out before the Reviewer's objection was settled"))
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
-    if settings.skeptic_items and left() < SKEPTIC_NEEDS:
-        skipped.append("skeptic")
-        tracer.event("orchestrator", "budget_stop", step="skeptic", seconds_left=round(left()))
-        skeptic_counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
-    else:
-        skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items)
+    skeptic_counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
+    if prefetch is not None:
+        prefetched = prefetch.result()  # skeptic.check catches its own Zetaris errors
+        review = left() >= CHALLENGE_NEEDS
+        if not review:
+            skipped.append("skeptic challenge review")
+            tracer.event("orchestrator", "budget_stop", step="skeptic challenge review", seconds_left=round(left()))
+        skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items,
+                                       prefetched=prefetched, review=review)
+    background.shutdown()
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity)
@@ -227,31 +237,55 @@ def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
     return "rejected", ""
 
 
+def skeptic_targets(ctx: dict, state: dict, top: int) -> list[str]:
+    """The strongest (by chi2) review_next findings the Reviewer has accepted."""
+    stats = {s.reaction: s for s in ctx["passing"]}
+    return sorted((r for r, e in state.items()
+                   if e["status"] == "reviewed" and e["finding"].review_priority == "review_next"),
+                  key=lambda r: -(stats[r].chi2 if r in stats else 0))[:top]
+
+
+def skeptic_checks(ctx: dict, skeptic: Skeptic, picked: list[str]) -> list[dict]:
+    """The Skeptic's Zetaris checks for each target. The items are independent, so they run side by side
+    (about 80 s each on 23 Oct). No model calls, so this can overlap the revision round."""
+    stats = {s.reaction: s for s in ctx["passing"]}
+    with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
+        return list(pool.map(lambda r: skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None), picked))
+
+
 def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, analyst: Analyst, tracer: Tracer,
-                  top: int) -> dict:
+                  top: int, prefetched: tuple[list[str], list[dict]] | None = None, review: bool = True) -> dict:
     """The Skeptic checks the strongest accepted review_next findings against their co-reported drugs.
     A challenged finding goes back to the Reviewer with that evidence. If the Reviewer rejects it, the Analyst
     gets one revision and the Reviewer one more look; a dispute still open after that ends as unresolved.
     If the Reviewer's look at the challenge itself fails (model call failed), the round-1 verdict stands and the
-    item says the challenge was not reviewed, rather than losing its earlier review."""
-    stats = {s.reaction: s for s in ctx["passing"]}
-    picked = sorted((r for r, e in state.items()
-                     if e["status"] == "reviewed" and e["finding"].review_priority == "review_next"),
-                    key=lambda r: -(stats[r].chi2 if r in stats else 0))[:top]
+    item says the challenge was not reviewed, rather than losing its earlier review.
+    prefetched: (targets, checks) already run, from the end of the first review round. review=False when the
+    run's time budget leaves no room for the challenge review: the evidence is still recorded."""
+    picked, checks = prefetched if prefetched is not None else (None, None)
+    if picked is None:
+        picked = skeptic_targets(ctx, state, top)
+        checks = skeptic_checks(ctx, skeptic, picked)
     ctx["skeptic"] = {}
-    # The items' Zetaris queries are independent, so they run side by side (about 80 s each on 23 Oct).
-    with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
-        checks = list(pool.map(lambda r: skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None), picked))
     for r, ev in zip(picked, checks):
         ctx["skeptic"][r] = ev
         ctx["evidence_ids"] |= set(ev["query_ids"])
         tracer.event("skeptic", "co_drug_check", reaction=r, outcome=ev["outcome"],
                      challenge_reasons=ev.get("challenge_reasons", []), summary=ev.get("summary"),
                      pairs=ev["pairs"], query_ids=ev["query_ids"], error=ev.get("error"))
-    challenged = [state[r]["finding"] for r in picked if ctx["skeptic"][r]["outcome"] == "challenged"]
+    # Only items still accepted as review_next: a prefetched target could have changed since round 1.
+    challenged = [state[r]["finding"] for r in picked if ctx["skeptic"][r]["outcome"] == "challenged"
+                  and state[r]["status"] == "reviewed" and state[r]["finding"].review_priority == "review_next"]
     counts = {"checked": len(picked), "challenged": len(challenged), "challenge_not_reviewed": 0,
               "priority_changed": 0}
     if not challenged:
+        return counts
+    if not review:
+        for f in challenged:
+            state[f.reaction]["note"] = ("the Skeptic challenged it, but the run's time budget ran out before the "
+                                         "Reviewer could look at the challenge; the round-1 verdict stands")
+            tracer.event("orchestrator", "challenge_not_reviewed", reaction=f.reaction, reason=state[f.reaction]["note"])
+        counts["challenge_not_reviewed"] = len(challenged)
         return counts
 
     before = {f.reaction: f.key() for f in challenged}

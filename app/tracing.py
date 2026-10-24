@@ -36,6 +36,8 @@ def progress_line(rec: dict) -> str | None:
     if k == "llm_call":
         return (f"{who} model call served by {d.get('served_by') or d['model']} via Nightshift in {d['ms'] / 1000:.0f} s"
                 + (f" (attempt {d['attempt'] + 1})" if d.get("attempt") else ""))
+    if k == "llm_retry" and d.get("reason") == "rate_limited":
+        return f"{who} hit NVIDIA's rate limit; all model calls pause {d.get('wait_s')} s"
     if k in ("llm_retry", "llm_deadline"):
         return f"{who} model call failed ({str(d.get('error'))[:90]}); " + (
             "splitting the batch" if k == "llm_deadline" else "retrying")

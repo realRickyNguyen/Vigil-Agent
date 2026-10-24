@@ -65,7 +65,9 @@ def get_settings() -> Settings:
         # prompt mostly hit it again (organisers' guide: model calls bounded at 30 to 90 s).
         model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "90")),
         max_retries=int(e("MAX_RETRIES", "1")),
-        reviewer_rounds=int(e("REVIEWER_ROUNDS", e("JUDGE_ROUNDS", "2"))),
+        # One revision round: on 24 Oct a second round rarely changed an answer (a repeated dispute closes as
+        # unresolved anyway) and cost about two minutes that the Skeptic needed.
+        reviewer_rounds=int(e("REVIEWER_ROUNDS", e("JUDGE_ROUNDS", "1"))),
         # Concurrent model calls. On 23 Oct two concurrent Ultra calls each took as long as one alone, and the
         # NVIDIA trial cap (7 of 132 failures were 429s) leaves room for four one-reaction calls of 20 to 40 s.
         parallel=max(1, int(e("MODEL_PARALLEL", "4"))),

@@ -638,3 +638,42 @@ def test_prompt_examples_avoid_the_evaluation_drugs():
     for word in ("diabetes", "glucose", "antidepressant", "statin", "asthma", "acne", "metformin", "sertraline",
                  "montelukast", "atorvastatin", "isotretinoin"):
         assert word not in text, word
+
+
+def test_rate_limit_pauses_all_calls_then_retries(monkeypatch):
+    import io
+    import urllib.error
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    sleeps = []
+    monkeypatch.setattr(meterless.time, "sleep", lambda s: sleeps.append(round(s)))
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=0), FakeTracer())
+    replies = ["429", "429", {"choices": [{"message": {"content": "ok"}}]}]
+
+    def post(body):
+        r = replies.pop(0)
+        if r == "429":
+            raise urllib.error.HTTPError("u", 502, "bad gateway", {}, io.BytesIO(
+                b'{"error":{"code":"provider_error","meterless_detail":"nvidia_429: {\\"status\\":429}"}}'))
+        return r
+    monkeypatch.setattr(client, "_post", post)
+    assert client.chat("reviewer", "m", [{"role": "user", "content": "x"}]) == "ok"  # max_retries=0 does not apply
+    assert [k for _, k, _ in client.tracer.events] == ["llm_retry", "llm_retry", "llm_call"]
+    assert [d["wait_s"] for _, k, d in client.tracer.events if k == "llm_retry"] == [15, 30]
+    assert sleeps == [15, 30]
+
+
+def test_skeptic_round_without_time_records_evidence_but_skips_the_review():
+    from app.orchestration.pipeline import skeptic_round
+    from app.tracing import Tracer
+    import tempfile
+    from pathlib import Path
+    f = Finding(reaction="A", a=10, prr=3.0, label_coverage="not_found", context="clinical_event",
+                review_priority="review_next", reasoning="x", next_check="y", evidence=["q-s"])
+    state = {"A": {"finding": f, "status": "reviewed", "history": []}}
+    ev = {"reaction": "A", "outcome": "challenged", "pairs": [], "query_ids": ["q-k"], "challenge_reasons": ["x"]}
+    ctx = {**analyst_ctx(), "evidence_ids": set()}
+    out = skeptic_round(ctx, state, None, None, None, Tracer(Path(tempfile.mkdtemp()), echo=False), 3,
+                        prefetched=(["A"], [ev]), review=False)
+    assert out["challenge_not_reviewed"] == 1 and "time budget" in state["A"]["note"]
+    assert state["A"]["status"] == "reviewed" and ctx["skeptic"]["A"] is ev and "q-k" in ctx["evidence_ids"]
