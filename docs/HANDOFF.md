@@ -143,6 +143,18 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 
 ## Next steps, in order
 
+**Agent-system queue, 24 Oct (Ricky's order: finish the agent system, then demo and UX).** Work through these in order after the three-drug re-run on `fix/eval-logic` finishes:
+1. Report the re-run scores against gold v2 (sertraline, metformin, montelukast; all fixes from 24 Oct).
+2. **Run time to 5 to 10 minutes** (organisers' target): one reaction per model call for the Analyst and Reviewer (3-reaction batches pass Nightshift's ~50 s `provider_deadline`; 125 of 132 failed attempts on 23 Oct were that deadline, 7 were NVIDIA 429s); 4 parallel calls instead of 2 (calls overlap without slowing); model timeout 90 s and one retry (`.env` has `MAX_RETRIES=2`, change to 1); a whole-run time budget that skips the revision round and Skeptic when it runs low and marks their items `pending`; the extra-pick call alongside classifying the top 15; the Skeptic's items and the Data Clerk's label, combination and seriousness queries in parallel.
+3. **Readable progress lines on stdout** for every step and every model call (agent, model that served it, seconds), next to the JSONL trace.
+4. Tests, docs, commit; then a **timed live run with Ultra** to confirm 5 to 10 minutes.
+5. **Nemotron role test** (also the NVIDIA award's "technical depth"): Nemotron 3 Super 120B A12B as the Analyst, Ultra as the Reviewer, scored on gold against all-Ultra. Needs Ricky to add a Super lane (race width 1, Lightning stopped). Super is reported to be unreliable, so test it, and drop it if it fails often.
+6. **Timing test: the whole label for the Reviewer** instead of 3 retrieved sentences (Ultra has a 1M-token context; retrieval misses caused real errors). Keep only if calls stay under the deadline.
+7. **World Model read by the agents:** earlier settled verdicts and reopened items go into the Analyst's and Reviewer's prompts, and the engine's audit entries go into the run's trace.
+8. A final clean evaluation run on the finished system, then merge `fix/eval-logic` into `main` (ask before pushing).
+
+After that: demo and UX (investigation page, `POST /run`, Dockerfile, `SAMPLE_MODE`, samples, deck, video).
+
 1. **Organiser questions** (below). The Track 02 challenge statement on HackOS is the generic track text (confirmed 24 Oct); nothing more to read.
 2. **Evaluation:** done 23 Oct with the product fixes now on `main` (see the status table). A person still needs to review gold v1 and v2 before any number is quoted publicly.
 3. **World Model engine:** merged into `main` on 23 Oct, with offline tests, and reopening shown live on 23 Oct (see the status table). Counts for the Build rule: the 19 Oct setup guide (section 3.2 and "Verify your Build setup") asks for the engine implemented in your own application, in any language, with "the engine's relevant conformance suite, evaluation, or a reproducible feature test" passing. For the submission: name the engine, say what it does here, show the feature and the test result.
