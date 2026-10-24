@@ -41,7 +41,7 @@ def test_every_call_gets_its_own_scope_so_no_earlier_answer_is_injected(monkeypa
         return Reply({"choices": [{"message": {"content": "ok"}}]})
     monkeypatch.setattr(meterless.urllib.request, "urlopen", urlopen)
     settings = SimpleNamespace(meterless_token="t", meterless_url="http://x", meterless_app="vigil",
-                               model_timeout=1, max_retries=0)
+                               model_timeout=1, max_retries=0, model_stream=False)
     client = meterless.NightshiftClient(settings, FakeTracer())
     for _ in range(2):
         client.chat("analyst", "m", [{"role": "user", "content": "the same prompt twice"}])
