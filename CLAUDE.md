@@ -3,7 +3,7 @@
 Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/` (the 03_LLM_context pack and the 19 Oct setup guide). Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md`.
 
 ## The project
-**Vigil: Drug Reaction Review** (named Black Box until 23 Oct; agents Data Clerk, Analyst, Reviewer and Skeptic were Clerk, Hunter, Judge; Track 02, provisional until the HackOS challenge statement is read): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Analyst and Reviewer agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/VIGIL.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
+**Vigil: Drug Reaction Review** (named Black Box until 23 Oct; agents Data Clerk, Analyst, Reviewer and Skeptic were Clerk, Hunter, Judge; Track 02, "The Agent That Can Explain Why"; the HackOS challenge statement is the generic track text, confirmed by the user 24 Oct, so do not ask about it again): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Analyst and Reviewer agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/VIGIL.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
 
 ## The event
 - Organiser GenAI Works, platform HackOS (hackathon.genai.works). Online, 22 to 27 Oct 2026. Teams of 1 to 5; the user's team is registered on HackOS.
@@ -32,7 +32,7 @@ Windows 11 Home, 15.8 GB RAM, **disk is tight** (C: about 8 GB free). Docker run
   - Receipts with per-request routing detail are in `%APPDATA%\ai.meterless.runtime\meterless.json`.
 - **Cursor**: not used by the team since 23 Oct; uninstalled from this laptop for disk space.
 - `scripts/smoke_test.py` checks Zetaris GUI, Zetaris REST `SELECT 1` and a model reply (3 PASS expected). It proves connectivity only, not a working agent. Run it as `python -I scripts/smoke_test.py`.
-- Open items: read the Track 02 challenge statement, contract v2 evaluation run, Skeptic agent, `SAMPLE_MODE` (needs organiser answer), Dockerfile and `POST /run`. Full list in `docs/HANDOFF.md`.
+- Open items: finish the agent system (current focus), then `SAMPLE_MODE` (needs organiser answer), Dockerfile, `POST /run`, investigation page, deck and video. Full list in `docs/HANDOFF.md`.
 
 ## Start and stop routines
 When the user says **"lets begin"**: start Docker Desktop and wait for the engine; `docker compose up -d` in `~/zetaris-platform`, wait about 2 minutes, run `./verify.sh`; launch `meterless-runtime.exe` and check `lanes.toml` still has the Ultra lane (ask the user to stop Lightning if it is running); run the smoke test; report failures.

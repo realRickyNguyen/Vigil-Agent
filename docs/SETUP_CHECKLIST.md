@@ -56,7 +56,7 @@ Answered by the 19 Oct guide: Meterless is required as provider and as an Engine
 
 ## Still open (updated 22 Oct, 17:00 Sydney)
 - [x] Team registered on HackOS (22 Oct). Project Vigil, Track 02 provisionally
-- [ ] Read the Track 02 challenge statement on HackOS
+- [x] Read the Track 02 challenge statement on HackOS (it is the generic track text, confirmed 24 Oct)
 - [x] Cursor: dropped 23 Oct, nothing to redeem
 - [x] Zetaris GUI and PokeAPI recipe done (22 Oct)
 - [x] Meterless Engine feature with a passing test (Build rule): World Model merged 23 Oct; whether a Python port counts is an open organiser question

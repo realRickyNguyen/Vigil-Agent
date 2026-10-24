@@ -4,7 +4,7 @@ Named **Black Box** until 23 Oct 2026, with agents called Clerk, Hunter and Judg
 
 Practical state, how to run and next steps: [../HANDOFF.md](../HANDOFF.md). This file covers the design and the reasons behind it. Items are marked **built**, **planned** or **unknown**.
 
-**Track:** 02, The Agent That Can Explain Why. We have not yet read the HackOS challenge statement for Track 02; it overrides the generic brief. The track can be changed until the deadline.
+**Track:** 02, The Agent That Can Explain Why. The HackOS challenge statement for Track 02 is the generic track text (confirmed 24 Oct).
 
 ## Pitch
 

@@ -8,7 +8,7 @@ Sources: `docs/reference/03_LLM_context_for_your_AI.md`, the 21 Oct Participant 
 - Open Agent Hackathon 2026, GenAI Works, platform HackOS (hackathon.genai.works). Online. Teams of 1 to 5.
 - Build window opened Thu 22 Oct 00:00 UTC (11:00 Sydney). Submissions close Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney). Hard deadline.
 - Registration: the HackOS notice says it closes 22 Oct 23:59 UTC (Fri 23 Oct 10:59 Sydney). Plan for 10:45 Sydney.
-- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track 02 chosen provisionally** for Vigil. We have **not seen the challenge statements** on HackOS; they override the generic track text.
+- Our team is registered on HackOS (confirmed by the user, 22 Oct). **Track 02 chosen** for Vigil. The Track 02 challenge statement on HackOS is the generic track text itself (confirmed by the user, 24 Oct).
 - Help desk: the Help desk channel on HackOS (hackathon.genai.works/messages).
 
 ## Tracks and prizes (confirmed from the context pack)
@@ -107,7 +107,7 @@ Demo video (1 to 4 min), slide deck, public GitHub repo with README, sponsor tec
 Done: Docker/WSL, Zetaris install and API key, Zetaris GUI and PokéAPI recipe, Nightshift with NVIDIA key and Nemotron lanes, `.env` filled in, smoke test 3 PASS, team registered on HackOS.
 
 Open:
-- Track choice and reading the challenge statements on HackOS.
+- (Done 24 Oct: Track 02 chosen; its HackOS challenge statement is the generic track text.)
 - Cursor: optional since 23 Oct; the team does not use it. Nothing to do.
 - Meterless Engine feature with a passing test (needs a project idea). Nightshift as primary provider in the app (needs a project idea).
 - Judge-facing files: public repo, Dockerfile, `run.py` or `POST /run`, `SAMPLE_MODE`, 3+ sample inputs, README, `metadata.json`, demo video, deck.
