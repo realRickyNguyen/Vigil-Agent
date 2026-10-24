@@ -7,9 +7,11 @@ import re
 
 META = ("effective_time", "set_id")
 INDICATION = "indications_and_usage"
+CONTRAINDICATIONS = "contraindications"
+# Sections that describe what the drug may cause or worsen.
+SAFETY = ("boxed_warning", "warnings_and_cautions", "warnings", "precautions", "adverse_reactions")
 # Sections searched for a literal reaction name, after the indications section.
-SECTIONS = ("boxed_warning", "warnings_and_cautions", "warnings", "precautions", "adverse_reactions",
-            "contraindications")
+SECTIONS = SAFETY + (CONTRAINDICATIONS,)
 
 # MedDRA uses British spelling; US labels do not.
 UK_US = [("oesophag", "esophag"), ("oedem", "edem"), ("haemorrh", "hemorrh"), ("haem", "hem"),
@@ -68,12 +70,14 @@ def label_sentence(text: str, term: str) -> str | None:
     return t[start:(end + 1 if end >= 0 else len(t))][:SENTENCE_CHARS]
 
 
-def find_term(reaction: str, label: dict) -> tuple[str, str] | None:
+def find_term(reaction: str, label: dict, only: tuple[str, ...] | None = None) -> tuple[str, str] | None:
     """(section, matched text) where the label names the reaction itself, singular or plural.
-    The indications section is checked first, so a treated disease is not mistaken for a warning."""
+    The indications section is checked first, so a treated disease is not mistaken for a warning.
+    only: search just these sections, in this order."""
     pattern = re.compile(rf"\b{re.escape(us(norm(reaction)))}(s|es)?\b")
     secs = sections(label)
-    for sec in (INDICATION,) + SECTIONS + tuple(k for k in secs if k not in SECTIONS and k != INDICATION):
+    order = only or (INDICATION,) + SECTIONS + tuple(k for k in secs if k not in SECTIONS and k != INDICATION)
+    for sec in order:
         m = pattern.search(us(norm(secs.get(sec, ""))))
         if m:
             return sec, m.group(0)

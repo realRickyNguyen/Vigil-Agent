@@ -358,6 +358,40 @@ def test_rules_route_easy_cases():
     assert route(sig("PRODUCTIVE COUGH"), MONTELUKAST_LIKE, ["q"]) is None  # 'PRODUCT' is not a word here
 
 
+def test_rules_send_social_terms_aside():
+    sig = lambda r: Signal(r, a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+    f = route(sig("LOSS OF PERSONAL INDEPENDENCE IN DAILY ACTIVITIES"), MONTELUKAST_LIKE, ["q"])
+    assert (f.classification, f.review_priority) == ("not_meaningful", "lower_priority")
+    assert route(sig("DISABILITY"), MONTELUKAST_LIKE, ["q"]).context == "non_clinical"
+    assert route(sig("LEARNING DISABILITY"), MONTELUKAST_LIKE, ["q"]) is None  # a clinical term
+
+
+def test_rules_leave_indication_plus_warning_to_the_model():
+    # sertraline: the indications name social anxiety disorder, the warnings list anxiety as an effect
+    label = {"indications_and_usage": "Sertraline is indicated for panic disorder and social anxiety disorder.",
+             "warnings_and_cautions": "Symptoms include anxiety, agitation, panic attacks and insomnia."}
+    assert route(Signal("ANXIETY", a=10, b=1, c=1, d=1, prr=3.0, chi2=50), label, ["q"]) is None
+
+
+def test_rules_do_not_count_a_contraindication_as_coverage():
+    # metformin names diabetic ketoacidosis only as a condition it must not be used in
+    label = {"indications_and_usage": "Metformin is indicated to improve glycemic control in type 2 diabetes.",
+             "contraindications": "Acute or chronic metabolic acidosis, including diabetic ketoacidosis.",
+             "warnings_and_cautions": "Lactic acidosis has occurred."}
+    sig = lambda r: Signal(r, a=10, b=1, c=1, d=1, prr=3.0, chi2=50)
+    assert route(sig("DIABETIC KETOACIDOSIS"), label, ["q"]) is None
+    assert route(sig("LACTIC ACIDOSIS"), label, ["q"]).label_section == "warnings_and_cautions"
+
+
+def test_analyst_prompt_checks_coverage_for_treated_conditions():
+    from app.agents.analyst import CLASSIFY_SYSTEM
+    assert "treated condition and the label does not say the drug may cause or worsen it" in CLASSIFY_SYSTEM
+    assert "only in the contraindications" in CLASSIFY_SYSTEM
+    f = Finding(reaction="BLOOD GLUCOSE DECREASED", a=10, prr=3.0, label_coverage="covered",
+                context="treated_condition", review_priority="lower_priority", reasoning="hypoglycemia warning")
+    assert f.classification == "on_label"
+
+
 def test_rule_finding_passes_reviewer_code_checks():
     cough = route(Signal("COUGH", a=10, b=1, c=1, d=1, prr=3.0, chi2=50), MONTELUKAST_LIKE, ["q-1"])
     fresh = Signal("COUGH", a=10, b=1, c=1, d=1, prr=3.0, chi2=50)

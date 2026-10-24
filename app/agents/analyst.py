@@ -40,10 +40,11 @@ Answer three separate questions for each listed reaction:
    - "treated_condition": the condition the drug treats, a symptom, sign, measure or complication of it, or an outcome the drug is given to prevent.
    - "clinical_event": any other clinical event.
 2. "label_coverage": does the current label describe this reaction as something the drug may cause or worsen?
-   - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label).
+   - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label). A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug, so it is not "covered" on that basis.
    - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term).
    - "not_found": nothing in the label text shown describes it.
-   - "not_assessed": the term is non_clinical or the treated condition.
+   - "not_assessed": the term is non_clinical, or it is the treated condition and the label does not say the drug may cause or worsen it.
+   Check coverage for a treated condition too: the label may warn that the drug can cause or worsen it (for example low blood glucose with a diabetes drug, or anxiety with an antidepressant). Then it is "covered".
 3. "review_priority":
    - "review_next": a clinical_event that is not_found or unclear in the label, with enough reports to be worth an analyst's time.
    - "insufficient_evidence": not covered, but the term is too vague or the numbers too thin to act on.
