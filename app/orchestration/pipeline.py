@@ -3,6 +3,8 @@ checks, the Analyst revises on rejection (bounded rounds). The Skeptic then test
 review_next findings against co-reported drugs, and challenged ones go back through the Reviewer.
 The result is the dossier."""
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -21,6 +23,10 @@ from app.tracing import Tracer
 # Nightshift's deadline about half the time; for montelukast the top 30 by chi2 still include the
 # neuropsychiatric terms that rank in the 40s by PRR.
 SCREEN_ROWS = 30
+# Seconds a step needs, at least, to start within the run budget (one round of single-reaction calls, or the
+# Skeptic's Zetaris queries plus one challenge review). Below that the step is skipped and says so.
+REVISION_NEEDS = 120
+SKEPTIC_NEEDS = 150
 
 NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
@@ -29,13 +35,17 @@ NOT_YET_CHECKED = [
     "Co-reported drugs beyond the Skeptic's top co-drugs, items beyond its top review_next items, and "
     "interactions among three or more drugs. Adjustment is for one co-drug at a time",
     "Recalls and contaminated batches",
-    "Only reports naming the drug by generic name are counted, whether or not it was the suspect drug",
+    "Every report naming the drug (generic name or active substance) is counted, whether or not it was the "
+    "suspect drug",
     "The baseline holds the 999 most-reported reactions; rarer reactions are not screened",
 ]
 
 
 def investigate(request: dict, settings: Settings, tracer: Tracer | None = None) -> dict:
     tracer = tracer or Tracer(settings.logs_dir)
+    started = time.monotonic()
+    left = lambda: settings.run_budget - (time.monotonic() - started)  # noqa: E731
+    skipped = []  # steps the run budget did not leave time for
     drug = validate_drug(request.get("drug", ""))
     tracer.event("orchestrator", "run_start", request=request, analyst_model=settings.analyst_model,
                  reviewer_model=settings.reviewer_model)
@@ -51,11 +61,14 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     created = clerk.register_drug(drug)
     tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
     totals = clerk.totals(drug)
-    screen_res, signals = clerk.signals(drug)
+    # Independent Zetaris queries side by side; the Zetaris client keeps no state between calls.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = [pool.submit(clerk.signals, drug), pool.submit(clerk.label, drug),
+                pool.submit(clerk.combination_products, drug, totals["drug_reports"]),
+                pool.submit(clerk.seriousness, drug)]
+        (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity) = \
+            [j.result() for j in jobs]
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
-    label_qid, label = clerk.label(drug)
-    combo_res, combination = clerk.combination_products(drug, totals["drug_reports"])
-    severity_res, severity = clerk.seriousness(drug)
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
         "label_choice": clerk.label_choice, "combination": combination, "seriousness": severity,
@@ -106,6 +119,11 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                        "missing": len(new_missing)})
         if (not retry and not new_missing) or rnd > settings.reviewer_rounds:
             break
+        if left() < REVISION_NEEDS:
+            skipped.append(f"revision round {rnd + 1}")
+            tracer.event("orchestrator", "budget_stop", step=f"revision round {rnd + 1}", seconds_left=round(left()),
+                         rejected=[f.reaction for f in retry], missing=[m["reaction"] for m in new_missing])
+            break
         feedback = {"rejected": [{"reaction": f.reaction, "reason": by[f.reaction].reason,
                                   "objection": by[f.reaction].objection} for f in retry],
                     "missing": new_missing}
@@ -118,10 +136,17 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         tracer.event("analyst", "findings", round=rnd + 1, findings=[f.to_dict() for f in findings], summary=summary)
 
     for r, entry in state.items():
-        if entry["status"] == "rejected":  # rounds ran out with the Reviewer's objection unanswered
-            entry.update(status="unresolved", note="review rounds ran out before the Reviewer's objection was settled")
+        if entry["status"] == "rejected":  # rounds or time ran out with the Reviewer's objection unanswered
+            entry.update(status="unresolved", note=(
+                "the run's time budget ran out before the Analyst could answer the Reviewer's objection" if skipped
+                else "review rounds ran out before the Reviewer's objection was settled"))
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
-    skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items)
+    if settings.skeptic_items and left() < SKEPTIC_NEEDS:
+        skipped.append("skeptic")
+        tracer.event("orchestrator", "budget_stop", step="skeptic", seconds_left=round(left()))
+        skeptic_counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
+    else:
+        skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items)
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity)
@@ -171,6 +196,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "model_calls": model_calls,
         "analyst_summary": summary,
         "rounds": rounds,
+        "run_time": {"seconds": round(time.monotonic() - started), "budget_seconds": settings.run_budget,
+                     "skipped_for_time": skipped},
         "world_model": world,
         "untested_factors": NOT_YET_CHECKED,
         "caveat": CAVEAT,
@@ -179,7 +206,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     }
     out = settings.logs_dir / f"dossier-{tracer.run_id}.json"
     out.write_text(json.dumps(dossier, indent=2, ensure_ascii=False), encoding="utf-8")
-    tracer.event("orchestrator", "run_end", counts=counts, dossier=out.name)
+    tracer.event("orchestrator", "run_end", counts=counts, dossier=out.name, seconds=dossier["run_time"]["seconds"],
+                 skipped_for_time=skipped)
     return dossier
 
 
@@ -211,8 +239,10 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
                      if e["status"] == "reviewed" and e["finding"].review_priority == "review_next"),
                     key=lambda r: -(stats[r].chi2 if r in stats else 0))[:top]
     ctx["skeptic"] = {}
-    for r in picked:
-        ev = skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None)
+    # The items' Zetaris queries are independent, so they run side by side (about 80 s each on 23 Oct).
+    with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
+        checks = list(pool.map(lambda r: skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None), picked))
+    for r, ev in zip(picked, checks):
         ctx["skeptic"][r] = ev
         ctx["evidence_ids"] |= set(ev["query_ids"])
         tracer.event("skeptic", "co_drug_check", reaction=r, outcome=ev["outcome"],

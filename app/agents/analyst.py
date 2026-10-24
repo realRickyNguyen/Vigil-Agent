@@ -21,7 +21,7 @@ MAX_TOKENS = 6000
 # 27 of 80 clear reference items were assessed in round 1. A fixed rule is transparent and names no drug.
 TOP_ALWAYS = 15
 EXTRA_PICKS = 5
-BATCH = 3  # reactions per classify call
+BATCH = 1  # reactions per model call: on 23 Oct, 3-reaction calls often passed Nightshift's ~50 s deadline
 COMBINATION_NOTE_AT = 0.05  # combination share above which the agents are told about partner drugs
 
 PICK_SYSTEM = """You are the Analyst in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
@@ -110,7 +110,7 @@ class Analyst:
             return []
         try:
             return self._pick(ctx, rows)
-        except MeterlessError as e:
+        except (MeterlessError, ValueError) as e:
             self.llm.tracer.event(self.name, "degraded", step="pick", error=str(e)[:200],
                                   fallback="no extra picks; the top rows by chi2 are still assessed")
             return []
@@ -173,14 +173,17 @@ class Analyst:
                 self.llm.tracer.event(self.name, "omitted", reaction=r, fallback="one reaction per call")
                 try:
                     again = self._classify_batch(ctx, [r], fb)[0]
-                except MeterlessError:
+                except (MeterlessError, ValueError):
                     again = []
                 f += again
                 if not again:
                     failed.append(r)
                     self.llm.tracer.event(self.name, "unclassified", reaction=r, error="omitted from the reply")
             return f, s, failed
-        except MeterlessError as e:
+        except (MeterlessError, ValueError) as e:  # ValueError: no JSON object even after the repair request
+            if len(batch) == 1:  # already as small as it gets; the client has used its retry
+                self.llm.tracer.event(self.name, "unclassified", reaction=batch[0], error=str(e)[:200])
+                return [], "", list(batch)
             # Smaller calls succeed more often; a reaction that still fails is reported, not guessed.
             self.llm.tracer.event(self.name, "degraded", step="classify", batch=batch, error=str(e)[:200],
                                   fallback="one reaction per call")
@@ -188,7 +191,7 @@ class Analyst:
             for r in batch:
                 try:
                     found += self._classify_batch(ctx, [r], fb)[0]
-                except MeterlessError as e2:
+                except (MeterlessError, ValueError) as e2:
                     failed.append(r)
                     self.llm.tracer.event(self.name, "unclassified", reaction=r, error=str(e2)[:200])
             return found, "", failed
@@ -220,13 +223,23 @@ class Analyst:
         return [f for f in findings if f.reaction in wanted], str(out.get("summary", ""))
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
+        """The top rows are classified while the pick call chooses the extras, then the extras are classified:
+        the pick no longer holds up classification (1 to 3 minutes on 23 Oct)."""
         always = [s.reaction for s in ctx["passing"][:self.top]]
-        chosen = self.pick(ctx)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            picking = pool.submit(self.pick, ctx)
+            findings, summary = self.classify(ctx, always)
+            chosen = picking.result()
         ctx["selection"] = {"always": always, "chosen": chosen,
                             "rule": f"the {self.top} strongest rows by chi2, plus up to {self.extra} chosen by the model"}
         self.llm.tracer.event(self.name, "selection", **ctx["selection"])
         ctx["picked"] = list(dict.fromkeys(always + chosen))
-        return self.classify(ctx, ctx["picked"])
+        extra = [r for r in ctx["picked"] if r not in always]
+        if extra:
+            more, more_summary = self.classify(ctx, extra)
+            findings += more
+            summary = " ".join(x for x in (summary, more_summary) if x)
+        return findings, summary
 
     def revise(self, ctx: dict, rejected: list[Finding], feedback: dict) -> tuple[list[Finding], str]:
         """Re-classify only the rejected findings and the newly named missing reactions."""

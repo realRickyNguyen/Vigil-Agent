@@ -146,7 +146,7 @@ class Reviewer:
         try:
             return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS,
                                       fail_fast=len(batch) > 1)
-        except MeterlessError as e:
+        except (MeterlessError, ValueError) as e:  # ValueError: no JSON object even after the repair request
             if len(batch) > 1:
                 # Smaller calls succeed more often: review one finding per call before giving up.
                 self.llm.tracer.event(self.name, "degraded", step="review", batch=names, error=str(e)[:200],

@@ -32,6 +32,7 @@ class Settings:
     max_retries: int
     reviewer_rounds: int
     parallel: int
+    run_budget: int
     sample_mode: bool
     logs_dir: Path
     world_path: Path
@@ -59,11 +60,18 @@ def get_settings() -> Settings:
         analyst_model=e("ANALYST_MODEL", e("HUNTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         reviewer_model=e("REVIEWER_MODEL", e("JUDGE_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         source_timeout=int(e("SOURCE_TIMEOUT_SECONDS", "20")),
-        model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "180")),
-        max_retries=int(e("MAX_RETRIES", "2")),
+        # Nightshift ends a provider call at about 50 s (provider_deadline), so 90 s covers every call that can
+        # succeed. One retry: on 23 Oct 125 of 132 failed attempts were that deadline, and retrying the same
+        # prompt mostly hit it again (organisers' guide: model calls bounded at 30 to 90 s).
+        model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "90")),
+        max_retries=int(e("MAX_RETRIES", "1")),
         reviewer_rounds=int(e("REVIEWER_ROUNDS", e("JUDGE_ROUNDS", "2"))),
-        # Concurrent model calls. The NVIDIA trial lanes have a per-minute cap, so keep this small.
-        parallel=max(1, int(e("MODEL_PARALLEL", "2"))),
+        # Concurrent model calls. On 23 Oct two concurrent Ultra calls each took as long as one alone, and the
+        # NVIDIA trial cap (7 of 132 failures were 429s) leaves room for four one-reaction calls of 20 to 40 s.
+        parallel=max(1, int(e("MODEL_PARALLEL", "4"))),
+        # Wall-clock budget for one run (organisers' target: 5 to 10 minutes). When too little is left, the
+        # revision round and the Skeptic are skipped and their items say so, instead of the run running long.
+        run_budget=int(e("RUN_BUDGET_SECONDS", "600")),
         sample_mode=e("SAMPLE_MODE", "false").lower() == "true",
         logs_dir=ROOT / "logs",
         # The World Model persists across runs (unlike logs/, which is per-run evidence), so a later run can

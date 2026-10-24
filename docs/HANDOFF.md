@@ -153,6 +153,8 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 7. **World Model read by the agents:** earlier settled verdicts and reopened items go into the Analyst's and Reviewer's prompts, and the engine's audit entries go into the run's trace.
 8. A final clean evaluation run on the finished system, then merge `fix/eval-logic` into `main` (ask before pushing).
 
+**Progress, 24 Oct afternoon.** (1) Re-run done (`eval/reports/eval-20261024T054159Z-gold_v2.md`): **worse**, 80% round-1 and 76% final on the three drugs, against 88% and 90% for the same drugs on 23 Oct. Cause, from the Analyst's own reasoning: with serious and death shares in its table it escalated treated-disease terms ("High reporting (PRR 7.03) with 93% serious and 7% death") to review_next, 16 such items for metformin. Fixed in `4e5aad3`: the shares stay in the pick step and the dossier but no longer reach the classification or review prompts. Also found: retrieval tied "blood" and "hypoglyc" on metformin's real label and showed lactate sentences; synonym words now count double (checked on the real label). Sertraline ANXIETY and PANIC ATTACK: the gold evidence is not in any section the app keeps; flagged in `eval/LABELLING_RULES.md`. (2 to 4) Run-time changes made, offline tests pass (94); timed run pending.
+
 After that: demo and UX (investigation page, `POST /run`, Dockerfile, `SAMPLE_MODE`, samples, deck, video).
 
 1. **Organiser questions** (below). The Track 02 challenge statement on HackOS is the generic track text (confirmed 24 Oct); nothing more to read.

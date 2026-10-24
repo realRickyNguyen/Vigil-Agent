@@ -563,3 +563,53 @@ def test_seriousness_query_counts_serious_and_fatal_reports():
     assert any("serious%3A1" in s or "serious:1" in s for s in rest)
     assert any("seriousnessdeath:1" in s for s in rest) and all(f"limit={COUNT_LIMIT}" in s for s in rest)
     assert "LEFT JOIN" in z.sql[-1] and "faers_d2_metformin_reactions" in z.sql[-1]
+
+
+def test_progress_lines_name_the_agent_and_the_model():
+    from app.tracing import progress_line
+    call = {"agent": "reviewer", "event": "llm_call", "model": "m", "served_by": "nvidia/nemotron-3-ultra-550b-a55b",
+            "ms": 23400, "attempt": 0}
+    assert progress_line(call) == "Reviewer model call served by nvidia/nemotron-3-ultra-550b-a55b via Nightshift in 23 s"
+    verdicts = {"agent": "reviewer", "event": "verdicts", "round": 1, "missing": [{"reaction": "X"}],
+                "verdicts": [{"decision": "accept"}, {"decision": "accept"}, {"decision": "reject"}]}
+    assert progress_line(verdicts) == ("Reviewer round 1: 2 accepted, 1 rejected, 0 unresolved, 0 not reviewed, "
+                                       "1 missing named")
+    assert progress_line({"agent": "analyst", "event": "picked", "reactions": []}) is None
+
+
+def test_console_output_never_breaks_a_run(tmp_path, capsys):
+    from app.tracing import Tracer
+    t = Tracer(tmp_path)
+    t.event("reviewer", "verdicts", round=1)  # missing fields: prints a fallback line, does not raise
+    t.event("skeptic", "co_drug_check", reaction="R \u2265 2", outcome="no_challenge")
+    out = capsys.readouterr().out
+    assert "reviewer verdicts" in out and "co-reported drugs: no_challenge" in out
+    assert len(t.path.read_text(encoding="utf-8").splitlines()) == 2
+    Tracer(tmp_path, echo=False).event("reviewer", "verdicts", round=1)
+    assert capsys.readouterr().out == ""
+
+
+def test_a_single_reaction_that_fails_is_not_retried_again():
+    class Counting(FakeLLM):
+        calls = 0
+
+        def chat_json(self, agent, model, messages, **kw):
+            Counting.calls += 1
+            return super().chat_json(agent, model, messages, **kw)
+    ctx = analyst_ctx()
+    h = Analyst(Counting(fail_on={"B |"}), "m")
+    findings, _ = h.classify(ctx, ["A", "B"])
+    assert [f.reaction for f in findings] == ["A"] and ctx["unclassified"] == ["B"]
+    assert Counting.calls == 2  # one call each; the client's own retry is inside chat_json
+    assert not any(k == "degraded" for _, k, _ in h.llm.tracer.events)
+
+
+def test_extra_picks_are_classified_after_the_top_rows():
+    class Picker(FakeLLM):
+        def chat_json(self, agent, model, messages, **kw):
+            if "choose up to" in messages[0]["content"]:
+                return {"picked": [{"reaction": "F", "why": "x"}, {"reaction": "A", "why": "dup"}]}
+            return super().chat_json(agent, model, messages, **kw)
+    ctx = analyst_ctx()
+    findings, _ = Analyst(Picker(), "m", top=3, extra=2).run(ctx)
+    assert ctx["selection"]["chosen"] == ["F"] and sorted(f.reaction for f in findings) == ["A", "B", "C", "F"]
