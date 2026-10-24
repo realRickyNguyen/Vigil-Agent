@@ -99,8 +99,6 @@ class Reviewer:
         skeptic = ctx.get("skeptic", {})
         payload = [{**f.to_dict(), "checks": {k: {"passed": ok, "detail": d} for k, (ok, d) in ch.items()},
                     "recheck_query": qid,
-                    **({"seriousness": ctx["seriousness"][f.reaction]} if f.reaction in ctx.get("seriousness", {})
-                       else {}),
                     **({"co_reported_drugs": compact(skeptic[f.reaction])} if f.reaction in skeptic else {})}
                    for f, ch, qid in checked]
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}
@@ -138,7 +136,7 @@ class Reviewer:
 
     def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None) -> dict:
         extra = (f"Strongest screen rows nobody has classified yet (query {ctx['screen_qid']}):\n"
-                 f"{screen_table(unpicked, UNPICKED_ROWS, ctx.get('seriousness'))}\n\n" if unpicked else
+                 f"{screen_table(unpicked, UNPICKED_ROWS)}\n\n" if unpicked else
                  "Another batch reviews missing reactions; return \"missing\": [].\n\n")
         names = [p["reaction"] for p in batch]
         messages = [{"role": "system", "content": SYSTEM},

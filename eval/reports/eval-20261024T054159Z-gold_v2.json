@@ -1,0 +1,297 @@
+{
+ "gold": "gold_v2.jsonl",
+ "scores": [
+  {
+   "run_id": "20261024T040936Z-d2604b",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 14,
+   "round1": {
+    "scored": 13,
+    "correct": 12,
+    "accuracy": 0.923
+   },
+   "final": {
+    "scored": 14,
+    "correct": 11,
+    "accuracy": 0.786
+   },
+   "reviewer_effect": {
+    "kept_correct": 11,
+    "kept_wrong": 1,
+    "broken": 1
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 1,
+    "correct": 0,
+    "accuracy": 0.0
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 3,
+     "correct": 3
+    },
+    "rule": {
+     "correct": 8
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 3,
+    "gold": {
+     "on_label": 1,
+     "not in gold": 2
+    }
+   },
+   "unresolved": [
+    "INTENTIONAL OVERDOSE"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "AGGRESSION",
+    "AKATHISIA",
+    "HALLUCINATION",
+    "HALLUCINATION, AUDITORY",
+    "HYPONATRAEMIA",
+    "MANIA",
+    "PSYCHOTIC DISORDER",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "on_label -> likely_indication_or_disease": 2,
+    "on_label -> on_label": 11,
+    "on_label -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 3,
+     "unresolved": 1,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 6,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T043824Z-217acd",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 12,
+    "correct": 7,
+    "accuracy": 0.583
+   },
+   "final": {
+    "scored": 13,
+    "correct": 8,
+    "accuracy": 0.615
+   },
+   "reviewer_effect": {
+    "kept_correct": 6,
+    "unresolved_was_correct": 1,
+    "unresolved_was_wrong": 1,
+    "kept_wrong": 4
+   },
+   "added_after_missing": {
+    "count": 6,
+    "scored": 3,
+    "correct": 2,
+    "accuracy": 0.667
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 5,
+     "correct": 4
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 6,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 16,
+    "gold": {
+     "likely_indication_or_disease": 4,
+     "possible_new_signal (ambiguous)": 4,
+     "on_label": 1,
+     "possible_new_signal": 1,
+     "likely_indication_or_disease (ambiguous)": 1,
+     "not in gold": 5
+    }
+   },
+   "unresolved": [
+    "HYPERGLYCAEMIA",
+    "METABOLIC ACIDOSIS"
+   ],
+   "ambiguous_classified": 5,
+   "not_in_gold": [
+    "CHRONIC KIDNEY DISEASE",
+    "DEHYDRATION",
+    "PANCREATITIS ACUTE",
+    "RENAL FAILURE",
+    "RENAL FAILURE ACUTE",
+    "SHOCK"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 3,
+    "likely_indication_or_disease -> possible_new_signal": 4,
+    "on_label -> on_label": 4,
+    "on_label -> possible_new_signal": 1,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 0,
+     "unresolved": 2,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 3,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261024T050815Z-35889c",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 10,
+    "correct": 9,
+    "accuracy": 0.9
+   },
+   "final": {
+    "scored": 10,
+    "correct": 9,
+    "accuracy": 0.9
+   },
+   "reviewer_effect": {
+    "kept_correct": 9,
+    "kept_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 1,
+     "correct": 5
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 5,
+    "gold": {
+     "likely_indication_or_disease (ambiguous)": 1,
+     "possible_new_signal (ambiguous)": 3,
+     "likely_indication_or_disease": 1
+    }
+   },
+   "unresolved": [
+    "UPPER RESPIRATORY TRACT INFECTION"
+   ],
+   "ambiguous_classified": 5,
+   "not_in_gold": [
+    "ABNORMAL BEHAVIOUR",
+    "AGGRESSION",
+    "ANXIETY",
+    "DEPRESSION",
+    "INFLUENZA",
+    "NIGHTMARE",
+    "SUICIDAL IDEATION",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 2,
+    "failed": 2
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 4,
+    "likely_indication_or_disease -> possible_new_signal": 1,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 3
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 3,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 3,
+     "reviewed": 1,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 2
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 1,
+     "challenge_not_reviewed": 0,
+     "priority_changed": 0
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}

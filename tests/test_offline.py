@@ -501,7 +501,12 @@ def test_label_quote_always_contains_the_term():
 
 def test_retrieval_finds_label_words_for_lab_terms():
     assert any("hypoglycemia" in s.lower() for _, s in retrieve("BLOOD GLUCOSE DECREASED", DKA_LABEL))
-    assert not any("hypoglycemia" in s.lower() for _, s in retrieve("BLOOD LACTIC ACID INCREASED", DKA_LABEL))
+    assert not any("hypoglycemia" in s.lower() for _, s in retrieve("BLOOD GLUCOSE DECREASED", {}))
+    # metformin's real label: "blood" and "hypoglyc" each hit 5 sentences, lactate sentences first
+    lactate = " ".join(f"Lactic acidosis case {i} had elevated blood lactate levels." for i in range(5))
+    hypo = " ".join(f"Hypoglycemia note {i} applies with insulin." for i in range(5))
+    hits = retrieve("BLOOD GLUCOSE DECREASED", {"boxed_warning": lactate, "warnings_and_cautions": hypo})
+    assert all("hypoglycemia" in s.lower() for _, s in hits)
 
 
 def test_pregnancy_exposure_gets_a_pregnancy_check_not_dismissal():
@@ -516,6 +521,17 @@ def test_prompts_forbid_comparing_reporting_with_incidence():
     from app.agents.analyst import CLASSIFY_SYSTEM
     from app.agents.reviewer import SYSTEM
     assert "no denominator" in CLASSIFY_SYSTEM and "no denominator" in SYSTEM
+
+
+def test_classify_prompt_has_no_seriousness():
+    class Capture(FakeLLM):
+        def chat_json(self, agent, model, messages, **kw):
+            self.last = messages[-1]["content"]
+            return super().chat_json(agent, model, messages, **kw)
+    ctx = {**analyst_ctx(), "seriousness": {r: {"serious_share": 0.9, "death_share": 0.07} for r in "ABC"}}
+    llm = Capture()
+    Analyst(llm, "m").classify(ctx, ["A"])
+    assert "death" not in llm.last and "90%" not in llm.last
 
 
 def test_seriousness_summary_and_table():

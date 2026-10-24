@@ -39,6 +39,7 @@ SYNONYMS = [
     (r"(transaminase|aminotransferase|hepatic enzyme|liver function test)s? (increased|abnormal)",
      ["transam", "hepat", "liver"]),
 ]
+SYNONYM_WEIGHT = 2
 EXCERPTS_PER_REACTION = 3
 SENTENCE_CHARS = 300
 INDICATION_CHARS = 600
@@ -64,9 +65,12 @@ def stems(reaction: str) -> list[str]:
         if len(w) > 4 and w.endswith("s"):
             w = w[:-1]
         out.append(w[:6] if len(w) > 6 else w)
+    return list(dict.fromkeys(out + synonym_stems(reaction)))
+
+
+def synonym_stems(reaction: str) -> list[str]:
     term = us(norm(reaction))
-    out += [extra for pattern, extras in SYNONYMS if re.search(pattern, term) for extra in extras]
-    return list(dict.fromkeys(out))
+    return [extra for pattern, extras in SYNONYMS if re.search(pattern, term) for extra in extras]
 
 
 def sections(label: dict) -> dict:
@@ -120,9 +124,12 @@ def retrieve(reaction: str, label: dict, k: int = EXCERPTS_PER_REACTION) -> list
     sents = sentences(label)
     words = [set(re.findall(r"[a-z]+", us(norm(s)))) for _, s in sents]
     scored = []
+    # A synonym names the clinical concept itself, so it counts double: on metformin's label "blood" and
+    # "hypoglyc" each hit 5 sentences, and the tie went to the lactate sentences, which come first.
+    synonyms = set(synonym_stems(reaction))
     for st in stems(reaction):
         hits = [i for i, ws in enumerate(words) if any(w.startswith(st) for w in ws)]
-        weight = 1 / math.log(2 + len(hits))
+        weight = (SYNONYM_WEIGHT if st in synonyms else 1) / math.log(2 + len(hits))
         scored += [(i, weight) for i in hits]
     score: dict[int, float] = {}
     for i, w in scored:

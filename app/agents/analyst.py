@@ -52,8 +52,6 @@ Answer three separate questions for each listed reaction:
 
 Also give "reasoning" (one sentence: why this priority) and "next_check" (one concrete check an analyst could run next, for example a specific breakdown of the reports or a label section to compare).
 
-The "serious" and "death" columns, when shown, are the share of the reports with this drug and reaction that were flagged serious or reported a death. The flag belongs to the whole report, which may list other reactions. Use them in "reasoning" to say how much a review_next item matters; they say nothing about label coverage or about whether the drug caused the reaction.
-
 FAERS counts have no denominator. Never compare a PRR or a report count with an incidence or a clinical-trial frequency, and never propose that comparison as a next_check unless the check names another data source that has a denominator.
 
 Rules: use only the data in the message; never invent numbers, reactions or label text; copy "reaction", "a" and "prr" exactly from the table; "evidence" lists the query IDs you relied on; "summary" is at most two sentences.
@@ -63,7 +61,9 @@ Reply with only a JSON object:
 
 
 def screen_table(signals: list[Signal], limit: int, severity: dict | None = None) -> str:
-    """The screen rows; with severity, also the share of each row's reports flagged serious or reporting a death."""
+    """The screen rows; with severity, also the share of each row's reports flagged serious or reporting a death.
+    Severity is shown only where the model chooses which rows to look at (the pick step), never where it
+    classifies them (see _classify_batch)."""
     if not severity:
         lines = ["reaction | a (reports with drug) | PRR | chi2"]
         return "\n".join(lines + [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2}" for s in signals[:limit]])
@@ -195,8 +195,11 @@ class Analyst:
 
     def _classify_batch(self, ctx: dict, reactions: list[str], feedback: dict | None) -> tuple[list[Finding], str]:
         rows = [s for s in ctx["passing"] if s.reaction in set(reactions)]
+        # No serious or death shares here: on 24 Oct, with them in the table, the Analyst escalated treated-disease
+        # terms (metformin HYPERGLYCAEMIA, DIABETIC KETOACIDOSIS) to review_next citing "93% serious, 7% death",
+        # and accuracy on the three drugs fell from 88% to 80%. They stay in the pick step and the dossier.
         user = (f"{self.header(ctx)}\n\nReactions to classify (from query {ctx['screen_qid']}):\n"
-                f"{screen_table(rows, len(rows), ctx.get('seriousness'))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
+                f"{screen_table(rows, len(rows))}\n\n{excerpt_block(reactions, ctx['label'], ctx['label_qid'])}")
         skeptic = {r: compact(ctx["skeptic"][r]) for r in reactions if r in ctx.get("skeptic", {})}
         if skeptic:
             user += ("\n\nThe Skeptic checked the drugs most often reported alongside this one (adjusted_prr: this "

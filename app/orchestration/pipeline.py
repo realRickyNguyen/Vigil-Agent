@@ -61,7 +61,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "label_choice": clerk.label_choice, "combination": combination, "seriousness": severity,
         "screen_qid": screen_res.query_id, "screen_passing": len(passing),
         "screen_shown": min(SCREEN_ROWS, len(passing)),
-        "screen_table": screen_table(passing, SCREEN_ROWS, severity),
+        "screen_table": screen_table(passing, SCREEN_ROWS),
         "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set())
                         | ({combo_res.query_id} if combo_res else set())
                         | ({severity_res.query_id} if severity_res else set()),
