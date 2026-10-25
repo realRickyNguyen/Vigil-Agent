@@ -65,7 +65,9 @@ SPELLING_HINT = "Check the spelling, and give the generic name (for example sema
 # How openFDA's "no match" reaches the app. openFDA answers a search that matches nothing with a 404. Zetaris reports a
 # failed openFDA call as "HTTP 400: REST API call failed: " and the Java error. For a 5xx that is "Server returned HTTP
 # response code: 500 for URL ..." (seen in traces). Java's HttpURLConnection reports a 404 differently, as a
-# FileNotFoundException carrying only the URL, so both that form and a plain "response code: 404" count.
+# FileNotFoundException carrying only the URL. Checked on 26 Oct, when every no-match name (vigilamab, metfromin,
+# ozempic and the rest) read "HTTP 400: REST API call failed: https://api.fda.gov/drug/..." at REST table creation.
+# A plain "response code: 404" counts too, in case another Zetaris build words it that way.
 NO_MATCH = re.compile(r"response code: 404\b|REST API call failed: (?:java\.io\.FileNotFoundException: )?https?://")
 
 

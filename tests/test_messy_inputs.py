@@ -3,8 +3,8 @@ label, a combination product and odd spacing. Run: python -I -m pytest tests
 
 openFDA answers a search that matches nothing with a 404, and Zetaris reports a failed openFDA call as "HTTP 400: REST
 API call failed: " and the Java error. The fake below answers each statement by what it reads, with the no-match in
-the form Java gives a 404 (the URL alone) unless a test asks for the plain "response code: 404" form. Counts are made
-up unless marked otherwise."""
+the form Java gives a 404, the URL alone (JAVA_404, recorded on 26 Oct for vigilamab and seven other names), unless
+a test asks for the plain "response code: 404" form. Counts are made up unless marked otherwise."""
 import json
 import sys
 from pathlib import Path
@@ -18,8 +18,9 @@ from app.data.faers import (SPELLING_HINT, DataClerk, DrugNotFound, NoCurrentLab
                             drug_search, no_match, slug, validate_drug)
 from app.schemas import QueryResult  # noqa: E402
 
-URL = "https://api.fda.gov/drug/event.json?search=%28patient.drug.openfda.generic_name%3A%22vigilamab%22%29"
-JAVA_404 = f"HTTP 400: REST API call failed: {URL}"
+# Recorded 26 Oct, cut short. Zetaris adds a second line naming the URL again, which no_match() ignores.
+URL = "https://api.fda.gov/drug/event.json?search=%28patient.drug.openfda.generic_name%3A%22vigilamab%22%20OR"
+JAVA_404 = f"HTTP 400: REST API call failed: {URL}\n  URL: GET {URL}"
 JAVA_404_NAMED = f"HTTP 400: REST API call failed: java.io.FileNotFoundException: {URL}"
 PLAIN_404 = f"HTTP 400: REST API call failed: Server returned HTTP response code: 404 for URL: {URL}"
 OUTAGE = f"HTTP 400: REST API call failed: Server returned HTTP response code: 502 for URL: {URL}"
