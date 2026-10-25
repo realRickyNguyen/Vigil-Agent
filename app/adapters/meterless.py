@@ -69,6 +69,84 @@ def nightshift_steps(response: dict) -> dict | None:
 
 RATE_LIMIT_RETRIES = 3  # NVIDIA 429s clear with time, unlike the provider deadline
 RATE_LIMIT_PAUSE = 15  # seconds, times the number of 429s in a row
+# Seconds a slot must stay free, with no main call waiting, before a low-priority call takes it. A Reviewer worker
+# asks for its next slot within this time of giving one back, so a low-priority call takes only slots the main
+# calls are not using.
+LOW_PRIORITY_GRACE = 0.25
+
+
+class Slots:
+    """MODEL_PARALLEL model-call slots shared by every thread of a run, with main calls first: a low-priority call
+    (the Skeptic's challenge reviews) gets a slot only when one has stayed free for LOW_PRIORITY_GRACE seconds with
+    no main call (the Reviewer's rounds, the Analyst's revisions) waiting. Main calls can still wait behind a
+    low-priority call already in flight, at most one call's length."""
+
+    def __init__(self, n: int):
+        self.free, self.main_waiting, self.cond = n, 0, threading.Condition()
+
+    def acquire(self, low: bool = False, until: float | None = None) -> bool:
+        """Take a slot. A low-priority call with `until` (time.monotonic()) gives up at that time and returns False."""
+        with self.cond:
+            if not low:
+                self.main_waiting += 1
+                try:
+                    while self.free == 0:
+                        self.cond.wait()
+                finally:
+                    self.main_waiting -= 1
+            else:
+                while True:
+                    while self.free == 0 or self.main_waiting:
+                        if not self._wait(until):
+                            return False
+                    # A slot must stay free, with no main call asking, for the whole grace; the wait starts over if
+                    # the free slots run out or a main call asks for one in the meantime.
+                    grace = time.monotonic() + LOW_PRIORITY_GRACE
+                    while self.free and not self.main_waiting and (wait := grace - time.monotonic()) > 0:
+                        self.cond.wait(wait)
+                    if self.free and not self.main_waiting:
+                        break
+                    if until is not None and time.monotonic() >= until:
+                        return False
+            self.free -= 1
+            return True
+
+    def _wait(self, until: float | None) -> bool:
+        """Wait for a change, until `until` at most; False once it has passed (the lock is held)."""
+        if until is None:
+            self.cond.wait()
+            return True
+        wait = until - time.monotonic()
+        return wait > 0 and (self.cond.wait(wait) or time.monotonic() < until)
+
+    def free_before(self, until: float) -> bool:
+        """Whether a low-priority call could get a slot before `until`, without keeping it."""
+        if not self.acquire(low=True, until=until):
+            return False
+        self.release()
+        return True
+
+    def release(self) -> None:
+        with self.cond:
+            self.free += 1
+            self.cond.notify_all()
+
+
+class LowPriority:
+    """The client as the Skeptic's challenge reviews use it: every call takes a low-priority slot. Everything else,
+    including the shared cool-down and the cancel flag, is the same client's."""
+
+    def __init__(self, client: "NightshiftClient"):
+        self._client = client
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def chat(self, *a, **kw) -> str:
+        return self._client.chat(*a, low_priority=True, **kw)
+
+    def chat_json(self, *a, **kw) -> dict:
+        return self._client.chat_json(*a, low_priority=True, **kw)
 
 
 def setup_problems(requested: str, served_by: str | None, steps: dict | None) -> list[str]:
@@ -141,6 +219,23 @@ class NightshiftClient:
         self._lock = threading.Lock()
         self._cooldown_until = 0.0
         self._rate_limited = 0
+        # Set by the pipeline while the Skeptic's challenge reviews make model calls alongside the Reviewer's first
+        # round and the revision round: each attempt holds one of its slots, so together they stay within
+        # MODEL_PARALLEL, and the Reviewer's rounds come first (see Slots). A slot is not held during a retry
+        # pause. A call that got its slot while a cool-down started waits that cool-down out before posting.
+        self.slots: Slots | None = None
+        # Set when the run stops on an error (by the pipeline, or here on a rejected token), so a challenge review
+        # still running in its own thread makes no further calls.
+        self.cancelled: threading.Event | None = None
+
+    def low_priority(self) -> LowPriority:
+        return LowPriority(self)
+
+    def _check_cancelled(self) -> None:
+        if self.cancelled is not None and self.cancelled.is_set():
+            e = MeterlessError("run cancelled: the run stopped on an error")
+            e.retryable = False  # chat() gives up at once instead of retrying
+            raise e
 
     def _wait_for_cooldown(self) -> None:
         # Check again after sleeping, because another thread's 429 may have extended the cool-down meanwhile.
@@ -209,10 +304,11 @@ class NightshiftClient:
             raise MeterlessError(f"broken reply: {type(e).__name__}: {e}"[:300]) from e
 
     def chat(self, agent: str, model: str, messages: list[dict], max_tokens: int = 8000,
-             temperature: float = 0.2, fail_fast: bool = False) -> str:
+             temperature: float = 0.2, fail_fast: bool = False, low_priority: bool = False) -> str:
         """fail_fast: on Nightshift's provider deadline, raise MeterlessDeadline at once instead of retrying,
         so a caller that can split the work does so. On 23 Oct the atorvastatin run had 43 failed attempts,
-        all provider_deadline 502s at about 50 s each, with the same batch retried up to three times."""
+        all provider_deadline 502s at about 50 s each, with the same batch retried up to three times.
+        low_priority: take a low-priority slot (the Skeptic's challenge reviews), when slots are set."""
         body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
         prompt_sha = hashlib.sha256(json.dumps(messages).encode()).hexdigest()[:12]
         last, attempt, limited = None, 0, 0
@@ -221,9 +317,22 @@ class NightshiftClient:
         while True:
             self._wait_for_cooldown()
             rate_limited = False
+            self._check_cancelled()
             try:
-                with Timer() as t:
-                    j = self._post(body)
+                slots, waited = self.slots, None  # read once, so the release matches the acquire
+                if slots is not None:
+                    with Timer() as w:
+                        slots.acquire(low=low_priority)
+                    waited = w.ms
+                try:
+                    if slots is not None:
+                        self._wait_for_cooldown()  # a 429 elsewhere may have started one while this call queued
+                        self._check_cancelled()
+                    with Timer() as t:
+                        j = self._post(body)
+                finally:
+                    if slots is not None:
+                        slots.release()
                 msg = j["choices"][0]["message"]
                 content = msg.get("content") or ""
                 # The full messages and reply go into the trace so a reader can see exactly what each agent
@@ -235,6 +344,7 @@ class NightshiftClient:
                                   prompt_chars=sum(len(m["content"]) for m in messages),
                                   reply_chars=len(content), usage=j.get("usage"), ms=t.ms, attempt=attempt,
                                   messages=messages, reply=content, nightshift=steps,
+                                  **({"slot_wait_ms": waited} if waited is not None else {}),
                                   **({"reasoning": msg["reasoning_content"]} if msg.get("reasoning_content") else {}))
                 self._warn_setup(agent, model, j.get("model"), steps)
                 if not content.strip():
@@ -245,6 +355,8 @@ class NightshiftClient:
                 detail = e.read().decode(errors="replace")[:300]
                 if e.code in (401, 403):
                     self.tracer.event(agent, "llm_error", model=model, error=f"unauthorized ({e.code})")
+                    if self.cancelled is not None:
+                        self.cancelled.set()  # every other call of this run would fail the same way, so stop them now
                     raise MeterlessUnauthorized(f"Nightshift rejected the Runtime token ({e.code})")
                 last = f"HTTP {e.code}: {detail}"
                 # Nightshift passes NVIDIA's 429 on as a 502 with meterless_detail "nvidia_429".

@@ -6,7 +6,7 @@ unresolved when the evidence available cannot settle it."""
 import json
 import math
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FutureTimeout
 
 from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
@@ -114,11 +114,14 @@ class Reviewer:
         self.parallel = parallel
 
     def review(self, ctx: dict, findings: list[Finding], seen: set[str],
-               recheck: tuple[list[str], tuple] | None = None) -> tuple[list[Verdict], list[dict], str]:
+               recheck: tuple[list[str], tuple] | None = None,
+               on_verdict=None) -> tuple[list[Verdict], list[dict], str]:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
         names reactions nobody has looked at yet. `recheck` is (reactions, (QueryResult, {reaction: Signal})) from
-        a re-check already run; it is used only when it covers every finding, otherwise the re-check runs here."""
-        verdicts, checked = [], []
+        a re-check already run; it is used only when it covers every finding, otherwise the re-check runs here.
+        on_verdict(finding, verdict) is called in this thread for each finding as soon as its batch is back, with
+        the same verdict the returned list holds for it."""
+        checked = []
         if not findings:  # an empty re-check would fetch the drug's whole screen
             return [], [], ""
         try:
@@ -151,35 +154,48 @@ class Reviewer:
 
         # Small parallel batches for the same reason as the Analyst's; only the first looks for missing reactions.
         batches = [payload[i:i + BATCH] for i in range(0, len(payload), BATCH)]
+        by_name = {norm(f.reaction): (f, ch) for f, ch, _ in checked}
+        llm, outs = {}, [None] * len(batches)
         with ThreadPoolExecutor(max_workers=self.parallel) as pool:
-            outs = list(pool.map(lambda ib: self._review_batch(ctx, ib[1], unpicked if ib[0] == 0 else None, deadline),
-                                 enumerate(batches)))
-        llm, missing, summaries = {}, [], []
+            jobs = {pool.submit(self._review_batch, ctx, b, unpicked if i == 0 else None, deadline): i
+                    for i, b in enumerate(batches)}
+            for job in as_completed(jobs):  # in this thread, as each batch's reply comes back
+                i = jobs[job]
+                outs[i] = job.result()
+                # A batch's reply counts only for the findings that batch showed the model. "or []" because a reply
+                # with "verdicts": null must not crash the run.
+                own = {norm(p["reaction"]) for p in batches[i]}
+                mine = {norm(v.get("reaction")): v for v in outs[i].get("verdicts") or []
+                        if isinstance(v, dict) and norm(v.get("reaction")) in own}
+                llm.update(mine)
+                if on_verdict:
+                    for name in own:
+                        f, ch = by_name[name]
+                        on_verdict(f, self._verdict(f, ch, mine.get(name, {})))
+        missing, summaries = [], []
         for i, out in enumerate(outs):
-            # "or []" because a reply with "verdicts": null must not crash the run.
-            llm.update({norm(v.get("reaction")): v for v in out.get("verdicts") or [] if isinstance(v, dict)})
             if i == 0:
                 missing = [m for m in out.get("missing") or [] if isinstance(m, dict) and m.get("reaction")]
             summaries.append(str(out.get("summary") or ""))
-
-        for f, checks, _ in checked:
-            bad = failed(checks)
-            v = llm.get(norm(f.reaction), {})
-            decision = str(v.get("decision") or "").strip().lower()
-            extra = {"objection": str(v.get("objection") or ""), "next_check": str(v.get("next_check") or "")}
-            if bad:
-                verdicts.append(Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks,
-                                        objection=extra["objection"] or "; ".join(bad), next_check=extra["next_check"]))
-            elif decision in ("reject", "unresolved", "unreviewed"):
-                reason = UNREVIEWED if decision == "unreviewed" else str(v.get("reason", ""))
-                verdicts.append(Verdict(f.reaction, decision, reason, checks, **extra))
-            elif decision == "accept":
-                verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks,
-                                        **extra))
-            else:
-                # The reply left this finding out or gave an unknown decision: passing code checks is not a review.
-                verdicts.append(Verdict(f.reaction, "unreviewed", NO_VERDICT, checks, **extra))
+        verdicts = [self._verdict(f, checks, llm.get(norm(f.reaction), {})) for f, checks, _ in checked]
         return verdicts, missing, " ".join(s for s in summaries if s)
+
+    @staticmethod
+    def _verdict(f: Finding, checks: dict, v: dict) -> Verdict:
+        """The verdict on one finding: code checks first, then the model's decision from its reply (v)."""
+        bad = failed(checks)
+        decision = str(v.get("decision") or "").strip().lower()
+        extra = {"objection": str(v.get("objection") or ""), "next_check": str(v.get("next_check") or "")}
+        if bad:
+            return Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks,
+                           objection=extra["objection"] or "; ".join(bad), next_check=extra["next_check"])
+        if decision in ("reject", "unresolved", "unreviewed"):
+            reason = UNREVIEWED if decision == "unreviewed" else str(v.get("reason", ""))
+            return Verdict(f.reaction, decision, reason, checks, **extra)
+        if decision == "accept":
+            return Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks, **extra)
+        # The reply left this finding out or gave an unknown decision: passing code checks is not a review.
+        return Verdict(f.reaction, "unreviewed", NO_VERDICT, checks, **extra)
 
     def report_sources(self, ctx: dict, reaction: str, deadline: float | None = None) -> dict | None:
         """The item's report-source check (app/data/sources.py) for the prompt, waiting for it until the review's

@@ -2,14 +2,17 @@
 checks, the Analyst revises on rejection (bounded rounds). The Skeptic then tests the strongest
 review_next findings against co-reported drugs, and challenged ones go back through the Reviewer.
 The result is the dossier."""
+import copy
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
-from app.adapters.meterless import NightshiftClient
+from app.adapters.meterless import NightshiftClient, Slots
 from app.adapters.zetaris import ZetarisClient, ZetarisError
 from app.agents.analyst import Analyst, screen_table
 from app.agents.reviewer import Reviewer
@@ -39,6 +42,9 @@ CHALLENGE_NEEDS = 90
 SOURCE_WAIT = 30
 # Extra review_next findings the Skeptic checks early, in case the Reviewer turns one of its top ones down.
 EARLY_EXTRA = 1
+# Seconds a Skeptic check of a target the early checks missed needs to start (the checks took a median of 82 s, 24 and
+# 25 Oct traces). With less left it is not run, so the Skeptic no longer carries a run past its budget.
+SKEPTIC_CHECK_NEEDS = 90
 
 NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
@@ -58,19 +64,30 @@ NOT_YET_CHECKED = [
 
 
 def investigate(request: dict, settings: Settings, tracer: Tracer | None = None) -> dict:
-    """One run. The background pools (report sources, and the re-check and Skeptic checks that overlap the model
-    calls) are shut down however the run ends, so a run that stops on an error (a rejected Nightshift token) does not
-    leave queued Zetaris and openFDA calls behind it."""
-    sources_pool, background = ThreadPoolExecutor(max_workers=4), ThreadPoolExecutor(max_workers=2)
+    """One run. The background pools (report sources, the re-check, the Skeptic's checks, and its challenge reviews
+    that overlap the Reviewer's rounds) are shut down however the run ends, so a run that stops on an error (a
+    rejected Nightshift token) does not leave queued Zetaris and openFDA calls behind it. A challenge review already
+    under way is told to stop, so it makes no further model calls."""
+    items = max(1, settings.skeptic_items)
+    pools = SimpleNamespace(sources=ThreadPoolExecutor(max_workers=4), background=ThreadPoolExecutor(max_workers=2),
+                            # The early checks, plus late checks for targets the early ones did not cover.
+                            skeptic=ThreadPoolExecutor(max_workers=2 * items + EARLY_EXTRA),
+                            # One worker per target, so the targets' reviews run side by side as they did in one
+                            # step before; their model calls take low-priority slots (Slots), so the Reviewer's
+                            # rounds come first.
+                            challenges=ThreadPoolExecutor(max_workers=items), cancelled=threading.Event())
     try:
-        return run_investigation(request, settings, tracer, sources_pool, background)
+        return run_investigation(request, settings, tracer, pools)
+    except BaseException:
+        pools.cancelled.set()
+        raise
     finally:
-        sources_pool.shutdown(wait=False, cancel_futures=True)
-        background.shutdown(wait=False, cancel_futures=True)
+        for pool in (pools.sources, pools.background, pools.skeptic, pools.challenges):
+            pool.shutdown(wait=False, cancel_futures=True)
 
 
-def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
-                      sources_pool: ThreadPoolExecutor, background: ThreadPoolExecutor) -> dict:
+def run_investigation(request: dict, settings: Settings, tracer: Tracer | None, pools: SimpleNamespace) -> dict:
+    sources_pool, background = pools.sources, pools.background
     tracer = tracer or Tracer(settings.logs_dir)
     started = time.monotonic()
     left = lambda: settings.run_budget - (time.monotonic() - started)  # noqa: E731
@@ -143,7 +160,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                                                     stats[r].a if r in stats else None)
 
     # Zetaris work that needs no model runs in the background while the model calls go on.
-    rechecking, targets = {}, None
+    rechecking, challenges = {}, None
+    llm.cancelled = pools.cancelled
 
     def start_recheck(picked: list[str]) -> None:
         # The Reviewer's re-check needs only the reaction names, which are fixed once the pick is in, so it runs
@@ -154,31 +172,41 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     findings, summary = analyst.run(ctx, on_selection=start_recheck)
     tracer.event("analyst", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
-    early = None
     if settings.skeptic_items:
         # The Skeptic's checks are Zetaris only, so they run while the Reviewer reviews round 1. Run after it,
         # they took a median of 82 s with nothing else running (24 and 25 Oct traces). Its targets are only known
         # once the Reviewer has accepted them, so it checks one more of the Analyst's review_next findings than it
-        # needs: in those 18 runs the Analyst's top 4 held all 51 targets.
+        # needs: in those 18 runs the Analyst's top 4 held all 51 targets. Each check is its own job, so a
+        # target's challenge review can start as soon as its own check is back.
         candidates = early_skeptic_targets(ctx, findings, settings.skeptic_items + EARLY_EXTRA)
         tracer.event("skeptic", "early_checks", candidates=candidates)
-        early = background.submit(lambda c=candidates: dict(zip(c, skeptic_checks(ctx, skeptic, c))))
+        early = {r: pools.skeptic.submit(skeptic_checks, ctx, skeptic, [r]) for r in candidates}
+        # Each target's challenge review starts as soon as the target is certain and its check is back, alongside
+        # the rest of the Reviewer's first round and the revision round. Started after the revision round, it was
+        # reached once in 23 runs at the code defaults on 25 Oct. While challenge reviews may run, every model call
+        # takes one of MODEL_PARALLEL shared slots, the Reviewer's rounds first, so the reviews use slots the rounds
+        # are not using. The cost: a round's call can wait behind a review call already in flight, so round 1 and
+        # the revision round can run a little longer than before, and the revision round's start gate sees that.
+        low = llm.low_priority() if hasattr(llm, "low_priority") else llm  # stand-in clients in tests have no slots
+        slots = Slots(settings.parallel) if candidates else None
+        challenges = ChallengeQueue(ctx, candidates, settings.skeptic_items, early, skeptic,
+                                    Reviewer(low, settings.reviewer_model, clerk, settings.parallel),
+                                    Analyst(low, settings.analyst_model, settings.parallel, settings.analyst_top,
+                                            settings.analyst_extra),
+                                    tracer, left, pools.challenges, pools.cancelled, pools.skeptic, slots)
+        llm.slots = slots
     state: dict = {}  # reaction -> {"finding", "verdict", "status", "history"}
-    rounds, new_missing = [], []
+    rounds, new_missing, revised = [], [], set()  # revised: reactions the revision rounds handled
     for rnd in range(1, settings.reviewer_rounds + 2):
         check_sources(findings)
         verdicts, missing, reviewer_summary = reviewer.review(
-            ctx, findings, attempted, recheck=early_recheck(rechecking) if rnd == 1 else None)
+            ctx, findings, attempted, recheck=early_recheck(rechecking) if rnd == 1 else None,
+            on_verdict=challenges.on_verdict if challenges and rnd == 1 else None)
         by = {v.reaction: v for v in verdicts}
         retry = []
         for f in findings:
             v = by[f.reaction]
-            entry = state.setdefault(f.reaction, {"history": []})
-            status, note = settle(f, v, entry["history"])
-            entry["history"].append({"round": rnd, "claim": dict(zip(("label_coverage", "context", "review_priority"),
-                                                                       f.key())),
-                                     "decision": v.decision, "reason": v.reason, "objection": v.objection})
-            entry.update(finding=f, verdict=v, status=status, note=note)
+            status, note = record(state.setdefault(f.reaction, {"history": []}), f, v, rnd)
             if status == "rejected":
                 retry.append(f)
             elif status == "unresolved" and note:
@@ -189,10 +217,11 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
         rounds.append({"round": rnd, "reviewed": len(findings), "rejected": len(retry),
                        "unresolved": sum(by[f.reaction].decision == "unresolved" for f in findings),
                        "missing": len(new_missing)})
-        if rnd == 1 and settings.skeptic_items:
+        if rnd == 1 and challenges:
             # The Skeptic's targets are findings the Reviewer has just accepted, which the revision round does
-            # not touch.
-            targets = skeptic_targets(ctx, state, settings.skeptic_items)
+            # not touch: it handles only rejected findings and reactions nobody has tried yet. Targets the queue
+            # could not be sure of during the round start now.
+            challenges.finish_round(state, skeptic_targets(ctx, state, settings.skeptic_items))
         if (not retry and not new_missing) or rnd > settings.reviewer_rounds:
             break
         if left() < REVISION_NEEDS:
@@ -206,6 +235,7 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
         tracer.event("orchestrator", "retry", round=rnd + 1, reason="reviewer rejected or found missing items",
                      feedback=feedback)
         attempted |= {m["reaction"] for m in new_missing}
+        revised |= {f.reaction for f in retry} | {m["reaction"] for m in new_missing}
         new_missing = []
         findings, summary = analyst.revise(ctx, retry, feedback)
         attempted |= set(ctx.get("unclassified", []))
@@ -218,18 +248,17 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                 else "review rounds ran out before the Reviewer's objection was settled"))
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
     skeptic_counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
-    if targets is not None:
-        done = early.result()  # skeptic.check catches its own Zetaris errors
-        late = [r for r in targets if r not in done]
-        tracer.event("skeptic", "early_checks_used", targets=targets, from_early=[r for r in targets if r in done],
-                     checked_now=late, unused=[r for r in done if r not in targets])
-        prefetched = (targets, skeptic_evidence(ctx, skeptic, targets, done))
-        review = left() >= CHALLENGE_NEEDS
-        if not review:
-            skipped.append("skeptic challenge review")
-            tracer.event("orchestrator", "budget_stop", step="skeptic challenge review", seconds_left=round(left()))
-        skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items,
-                                       prefetched=prefetched, review=review)
+    if challenges:
+        try:
+            results = challenges.join()  # each waits for its check only until the run's deadline
+        finally:
+            llm.slots = None
+        skeptic_counts, skips = merge_challenges(ctx, state, results, revised, tracer)
+        # As before, the challenge review counts as skipped when the budget stopped it, or, with nothing challenged,
+        # when too little time was left for it at this point.
+        if "skeptic challenge review" in skips or (not skeptic_counts["challenged"] and left() < CHALLENGE_NEEDS):
+            skips.append("skeptic challenge review")
+        skipped.extend(dict.fromkeys(skips))
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     sources = collect_sources(ctx, tracer, min(SOURCE_WAIT, max(0.0, left())))
@@ -420,6 +449,179 @@ def skeptic_checks(ctx: dict, skeptic: Skeptic, picked: list[str]) -> list[dict]
     stats = {s.reaction: s for s in ctx["passing"]}
     with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
         return list(pool.map(lambda r: skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None), picked))
+
+
+def record(entry: dict, f: Finding, v: Verdict, rnd) -> tuple[str, str]:
+    """Settle one finding's verdict for a round into its state entry, and return its status and note."""
+    status, note = settle(f, v, entry["history"])
+    claim = dict(zip(("label_coverage", "context", "review_priority"), f.key()))
+    entry["history"].append({"round": rnd, "claim": claim, "decision": v.decision, "reason": v.reason,
+                             "objection": v.objection})
+    entry.update(finding=f, verdict=v, status=status, note=note)
+    return status, note
+
+
+def skipped_check(reaction: str) -> dict:
+    """A target the Skeptic did not check because the run's time budget had run out. Never a challenge."""
+    return {"reaction": reaction, "pairs": [], "query_ids": [], "outcome": "not_checked", "challenge_reasons": [],
+            "skipped_for_time": True, "error": "not run: the run's time budget ran out first",
+            "summary": f"Co-reported drug check not run for {reaction}: the run's time budget ran out first."}
+
+
+class ChallengeQueue:
+    """The Skeptic's challenge reviews, each started as soon as its target is certain and its check is back, in its
+    own thread, while the Reviewer's first round and the revision round go on.
+
+    Which targets: the same rule as skeptic_targets(), the top `top` review_next findings the Reviewer accepted in
+    round 1, by chi2. Every review_next finding ranked above a candidate is itself a candidate, so a candidate the
+    Reviewer has accepted is certain to be a target once fewer than `top` higher candidates are accepted or still
+    waiting for their verdict. Those start from the round-1 verdicts (on_verdict); any target still unstarted when
+    round 1 is settled starts then (finish_round).
+
+    No shared state: each review works on its own copy of its target's entry and of ctx, taken in the main thread.
+    The revision round handles only rejected findings and reactions nobody has tried, never an accepted target, so
+    the two never touch the same reaction; merge_challenges() folds the copies back after both are done.
+
+    Budget, checked when each step is due: the wait for a target's check ends at the run's deadline, a target the
+    early checks did not cover is checked only with SKEPTIC_CHECK_NEEDS seconds left, and its review starts only with
+    CHALLENGE_NEEDS left. A review that has started runs to its end, as before.
+
+    Timing: the targets' reviews run side by side, one thread each, as the single review step did before. Their
+    model calls go through the low-priority client (reviewer and analyst here are built on llm.low_priority()), so
+    they take only slots the Reviewer's rounds are not asking for."""
+
+    def __init__(self, ctx: dict, candidates: list[str], top: int, early: dict, skeptic: Skeptic, reviewer: Reviewer,
+                 analyst: Analyst, tracer: Tracer, left, pool: ThreadPoolExecutor, cancelled: threading.Event,
+                 checks_pool: ThreadPoolExecutor, slots: Slots | None = None):
+        self.ctx, self.candidates, self.top, self.early = ctx, candidates, top, dict(early)
+        self.skeptic, self.reviewer, self.analyst, self.tracer, self.left = skeptic, reviewer, analyst, tracer, left
+        self.pool, self.cancelled, self.checks_pool, self.slots = pool, cancelled, checks_pool, slots
+        self.verdicts: dict[str, dict] = {}  # candidate -> its round-1 entry, once the Reviewer has decided
+        self.started: dict = {}  # target -> Future of its review
+        self.targets: list[str] | None = None
+        self.late: set[str] = set()  # targets checked after round 1 because the early checks did not cover them
+        self.no_time: set[str] = set()  # such targets left unchecked because the budget had run out
+
+    def on_verdict(self, f: Finding, v: Verdict) -> None:
+        """A round-1 verdict, as it lands (called in the main thread by Reviewer.review)."""
+        if f.reaction not in self.candidates:
+            return
+        entry = {"history": []}
+        record(entry, copy.copy(f), copy.copy(v), 1)
+        self.verdicts[f.reaction] = entry
+        ahead = 0  # higher-ranked candidates that are accepted or still waiting for their verdict
+        for r in self.candidates:
+            if ahead >= self.top:
+                break
+            e = self.verdicts.get(r)
+            if e is None:
+                ahead += 1
+            elif e["status"] == "reviewed" and e["finding"].review_priority == "review_next":
+                if r not in self.started:
+                    self._start(r, e)
+                ahead += 1
+
+    def finish_round(self, state: dict, targets: list[str]) -> None:
+        """Round 1 is settled: start every target not started yet (main thread)."""
+        self.targets = targets
+        stray = [r for r in self.started if r not in targets]
+        if stray:  # cannot happen (see the class docstring); kept out of the dossier if it ever does
+            self.tracer.event("orchestrator", "challenge_target_mismatch", reactions=stray, targets=targets)
+        for r in targets:
+            if r in self.started:
+                continue
+            if r not in self.early:  # the early checks did not cover it: check it now, if there is time
+                if self.left() >= SKEPTIC_CHECK_NEEDS:
+                    self.early[r] = self.checks_pool.submit(skeptic_checks, self.ctx, self.skeptic, [r])
+                    self.late.add(r)
+                else:
+                    self.no_time.add(r)
+                    self.tracer.event("orchestrator", "budget_stop", step="skeptic late checks", reaction=r,
+                                      seconds_left=round(self.left()))
+            e = state[r]
+            self._start(r, {**e, "finding": copy.copy(e["finding"]), "verdict": copy.copy(e["verdict"]),
+                            "history": list(e["history"])})
+
+    def _start(self, r: str, entry: dict) -> None:
+        ctx = {**self.ctx, "evidence_ids": set(self.ctx["evidence_ids"]), "sources": dict(self.ctx["sources"]),
+               "unclassified": list(self.ctx.get("unclassified", []))}
+        self.tracer.event("skeptic", "challenge_queued", reaction=r, seconds_left=round(self.left()))
+        self.started[r] = self.pool.submit(self._review, r, entry, ctx)
+
+    def _review(self, r: str, entry: dict, ctx: dict) -> dict:
+        """One target: its check, then (if challenged) its challenge review, in this queue's thread."""
+        late = r in self.late
+        out = {"reaction": r, "entry": entry, "ctx": ctx, "review": True, "from_early": False, "checked_now": late}
+        if self.cancelled.is_set():  # the run is already stopping on an error, so this result is never merged
+            return {**out, "cancelled": True}
+        job, ev = self.early.get(r), None
+        if job is not None:
+            try:
+                ev = job.result(timeout=max(0.0, self.left()))[0]  # skeptic.check catches its own Zetaris errors
+                out["from_early"] = not late
+            except FutureTimeout:
+                self.tracer.event("orchestrator", "budget_stop", step="skeptic checks", reaction=r,
+                                  seconds_left=round(self.left()))
+        if ev is None:  # not back by the deadline, or (no_time) never started
+            ev, out["checked_now"] = skipped_check(r), False
+        out["review"] = self.left() >= CHALLENGE_NEEDS
+        if ev["outcome"] == "challenged" and out["review"] and self.slots is not None:
+            # The review's calls take only slots the Reviewer's rounds leave free, so in a long round 1 they can wait
+            # a long time. The gate must hold when they can start: wait for a free slot only until CHALLENGE_NEEDS
+            # seconds before the deadline, and skip the review as before if none comes by then.
+            out["review"] = self.slots.free_before(time.monotonic() + self.left() - CHALLENGE_NEEDS)
+        if ev["outcome"] == "challenged" and not out["review"]:
+            self.tracer.event("orchestrator", "budget_stop", step="skeptic challenge review", reaction=r,
+                              seconds_left=round(self.left()))
+        reviewing = ev["outcome"] == "challenged" and out["review"]
+        self.tracer.event("skeptic", "challenge_review_start" if reviewing else "challenge_review_none", reaction=r,
+                          outcome=ev["outcome"], seconds_left=round(self.left()))
+        out["counts"] = skeptic_round(ctx, {r: entry}, self.skeptic, self.reviewer, self.analyst, self.tracer, 1,
+                                      prefetched=([r], [ev]), review=out["review"])
+        out["challenged"], out["skipped_check"] = ev["outcome"] == "challenged", bool(ev.get("skipped_for_time"))
+        if out["skipped_check"]:
+            out["counts"]["checked"] = 0
+        self.tracer.event("skeptic", "challenge_review_end", reaction=r, seconds_left=round(self.left()),
+                          **out["counts"])
+        return out
+
+    def join(self) -> list[dict]:
+        """Every target's result, in target order, once all are done (main thread, after the revision rounds)."""
+        results = [self.started[r].result() for r in self.targets or []]
+        self.tracer.event("skeptic", "early_checks_used", targets=self.targets or [],
+                          from_early=[o["reaction"] for o in results if o["from_early"]],
+                          checked_now=[o["reaction"] for o in results if o["checked_now"]],
+                          not_checked_for_time=[o["reaction"] for o in results if o.get("skipped_check")],
+                          unused=[r for r in self.candidates if r not in (self.targets or [])])
+        return results
+
+
+def merge_challenges(ctx: dict, state: dict, results: list[dict], revised: set[str],
+                     tracer: Tracer) -> tuple[dict, list[str]]:
+    """Fold each target's review back into the run (main thread, after both branches are done), and return the
+    Skeptic's counts and the steps the budget skipped. A reaction the revision rounds handled keeps their result; that
+    cannot happen (see ChallengeQueue), and if it ever did the clash is traced and left out of the counts."""
+    counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
+    ctx["skeptic"], skips = {}, []
+    clash = [o["reaction"] for o in results if o["reaction"] in revised]
+    if clash:
+        tracer.event("orchestrator", "challenge_merge_conflict", reactions=clash, kept="revision round")
+    for o in results:
+        r = o["reaction"]
+        if r in revised or o.get("cancelled"):  # neither happens in a run that reaches this point
+            continue
+        state[r] = o["entry"]
+        ctx["skeptic"][r] = o["ctx"]["skeptic"][r]
+        ctx["evidence_ids"] |= o["ctx"]["evidence_ids"]
+        new = [x for x in o["ctx"]["unclassified"] if x not in ctx.get("unclassified", [])]
+        if new:
+            ctx.setdefault("unclassified", []).extend(new)
+        counts = {k: counts[k] + o["counts"][k] for k in counts}
+        if o.get("skipped_check"):
+            skips.append("skeptic checks")
+        if o["challenged"] and not o["review"]:
+            skips.append("skeptic challenge review")
+    return counts, skips
 
 
 def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, analyst: Analyst, tracer: Tracer,
