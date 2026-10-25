@@ -109,10 +109,11 @@ def label_sentence(text: str, term: str) -> str | None:
 
 
 def around(sentence: str, words: list[str]) -> str:
-    """At most SENTENCE_CHARS of a sentence, around the first of the given word stems it contains."""
+    """At most SENTENCE_CHARS of a sentence, around the first of the given word stems it contains, trying them in
+    the order given. retrieve() passes the strongest first, so a common word such as "blood" cannot pull the
+    window away from "hypoglyc"."""
     low = sentence.lower()
-    hits = sorted((m.start(), len(w)) for w in words for m in [re.search(rf"\b{re.escape(w)}", low)] if m)
-    i, n = hits[0] if hits else (0, 0)
+    i, n = next(((m.start(), len(w)) for w in words for m in [re.search(rf"\b{re.escape(w)}", low)] if m), (0, 0))
     return window(sentence, 0, len(sentence), i, n)
 
 
@@ -142,11 +143,11 @@ def retrieve(reaction: str, label: dict, k: int = EXCERPTS_PER_REACTION) -> list
     scored = []
     # A synonym names the clinical concept itself, so it counts double: on metformin's label "blood" and
     # "hypoglyc" each hit 5 sentences, and the tie went to the lactate sentences, which come first.
-    synonyms = set(synonym_stems(reaction))
+    synonyms, weights = set(synonym_stems(reaction)), {}
     for st in stems(reaction):
         hits = [i for i, ws in enumerate(words) if any(w.startswith(st) for w in ws)]
-        weight = (SYNONYM_WEIGHT if st in synonyms else 1) / math.log(2 + len(hits))
-        scored += [(i, weight) for i in hits]
+        weights[st] = (SYNONYM_WEIGHT if st in synonyms else 1) / math.log(2 + len(hits))
+        scored += [(i, weights[st]) for i in hits]
     score: dict[int, float] = {}
     for i, w in scored:
         score[i] = score.get(i, 0) + w
@@ -158,8 +159,8 @@ def retrieve(reaction: str, label: dict, k: int = EXCERPTS_PER_REACTION) -> list
             out.append(i)
         if len(out) == k:
             break
-    sts = stems(reaction)
-    return [(sents[i][0], around(sents[i][1], sts)) for i in sorted(out)]
+    strongest = sorted(weights, key=lambda st: -weights[st])  # each excerpt centres on its strongest word
+    return [(sents[i][0], around(sents[i][1], strongest)) for i in sorted(out)]
 
 
 def excerpt_block(reactions: list[str], label: dict, label_qid: str | None) -> str:

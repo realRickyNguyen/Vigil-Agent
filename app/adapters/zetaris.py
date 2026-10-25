@@ -1,5 +1,6 @@
 """Zetaris REST adapter: POST {ZETARIS_REST_URL}/sql-editor/sqls/run with a bearer key,
 X-Org-ID and a fresh X-Request-ID. Every query goes to the trace with its SQL and row count."""
+import http.client
 import json
 import time
 import urllib.error
@@ -41,7 +42,8 @@ class ZetarisClient:
             return json.loads(r.read() or b"{}")
 
     def run(self, sql: str, purpose: str, agent: str = "data_clerk", ddl: bool = False) -> QueryResult:
-        """Run one statement. Retries timeouts and 5xx; raises AlreadyExists or ZetarisError otherwise."""
+        """Run one statement. Retries timeouts, dropped connections and 5xx; raises AlreadyExists or ZetarisError
+        otherwise."""
         query_id = "q-" + uuid.uuid4().hex[:8]  # short evidence ID the agents cite; Zetaris gets its own UUID
         timeout = DDL_TIMEOUT if ddl else max(self.s.source_timeout, 60)
         last = None
@@ -65,7 +67,10 @@ class ZetarisClient:
                 last = f"HTTP {e.code}: {msg[:500]}"
                 if e.code < 500:
                     break
-            except (urllib.error.URLError, TimeoutError) as e:
+            # urllib wraps errors only while sending. A connection dropped while reading the reply, or a reply cut
+            # short, arrives raw, so it is caught here too and callers only ever see ZetarisError.
+            except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException,
+                    json.JSONDecodeError) as e:
                 last = f"{type(e).__name__}: {e}"
             if attempt < self.s.max_retries:
                 time.sleep(2 * (attempt + 1))

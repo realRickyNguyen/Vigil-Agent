@@ -107,7 +107,9 @@ def read_sse(lines, deadline: float | None = None) -> dict:
         frame = json.loads(data)
         if frame.get("error"):
             err = frame["error"] if isinstance(frame["error"], dict) else {"message": str(frame["error"])}
-            e = MeterlessError(f"{err.get('code', 'error')}: {err.get('meterless_detail') or err.get('message')}"[:300])
+            detail = str(err.get("meterless_detail") or err.get("message") or "")
+            e = MeterlessError(f"{err.get('code', 'error')}: {detail}"[:300])
+            e.detail = detail  # chat() reads it the way it reads an HTTP error's detail
             e.retryable = err.get("code") not in NOT_RETRYABLE
             raise e
         reply["model"] = frame.get("model") or reply["model"]
@@ -141,10 +143,17 @@ class NightshiftClient:
         self._rate_limited = 0
 
     def _wait_for_cooldown(self) -> None:
-        with self._lock:
-            wait = self._cooldown_until - time.monotonic()
-        if wait > 0:
+        # Check again after sleeping, because another thread's 429 may have extended the cool-down meanwhile.
+        # Sleep again only for an extension, not for a deadline already waited out.
+        waited_until = 0.0
+        while True:
+            with self._lock:
+                until = self._cooldown_until
+            wait = until - time.monotonic()
+            if wait <= 0 or until <= waited_until:
+                return
             time.sleep(wait)
+            waited_until = until
 
     def _rate_limited_now(self) -> float:
         """Start or extend the shared cool-down; returns its length in seconds."""
@@ -161,10 +170,12 @@ class NightshiftClient:
     def _warn_setup(self, agent: str, model: str, served_by: str | None, steps: dict | None) -> None:
         """Warn once per problem, at the first call that shows it, rather than leave a run of quiet timeouts."""
         for problem in setup_problems(model, served_by, steps):
-            if problem not in self._warned:
+            with self._lock:  # worker threads share the set, so two calls cannot both warn
+                if problem in self._warned:
+                    continue
                 self._warned.add(problem)
-                self.tracer.event(agent, "nightshift_warning", warning=problem)
-                log.warning(problem)
+            self.tracer.event(agent, "nightshift_warning", warning=problem)
+            log.warning(problem)
 
     def _post(self, body: dict) -> dict:
         # A fresh scope per call keeps Nightshift's H-MEM out. Its memory is walled by scope, and under the
@@ -251,10 +262,12 @@ class NightshiftClient:
                 if not getattr(e, "retryable", True):
                     self.tracer.event(agent, "llm_error", model=model, error=last)
                     break
-                # A streamed call has already had its 200, so a 429 or the provider deadline arrives as an error
-                # frame whose detail names it (for example "provider_error: nvidia_429").
-                rate_limited = "_429" in last
-                if fail_fast and "provider_deadline" in last:
+                # A streamed call has already had its 200, so a 429 or a provider time limit arrives as an error
+                # frame whose detail names it: nvidia_429, provider_deadline, or ttfb_timeout when Nightshift's
+                # learned first-byte budget runs out (33 of 237 calls in the 24 Oct evening evaluation).
+                detail = getattr(e, "detail", "")
+                rate_limited = "_429" in detail
+                if fail_fast and ("provider_deadline" in detail or "ttfb_timeout" in detail):
                     self.tracer.event(agent, "llm_deadline", model=model, attempt=attempt, error=last,
                                       action="split the batch")
                     raise MeterlessDeadline(last) from e

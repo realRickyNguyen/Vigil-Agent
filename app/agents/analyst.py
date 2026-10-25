@@ -128,7 +128,7 @@ class Analyst:
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
         # Match names case- and space-insensitively, and keep the table's spelling.
         known = {norm(s.reaction): s.reaction for s in rows}
-        replies = [p for p in out.get("picked", []) if isinstance(p, dict)]
+        replies = [p for p in out.get("picked") or [] if isinstance(p, dict)]
         picked = [known[norm(str(p.get("reaction") or ""))] for p in replies
                   if norm(str(p.get("reaction") or "")) in known]
         self.llm.tracer.event(self.name, "picked", reactions=picked,
@@ -231,14 +231,14 @@ class Analyst:
         # Match names case- and space-insensitively and keep the table's spelling; the first finding per reaction wins.
         wanted = {norm(r): r for r in reactions}
         findings: dict[str, Finding] = {}
-        for d in out.get("findings", []):
+        for d in out.get("findings") or []:  # "or []": a reply with "findings": null must not crash the run
             if isinstance(d, dict):
                 f = Finding.from_dict(d)
                 name = wanted.get(norm(f.reaction))
                 if name and name not in findings:
                     f.reaction = name
                     findings[name] = f
-        return list(findings.values()), str(out.get("summary", ""))
+        return list(findings.values()), str(out.get("summary") or "")
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
         """The top rows are classified while the pick call chooses the extras, then the extras are classified:
