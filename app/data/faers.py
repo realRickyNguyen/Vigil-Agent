@@ -87,7 +87,11 @@ def rest_table(name: str, endpoint: str) -> str:
 
 def phrase(field: str, value: str) -> str:
     """One openFDA search clause, fully URL-encoded, so the endpoint never holds a raw quote or apostrophe.
-    Used for reactions; drugs and co-drugs go through drug_search() so they match the per-drug tables."""
+    Used for reactions; drugs and co-drugs go through drug_search() so they match the per-drug tables.
+    openFDA rejects the ^ that FAERS writes for an apostrophe ("Search not supported"), so a ^ name is searched as its
+    words on the word-split field, as any_reaction() does (FOURNIER^S GANGRENE gave its 1,207 reports that way)."""
+    if "^" in value and field == REACTION_FIELD:
+        field, value = REACTION_WORDS_FIELD, value.replace("^", " ")
     return f"{field}:" + urllib.parse.quote(f'"{value}"', safe="")
 
 

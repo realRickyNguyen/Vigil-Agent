@@ -137,14 +137,9 @@ def screen_status(reaction: str, t: dict, sizes: dict, screened: dict, passing: 
 
 
 def label_status(reaction: str, label: dict) -> str:
-    """The label search's summary. FAERS writes an apostrophe as ^ and labels never do, so a ^ name is also searched
-    with each apostrophe a label may use, and the first that finds it is kept."""
+    """The label search's summary. The search reads FAERS's ^ as an apostrophe (label.norm)."""
     if not sections(label or {}):
         return "No current label was found."
-    for name in [reaction] + ([reaction.replace("^", q) for q in ("'", "\u2019")] if "^" in reaction else []):
-        found = search(name, label)
-        if found["found"]:
-            return found["summary"]
     return search(reaction, label)["summary"]
 
 

@@ -286,3 +286,14 @@ def test_a_curated_synonym_names_the_reaction_before_the_expected_effect():
     assert search("TRANSAMINASES INCREASED", label)["found"] == []
     block = excerpt_block(["BLOOD GLUCOSE DECREASED"], label, "q-l")
     assert "Code search: Named by a related term" in block
+
+
+def test_a_faers_caret_name_is_searched_and_counted_as_an_apostrophe():
+    # FAERS writes FOURNIER^S GANGRENE. Labels write Fournier's or Fournier’s, and openFDA search rejects the ^.
+    for text in ("Fournier's Gangrene: cases of necrotizing fasciitis of the perineum have occurred.",
+                 "Fournier’s gangrene has been reported in patients taking this drug."):
+        s = search("FOURNIER^S GANGRENE", {"warnings_and_cautions": text})
+        assert [(h["section"], h["how"]) for h in s["found"]] == [("warnings_and_cautions", "name")], text
+    from app.data.faers import REACTION_FIELD, phrase
+    assert phrase(REACTION_FIELD, "FOURNIER^S GANGRENE") == "patient.reaction.reactionmeddrapt:%22FOURNIER%20S%20GANGRENE%22"
+    assert phrase(REACTION_FIELD, "PANCREATITIS") == REACTION_FIELD + ":%22PANCREATITIS%22"

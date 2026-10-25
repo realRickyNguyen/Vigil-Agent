@@ -79,7 +79,9 @@ BOXED_CHARS = 1500
 
 
 def norm(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+    """Lower case, single spaces, and one apostrophe. FAERS writes an apostrophe as ^ (FOURNIER^S GANGRENE) and labels
+    often use a curly one, so both become ', or the label search never names those terms."""
+    return re.sub(r"\s+", " ", (text or "")).strip().lower().replace("^", "'").replace("’", "'")
 
 
 def us(word: str) -> str:
