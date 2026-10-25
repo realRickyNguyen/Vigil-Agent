@@ -84,7 +84,9 @@ ORDER = ("In each section, terms the label doesn't mention come first, then term
          "each, terms run by serious reports, most first, with an unknown serious count last, then by reports.")
 LEGEND = {"label_status": "covered (named in warnings, adverse reactions, patient counselling or a leaflet's side "
                           "effects, with the sections in label_sections), mentioned_outside_effect_text (named only "
-                          "where coverage doesn't count, with the sections), not_mentioned, or no_label",
+                          "where coverage doesn't count, with the sections), not_mentioned (the search doesn't find "
+                          "its name, a set synonym or a simple spelling change, though a broader term may still cover "
+                          "it), or no_label",
           "label_matched_as": "only when the label names the term in another spelling or wording (LABEL_VARIANTS), "
                               "which the agents' label search does not match yet",
           "serious_reports": "reports with the drug and the term that are flagged serious, or null when unknown",
@@ -95,7 +97,10 @@ SUMMARY_TOP = 5
 # The label search matches MedDRA's British spelling to US labels (label.UK_US) but not -ise words, or cancer to
 # carcinoma. So on 25 Oct semaglutide's MEDULLARY THYROID CANCER and PANCREATITIS NECROTISING were not named, though
 # its boxed warning says "medullary thyroid carcinoma" and its warnings say "necrotizing pancreatitis".
-LABEL_VARIANTS = ((r"IS(ING|ED|ATION)\b", r"IZ\1"), (r"\bCANCER\b", "CARCINOMA"))
+# (pattern, replacement, fewest words in the term). Carcinoma needs 3 words, the tumour type as well as the site,
+# because a name matches anywhere in a sentence. THYROID CANCER as "thyroid carcinoma" would match inside "medullary
+# thyroid carcinoma" and mark a broader term covered, sorting it last.
+LABEL_VARIANTS = ((r"IS(ING|ED|ATION)\b", r"IZ\1", 1), (r"\bCANCER\b", "CARCINOMA", 3))
 
 
 def pregnancy_or_newborn(reaction: str) -> bool:
@@ -216,7 +221,9 @@ def label_view(reaction: str, label: dict) -> dict:
 def label_variants(reaction: str) -> list[str]:
     """Other names for the reaction from LABEL_VARIANTS, each change alone and together."""
     out: list[str] = []
-    for pattern, repl in LABEL_VARIANTS:
+    for pattern, repl, fewest in LABEL_VARIANTS:
+        if len(reaction.split()) < fewest:
+            continue
         for base in [reaction] + out:
             v = re.sub(pattern, repl, base)
             if v != base and v not in out:
@@ -250,11 +257,17 @@ def summary(sections_out: dict, have_label: bool) -> dict:
     if not have_label:
         text += " No current label was found, so none could be checked against it."
     else:
-        text += (f" The label doesn't mention {len(unmentioned):,} of them and names {elsewhere:,} more only outside "
-                 f"effect text.")
-        if top:
-            text += (f" The {len(top)} it doesn't mention with the most serious reports are "
+        text += (f" The label search doesn't find {len(unmentioned):,} of them by name and finds {elsewhere:,} more "
+                 f"only outside effect text.")
+        if len(top) == 1:
+            text += f" The one it doesn't find is {show(top[0])}."
+        elif top:
+            text += (f" The {len(top)} it doesn't find with the most serious reports are "
                      f"{'; '.join(show(i) for i in top)}.")
+        if unmentioned:
+            text += (" The search looks for each name, a few set synonyms and simple spelling changes, so a broader "
+                     "label term can still cover one it doesn't find, as diabetic ketoacidosis may cover EUGLYCAEMIC "
+                     "DIABETIC KETOACIDOSIS.")
     return {"text": text, "terms": len(items), "outside_screen": outside, "not_mentioned": len(unmentioned),
             "mentioned_outside_effect_text": elsewhere,
             "top_not_mentioned": [{"reaction": i["reaction"], "section": section_of[i["reaction"]],

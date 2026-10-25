@@ -446,7 +446,8 @@ def test_a_whole_run_never_promotes_safety_net_terms(tmp_path, monkeypatch):
     assert "SOMNOLENCE NEONATAL" not in names and "EXPOSURE VIA BREAST MILK" not in names
     assert not any("SOMNOLENCE NEONATAL" in p or "BREAST MILK" in p or "FEELING DRUNK" in p for p in prompts)
     # Every agent gets the same input, word for word, as in a run whose safety net is empty.
-    assert prompts == baseline_prompts and len(prompts) > 0
+    # Sorted, because the Analyst and Reviewer calls run in a thread pool.
+    assert sorted(prompts) == sorted(baseline_prompts) and len(prompts) > 0
     # Same queue, in the same order, with the same priorities, as a run whose safety net is empty.
     strip = lambda q: [(i["reaction"], i["review_priority"], i["workflow_status"]) for i in q]  # noqa: E731
     assert strip(queue) == strip(baseline["review_queue"])
@@ -465,7 +466,7 @@ def test_a_whole_run_degrades_when_the_safety_net_query_fails(tmp_path, monkeypa
     assert dossier["counts"]["safety_net_terms"] == 0 and len(dossier["review_queue"]) == 2
 
 
-def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_reported_first():
+def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen():
     # Bryan's rule of 25 Oct. Made-up rows (reaction, reports with the drug, all-drug reports or None if outside the
     # all-drugs top 999), and made-up serious counts.
     own = [("GASTROINTESTINAL HYPOMOTILITY", 100, None), ("FOOD CRAVING", 750, None), ("HALF SERIOUS TERM", 200, None),
@@ -479,7 +480,8 @@ def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_r
                         "SOMNOLENCE NEONATAL": (1, 8)})
     _, sec = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
     missed = [i["reaction"] for i in sec["missed_serious_terms"]]
-    # More than half serious and outside the screen (by a cap or the 3-report floor), most-reported first, no cap.
+    # More than half serious and outside the screen (by a cap or the 3-report floor), with no cap. The clinical order
+    # has its own test.
     # THIN SERIOUS TERM is in the all-drugs top 999, so only the query's floor clause brings it back.
     assert missed == ["GASTROINTESTINAL HYPOMOTILITY", "SMALL SERIOUS TERM", "THIN SERIOUS TERM"]
     assert "o.reports < 3" in safety_net_sql("zuranolone")
@@ -537,7 +539,9 @@ def test_each_section_is_in_clinical_order_with_a_summary_line_and_a_thin_mark()
     assert [x["reaction"] for x in s["top_not_mentioned"]] == ["HYPOMANIA", "TACHYCARDIA", "ACUTE KIDNEY INJURY",
                                                                "RHABDOMYOLYSIS", "EXPOSURE VIA BREAST MILK"]
     assert s["text"].startswith("12 terms listed (4 designated medical events, 5 missed serious terms, 3 pregnancy and "
-                                "newborn terms), 12 of them outside the screen. The label doesn't mention 7 of them")
+                                "newborn terms), 12 of them outside the screen. The label search doesn't find 7 of them by "
+                                "name and finds 2 more only outside effect text.")
+    assert "a broader label term can still cover one it doesn't find" in s["text"]
     assert "HYPOMANIA (14 of 15 reports serious)" in s["text"]
     # No label, so every term is unchecked and the summary says so.
     _, bare = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
@@ -561,7 +565,18 @@ def test_the_list_also_reads_the_label_for_ize_spellings_and_carcinoma_but_the_a
     assert label_view("PANCREATITIS NECROTISING", label)["label_status"] == "covered"
     # Papillary thyroid cancer is a different tumour, and the label doesn't name it.
     assert label_view("PAPILLARY THYROID CANCER", label)["label_status"] == "not_mentioned"
+    # A two-word cancer term isn't rewritten, as "thyroid carcinoma" sits inside "medullary thyroid carcinoma".
+    assert label_variants("THYROID CANCER") == [] and label_view("THYROID CANCER", label)["label_status"] == (
+        "not_mentioned")
     # A name the search already finds is unchanged, and has no other wording.
     assert "label_matched_as" not in label_view("PANCREATITIS", label)
     # The agents' search is untouched, so it still misses these two (a gap to fix after the re-evaluation).
     assert search("MEDULLARY THYROID CANCER", label)["found"] == search("PANCREATITIS NECROTISING", label)["found"] == []
+
+
+def test_a_summary_with_one_unfound_term_reads_in_the_singular():
+    own = [("PANCREATITIS", 4, None), ("HYPOMANIA", 6, None)]
+    label = {"adverse_reactions": "Pancreatitis has been reported.", "effective_time": "20260101"}  # made up
+    _, sec = section(NetZetaris(own, sizes(461, 1)), "zuranolone", label=label,
+                     severity=serious({"PANCREATITIS": (4, 4), "HYPOMANIA": (5, 6)}))
+    assert "The one it doesn't find is HYPOMANIA (5 of 6 reports serious)." in sec["summary"]["text"]
