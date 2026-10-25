@@ -55,8 +55,9 @@ class DrugNotFound(RuntimeError):
 
 
 class NoCurrentLabel(DrugNotFound):
-    """openFDA has reports for the drug but no label under that generic name, so no reaction can be checked against
-    one. A DrugNotFound, so the API answers it as one (404) without a change to app/server.py."""
+    """openFDA has reports for the drug but no label under that generic name, or none with a section the app reads, so
+    no reaction can be checked against one. A DrugNotFound, so the API answers it as one (404) without a change to
+    app/server.py."""
 
 
 # The hint when nothing names the drug. It never names a drug picked from the input, as a near spelling would be a
@@ -92,9 +93,9 @@ def brand_hint(drug: str, generics: list[str]) -> str:
     if not generics:
         return SPELLING_HINT
     quoted = lambda names: " or ".join(f"'{g.lower()}'" for g in names)  # noqa: E731
-    ok = [g for g in generics if runnable(g)][:3]
-    out = (f"openFDA's drug labels give '{drug}' as a brand name of {quoted((ok or generics)[:3])}. Vigil searches by "
-           f"generic name and doesn't swap a brand for its generic itself")
+    ok = [g for g in generics[:3] if runnable(g)]
+    out = (f"openFDA's drug labels give '{drug}' as a brand name of {quoted(generics[:3])}. Vigil searches by generic "
+           f"name and doesn't swap a brand for its generic itself")
     if ok:
         return out + f", so run it again as {quoted(ok)}."
     return out + (". That generic name has characters or a length Vigil doesn't accept, so this drug can't be run by "

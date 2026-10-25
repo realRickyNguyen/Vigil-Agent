@@ -147,9 +147,10 @@ def test_a_brand_whose_generic_vigil_cannot_take_is_named_but_not_offered_as_a_r
     msg = str(e.value)
     assert "brand name of 'bictegravir, emtricitabine, and tenofovir alafenamide'" in msg
     assert "run it again" not in msg and "this drug can't be run by name yet" in msg
-    # With one name it takes and one it doesn't, only the one it takes is offered as a run.
+    # With one name it takes and one it doesn't, both are named, and only the one it takes is offered as a run.
     rows.append({"brand_name": ["Biktarvy"], "generic_name": ["BICTEGRAVIR"]})
     msg = DataClerk(FakeZ(brand_rows=rows)).not_found_message("biktarvy")
+    assert "brand name of 'bictegravir' or 'bictegravir, emtricitabine, and tenofovir alafenamide'" in msg
     assert msg.endswith("so run it again as 'bictegravir'.")
 
 
