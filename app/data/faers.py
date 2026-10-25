@@ -59,24 +59,44 @@ class NoCurrentLabel(DrugNotFound):
     one. A DrugNotFound, so the API answers it as one (404) without a change to app/server.py."""
 
 
-# The hint when nothing names the drug. It never names a drug picked from the input: a near spelling would be a guess.
+# The hint when nothing names the drug. It never names a drug picked from the input, as a near spelling would be a
+# guess.
 SPELLING_HINT = "Check the spelling, and give the generic name (for example semaglutide, not Ozempic)."
+# How openFDA's "no match" reaches the app. openFDA answers a search that matches nothing with a 404. Zetaris reports a
+# failed openFDA call as "HTTP 400: REST API call failed: " and the Java error. For a 5xx that is "Server returned HTTP
+# response code: 500 for URL ..." (seen in traces). Java's HttpURLConnection reports a 404 differently, as a
+# FileNotFoundException carrying only the URL, so both that form and a plain "response code: 404" count.
+NO_MATCH = re.compile(r"response code: 404\b|REST API call failed: (?:java\.io\.FileNotFoundException: )?https?://")
 
 
 def no_match(e: Exception) -> bool:
-    """openFDA answers a search that matches nothing with a 404, and Zetaris passes its code on in the error text
-    ("HTTP 400: REST API call failed: Server returned HTTP response code: 404"), both when it creates a REST table and
-    when it reads one. A 5xx there is openFDA failing, not a missing drug, so it stays a ZetarisError."""
-    return isinstance(e, ZetarisError) and "response code: 404" in str(e)
+    """True when a ZetarisError is openFDA saying no record matched, the same whether it came from creating a REST
+    table or reading one. A 5xx is openFDA failing, not a missing drug, so it stays a ZetarisError."""
+    return isinstance(e, ZetarisError) and NO_MATCH.search(str(e)) is not None
+
+
+def runnable(name: str) -> bool:
+    try:
+        validate_drug(name)
+        return True
+    except ValueError:
+        return False
 
 
 def brand_hint(drug: str, generics: list[str]) -> str:
-    """What to try instead, from DataClerk.brand_generics(). Vigil never swaps the name itself, so it says so."""
+    """What to try instead, from DataClerk.brand_generics(). Vigil never swaps the name itself, so it says so, and it
+    only says "run it again as" for a name it accepts. openFDA writes some generics with commas or over 49 characters
+    (BICTEGRAVIR, EMTRICITABINE, AND TENOFOVIR ALAFENAMIDE)."""
     if not generics:
         return SPELLING_HINT
-    names = " or ".join(f"'{g.lower()}'" for g in generics[:3])
-    return (f"openFDA's drug labels give '{drug}' as a brand name of {names}. Vigil searches by generic name and "
-            f"doesn't swap a brand for its generic itself, so run it again as {names}.")
+    quoted = lambda names: " or ".join(f"'{g.lower()}'" for g in names)  # noqa: E731
+    ok = [g for g in generics if runnable(g)][:3]
+    out = (f"openFDA's drug labels give '{drug}' as a brand name of {quoted((ok or generics)[:3])}. Vigil searches by "
+           f"generic name and doesn't swap a brand for its generic itself")
+    if ok:
+        return out + f", so run it again as {quoted(ok)}."
+    return out + (". That generic name has characters or a length Vigil doesn't accept, so this drug can't be run by "
+                  "name yet.")
 
 
 def validate_drug(drug: str) -> str:
@@ -402,17 +422,22 @@ class DataClerk:
             self.label_missing = isinstance(created["label_raw"], ZetarisError)
             if self.label_missing:
                 created["label_raw"] = None  # not created, as no label matched
-            view_jobs = [pool.submit(self.z.ensure, *a) for a in views.values()]
+            view_jobs = [pool.submit(kept, self.z.ensure, *a) for a in views.values()]
             # Cache every run: CACHE TABLE is cheap once cached, and the cache does not survive a Zetaris restart.
             to_cache = [f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw"]
             to_cache += [] if self.label_missing else [f"label_d2_{s}_raw"]
             cache_jobs = {raw: pool.submit(cache, raw) for raw in to_cache}
             created.update(zip(views, [j.result() for j in view_jobs]))
+            # If Zetaris only calls openFDA when a table is read, the no-match shows up here instead.
+            missing_drug = any(isinstance(created[k], ZetarisError) for k in views)
             for raw, j in cache_jobs.items():
                 if isinstance(j.result(), ZetarisError):
-                    if not raw.startswith("label_"):
-                        raise DrugNotFound(self.not_found_message(drug))
-                    self.label_missing = True
+                    if raw.startswith("label_"):
+                        self.label_missing = True
+                    else:
+                        missing_drug = True
+            if missing_drug:
+                raise DrugNotFound(self.not_found_message(drug))
         return created
 
     def brand_generics(self, drug: str) -> list[str]:
@@ -442,6 +467,12 @@ class DataClerk:
                 f"nothing to assess. {brand_hint(drug, self.brand_generics(drug))}")
 
     def no_label_message(self, drug: str, reports: int) -> str:
+        """Why a run with reports stops before any model call. Either no label matched the name (label_missing), or
+        the chosen label has none of the sections the app reads."""
+        if not self.label_missing:
+            return (f"openFDA has {reports:,} adverse event reports naming '{drug}', but the label Vigil picked for it "
+                    f"has none of the sections Vigil reads (warnings, adverse reactions, patient information and "
+                    f"others), so no reaction can be checked against it. The run stopped before any model call.")
         generics = self.brand_generics(drug)
         why = brand_hint(drug, generics) if generics else (
             "openFDA holds no label for some drugs, such as one withdrawn long ago, and a misspelt or brand name can "

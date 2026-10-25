@@ -86,24 +86,22 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     reviewer = Reviewer(llm, settings.reviewer_model, clerk, settings.parallel)
     skeptic = Skeptic(clerk, settings.skeptic_co_drugs)
 
-    # Evidence, all through Zetaris.
+    # Evidence, all through Zetaris. With no label, no reaction can be checked against one, so the run stops before
+    # any model call. It stops at registration when no label matched the name, so the other evidence queries don't
+    # run either, or after the evidence when the label read found nothing usable.
     try:
         created = clerk.register_drug(drug)
         tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
+        if clerk.label_missing:
+            stop_without_label(tracer, clerk, drug, clerk.totals(drug))
         totals, (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
             (scope_res, scope_rec) = gather_evidence(clerk, drug)
     except DrugNotFound as e:
-        tracer.event("data_clerk", "drug_not_found", drug=drug, message=str(e))
+        if not isinstance(e, NoCurrentLabel):
+            tracer.event("data_clerk", "drug_not_found", drug=drug, message=str(e))
         raise
-    # With no label, no reaction can be checked against one, so the run stops here, before any model call.
     if not sections(label):
-        if clerk.label_error:
-            tracer.event("data_clerk", "degraded", step="label", error=clerk.label_error, fallback="run stopped")
-            raise ZetarisError(f"the label query for '{drug}' failed, so the run stopped before any model call "
-                               f"({clerk.label_error})")
-        message = clerk.no_label_message(drug, int(float(totals["drug_reports"])))
-        tracer.event("data_clerk", "no_current_label", drug=drug, message=message)
-        raise NoCurrentLabel(message)
+        stop_without_label(tracer, clerk, drug, totals)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     # The serious-term safety net (app/data/safety_net.py) is Zetaris and openFDA only, so it runs in the background
     # from here. Its terms never go into ctx, so no prompt, review item or ranking sees them.
@@ -356,6 +354,18 @@ def collect_sources(ctx: dict, tracer: Tracer, wait: float) -> dict:
             tracer.event("data_clerk", "report_sources", reaction=r, flags=ev["flags"], summary=ev["summary"],
                          query_ids=ev["query_ids"])
     return out
+
+
+def stop_without_label(tracer: Tracer, clerk: DataClerk, drug: str, totals: dict) -> None:
+    """Raise for a run with no label to check reactions against, before any model call. A label query that failed
+    for another reason is a ZetarisError, which the API marks recoverable. Otherwise it is NoCurrentLabel."""
+    if clerk.label_error:
+        tracer.event("data_clerk", "degraded", step="label", error=clerk.label_error, fallback="run stopped")
+        raise ZetarisError(f"the label query for '{drug}' failed, so the run stopped before any model call "
+                           f"({clerk.label_error})")
+    message = clerk.no_label_message(drug, int(float(totals["drug_reports"])))
+    tracer.event("data_clerk", "no_current_label", drug=drug, message=message)
+    raise NoCurrentLabel(message)
 
 
 def gather_evidence(clerk: DataClerk, drug: str) -> tuple:

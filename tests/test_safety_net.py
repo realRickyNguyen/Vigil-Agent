@@ -353,6 +353,7 @@ def test_direct_count_urls_are_encoded_and_chunked_within_the_limit():
 # A whole run with a fake Data Clerk and model, to show the safety net never reaches the queue, its ranking or a prompt.
 class RunClerk:
     label_choice = {"rule": "test label"}
+    label_missing, label_error = False, None  # the label below is found
 
     def __init__(self, net=None):
         self.net = net

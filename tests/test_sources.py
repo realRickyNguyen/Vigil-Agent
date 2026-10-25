@@ -189,6 +189,7 @@ def test_the_dossier_item_carries_the_report_sources():
 class RunClerk:
     """A Data Clerk with fixed answers, for one whole run without Zetaris."""
     label_choice = {"rule": "test label"}
+    label_missing, label_error = False, None  # the label below is found
 
     def __init__(self):
         self.sources_asked = []
