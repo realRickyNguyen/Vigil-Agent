@@ -543,3 +543,25 @@ def test_each_section_is_in_clinical_order_with_a_summary_line_and_a_thin_mark()
     _, bare = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
     assert {i["label_status"] for name in SECTION_NAMES for i in bare[name]} == {"no_label"}
     assert "No current label was found" in bare["summary"]["text"]
+
+
+def test_the_list_also_reads_the_label_for_ize_spellings_and_carcinoma_but_the_agents_search_is_unchanged():
+    # Semaglutide's chosen label says "medullary thyroid carcinoma (MTC)" in its boxed warning and "necrotizing
+    # pancreatitis" in its warnings (recorded 25 Oct). These sentences are made up around those words.
+    from app.data.label import search
+    from app.data.safety_net import label_variants, label_view
+    label = {"boxed_warning": "Semaglutide causes thyroid C-cell tumors, including medullary thyroid carcinoma (MTC).",
+             "warnings_and_cautions": "Fatal and non-fatal hemorrhagic or necrotizing pancreatitis has been observed.",
+             "effective_time": "20260101"}
+    assert label_variants("PANCREATITIS NECROTISING") == ["PANCREATITIS NECROTIZING"]
+    assert label_variants("PAPILLARY THYROID CANCER") == ["PAPILLARY THYROID CARCINOMA"]
+    mtc = label_view("MEDULLARY THYROID CANCER", label)
+    assert mtc["label_status"] == "covered" and mtc["label_sections"][0].startswith("boxed_warning")
+    assert mtc["label_matched_as"] == "MEDULLARY THYROID CARCINOMA" and "does not match yet" in mtc["label_detail"]
+    assert label_view("PANCREATITIS NECROTISING", label)["label_status"] == "covered"
+    # Papillary thyroid cancer is a different tumour, and the label doesn't name it.
+    assert label_view("PAPILLARY THYROID CANCER", label)["label_status"] == "not_mentioned"
+    # A name the search already finds is unchanged, and has no other wording.
+    assert "label_matched_as" not in label_view("PANCREATITIS", label)
+    # The agents' search is untouched, so it still misses these two (a gap to fix after the re-evaluation).
+    assert search("MEDULLARY THYROID CANCER", label)["found"] == search("PANCREATITIS NECROTISING", label)["found"] == []

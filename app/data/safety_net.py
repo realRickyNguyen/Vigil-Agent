@@ -85,10 +85,17 @@ ORDER = ("In each section, terms the label doesn't mention come first, then term
 LEGEND = {"label_status": "covered (named in warnings, adverse reactions, patient counselling or a leaflet's side "
                           "effects, with the sections in label_sections), mentioned_outside_effect_text (named only "
                           "where coverage doesn't count, with the sections), not_mentioned, or no_label",
+          "label_matched_as": "only when the label names the term in another spelling or wording (LABEL_VARIANTS), "
+                              "which the agents' label search does not match yet",
           "serious_reports": "reports with the drug and the term that are flagged serious, or null when unknown",
           "designated_medical_event": "on EMA's designated medical events list",
           "thin": f"fewer than {SCREEN_FLOOR} reports with the drug, too few to judge"}
 SUMMARY_TOP = 5
+# Other names this list tries when it reads the label, for its label status only, so the agents' search is unchanged.
+# The label search matches MedDRA's British spelling to US labels (label.UK_US) but not -ise words, or cancer to
+# carcinoma. So on 25 Oct semaglutide's MEDULLARY THYROID CANCER and PANCREATITIS NECROTISING were not named, though
+# its boxed warning says "medullary thyroid carcinoma" and its warnings say "necrotizing pancreatitis".
+LABEL_VARIANTS = ((r"IS(ING|ED|ATION)\b", r"IZ\1"), (r"\bCANCER\b", "CARCINOMA"))
 
 
 def pregnancy_or_newborn(reaction: str) -> bool:
@@ -188,12 +195,33 @@ def label_view(reaction: str, label: dict) -> dict:
     reads FAERS's ^ as an apostrophe (label.norm)."""
     if not sections(label or {}):
         return {"label_status": "no_label", "label_sections": [], "label_detail": "No current label was found."}
-    s = search(reaction, label)
+    rank = lambda s: 2 if any(h["kind"] == "effect" for h in s["found"]) else 1 if s["found"] else 0  # noqa: E731
+    s, used = search(reaction, label), None
+    for v in label_variants(reaction):
+        found = search(v, label)
+        if rank(found) > rank(s):
+            s, used = found, v
     effect = [where(h) for h in s["found"] if h["kind"] == "effect"]
     other = [where(h) for h in s["found"] if h["kind"] != "effect"]
     status = "covered" if effect else "mentioned_outside_effect_text" if other else "not_mentioned"
-    return {"label_status": status, "label_sections": list(dict.fromkeys(effect or other)),
-            "label_detail": s["summary"]}
+    out = {"label_status": status, "label_sections": list(dict.fromkeys(effect or other)),
+           "label_detail": s["summary"]}
+    if used:
+        out["label_matched_as"] = used
+        out["label_detail"] += (f" Found as {used.lower()}, a wording the agents' label search does not match yet, so "
+                                f"their search may still call it not named.")
+    return out
+
+
+def label_variants(reaction: str) -> list[str]:
+    """Other names for the reaction from LABEL_VARIANTS, each change alone and together."""
+    out: list[str] = []
+    for pattern, repl in LABEL_VARIANTS:
+        for base in [reaction] + out:
+            v = re.sub(pattern, repl, base)
+            if v != base and v not in out:
+                out.append(v)
+    return out
 
 
 def clinical_key(item: dict) -> tuple:
