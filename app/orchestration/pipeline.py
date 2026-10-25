@@ -49,8 +49,9 @@ NOT_YET_CHECKED = [
     "Every report naming the drug (generic name or active substance) is counted, whether or not it was the "
     "suspect drug",
     "Only reactions in openFDA's 999 most-reported for all drugs and in the drug's own 999 most-reported are "
-    "screened (sizes and cutoffs in data.scope); rarer reactions are not screened. The safety net lists the serious "
-    "and pregnancy-related ones, and the most-reported hidden ones, for a person to review, not as signals",
+    "screened (sizes and cutoffs in data.scope), and only with 3 or more reports. The safety net lists designated "
+    "medical events, pregnancy and newborn terms, and the unscreened terms with mostly serious reports, for a person "
+    "to review, not as signals",
 ]
 
 

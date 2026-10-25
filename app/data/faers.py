@@ -21,7 +21,8 @@ import urllib.parse
 from app.adapters.zetaris import ZetarisClient, ZetarisError
 from app.data.label import (INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, POPULATIONS, SECTIONS,
                             clinical_pharmacology_parts)
-from app.data.safety_net import DESIGNATED_MEDICAL_EVENTS, KIND_NAMES, PREGNANCY_NEWBORN, PREGNANCY_NEWBORN_WORDS
+from app.data.safety_net import (DESIGNATED_MEDICAL_EVENTS, KIND_NAMES, PREGNANCY_NEWBORN, PREGNANCY_NEWBORN_WORDS,
+                                 SCREEN_FLOOR)
 from app.schemas import QueryResult, Signal
 
 OPENFDA = "https://api.fda.gov/drug"
@@ -131,12 +132,13 @@ def term_chunks(drug: str, names: list[str], limit: int = URL_LIMIT) -> list[lis
 
 def safety_net_sql(s: str) -> str:
     """The drug's own reactions, with the all-drugs count where the all-drugs top 999 has one, that are designated
-    medical events, name a pregnancy or newborn word, or are outside the all-drugs top 999."""
+    medical events, name a pregnancy or newborn word, or that the screen never reaches, being outside the all-drugs
+    top 999 or under its report floor."""
     dme = ", ".join(sql_str(t) for t in DESIGNATED_MEDICAL_EVENTS)
     return (f"SELECT o.reaction, o.reports, a.reports AS all_reports\n"
             f"FROM openfda.faers_d2_{s}_reactions o\n"
             f"LEFT JOIN openfda.faers_reaction_totals a ON a.reaction = o.reaction\n"
-            f"WHERE a.reaction IS NULL OR o.reaction IN ({dme})\n"
+            f"WHERE a.reaction IS NULL OR o.reports < {SCREEN_FLOOR} OR o.reaction IN ({dme})\n"
             f"   OR o.reaction RLIKE {sql_str(PREGNANCY_NEWBORN)}\n"
             f"ORDER BY o.reports DESC")
 

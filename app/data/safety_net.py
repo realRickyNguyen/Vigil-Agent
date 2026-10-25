@@ -1,5 +1,5 @@
-"""The serious-term safety net. It lists serious and pregnancy-related reactions, and the drug's most-reported ones
-that the screen never reaches, each with whether the screen reached it, for a person to review. Code, not a model.
+"""The serious-term safety net. It lists designated medical events, pregnancy and newborn terms, and the mostly serious
+terms that the screen never reaches, each with whether the screen reached it, for a person to review. Code, not a model.
 
 The screen inner-joins two openFDA top-999 lists, all drugs and the drug's own, and keeps reactions with 3 or more
 reports, so a reaction below either cutoff is never screened. On 25 Oct the all-drugs list stopped at 9,059 reports.
@@ -9,11 +9,13 @@ GANGRENE (1,207). Semaglutide had OPTIC ISCHAEMIC NEUROPATHY (869).
 
 There are three sections, and a term sits in the first that takes it.
 - EMA's designated medical events, a fixed list of 62 MedDRA terms.
-- Missed serious terms. Every clinical term outside the screen where more than half of the drug's reports with it are
-  flagged serious in FAERS, most-reported first, with no cap. Bryan chose this rule on 25 Oct, after the earlier "10
-  most-reported hidden terms" listed FOOD CRAVING and SENSITIVE SKIN for semaglutide and missed its medullary thyroid
-  cancer and necrotising pancreatitis. The serious counts are the ones the run already fetches (DataClerk.seriousness).
 - Pregnancy, breastfeeding and newborn terms, by whole words in the name, most-reported first, with no cap.
+- Missed serious terms. Every clinical term outside the screen (outside the all-drugs top 999, or under 3 reports)
+  where more than half of the drug's reports with it are flagged serious in FAERS, most-reported first, with no cap.
+  Bryan chose this rule on 25 Oct, after the earlier "10 most-reported hidden terms" listed FOOD CRAVING and SENSITIVE
+  SKIN for semaglutide and missed its medullary thyroid cancer and necrotising pancreatitis. The serious counts are the
+  ones the run already fetches (DataClerk.seriousness).
+The dossier lists the sections in SECTIONS order, with the missed serious terms second.
 Each term gets its reports with the drug, its screen status and what the label search found. The counts come from the
 Data Clerk's SQL (DataClerk.serious_terms). Nothing here is promoted. These terms never enter the review queue, its
 ranking or any prompt."""
@@ -121,11 +123,12 @@ def terms(raw: dict, severity: dict | None = None, left_out: dict | None = None)
             serious = (severity.get(r) or {}).get("serious")
             if serious is None:
                 left_out["serious_share_unknown"] = left_out.get("serious_share_unknown", 0) + 1
-            elif serious > SERIOUS_SHARE * number(rec["reports"]):
-                if non_clinical(r):
-                    left_out["non_clinical"] = left_out.get("non_clinical", 0) + 1
-                else:
-                    add(rec, "missed_serious", OWN)
+            elif serious <= SERIOUS_SHARE * number(rec["reports"]):
+                left_out["not_mostly_serious"] = left_out.get("not_mostly_serious", 0) + 1
+            elif non_clinical(r):
+                left_out["non_clinical"] = left_out.get("non_clinical", 0) + 1
+            else:
+                add(rec, "missed_serious", OWN)
     have = {r["reaction"] for r in own}
     for d in raw.get("direct", []):
         for rec in d.get("rows", []):
@@ -180,6 +183,9 @@ def limits(raw: dict, sizes: dict, left_out: dict | None = None, have_severity: 
         out.append(f"{left_out['serious_share_unknown']:,} terms outside the screen have no serious count (they are "
                    f"below the cutoff of the drug's serious-report list), so they could not be judged and are not "
                    f"listed.")
+    if left_out.get("not_mostly_serious"):
+        out.append(f"{left_out['not_mostly_serious']:,} terms outside the screen have {SERIOUS_SHARE:.0%} or fewer of "
+                   f"their reports flagged serious, so they are not listed.")
     if left_out.get("non_clinical"):
         out.append(f"{left_out['non_clinical']:,} serious terms outside the screen are left out as non-clinical by the "
                    f"app's rules (administrative, social or pregnancy-exposure terms).")

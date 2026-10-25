@@ -85,9 +85,18 @@ def sizes(own_terms, own_cutoff):
             "all_cutoff": str(ALL_CUTOFF)}
 
 
+def own_row_kept(sql, reaction, reports, all_reports):
+    """safety_net_sql's WHERE, read from the SQL itself, so a test fails if the query drops a clause."""
+    floor = re.search(r"o\.reports < (\d+)", sql)
+    return (all_reports is None or (floor is not None and reports < int(floor.group(1)))
+            or ("o.reaction IN (" in sql and reaction in DESIGNATED_MEDICAL_EVENTS)
+            or ("RLIKE" in sql and pregnancy_or_newborn(reaction)))
+
+
 class NetZetaris:
-    """Answers the safety net's queries with fixed rows, by what the SQL reads. direct(url) gives a direct count's
-    rows from the openFDA URL its REST table was registered with."""
+    """Answers the safety net's queries with fixed rows, by what the SQL reads. The drug's own rows are kept by the
+    query's WHERE (own_row_kept). direct(url) gives a direct count's rows from the openFDA URL its REST table was
+    registered with."""
     def __init__(self, own, size, direct=lambda url: [], fail=()):
         self.own, self.size, self.direct, self.fail = own, size, direct, fail
         self.tables, self.sql, self.purposes = {}, [], []
@@ -102,7 +111,7 @@ class NetZetaris:
         if any(f in purpose for f in self.fail):
             raise ZetarisError("HTTP 400: REST API call failed")
         if "a.reaction IS NULL" in sql:
-            rows, qid = self.own, "q-own"
+            rows, qid = [o for o in self.own if own_row_kept(sql, *o)], "q-own"
         elif "own_terms" in sql:
             return QueryResult("q-size", sql, list(self.size), [list(self.size.values())])
         else:
@@ -467,7 +476,9 @@ def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_r
     _, sec = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
     missed = [i["reaction"] for i in sec["missed_serious_terms"]]
     # More than half serious and outside the screen (by a cap or the 3-report floor), most-reported first, no cap.
+    # THIN SERIOUS TERM is in the all-drugs top 999, so only the query's floor clause brings it back.
     assert missed == ["GASTROINTESTINAL HYPOMOTILITY", "SMALL SERIOUS TERM", "THIN SERIOUS TERM"]
+    assert "o.reports < 3" in safety_net_sql("zuranolone")
     assert by_name(sec)["GASTROINTESTINAL HYPOMOTILITY"]["serious_share"] == 0.99
     # Exactly half is not more than half, a screened term is not missed, and a mostly non-serious term is out.
     assert "HALF SERIOUS TERM" not in missed and "SCREENED SERIOUS TERM" not in missed and "FOOD CRAVING" not in missed
@@ -475,7 +486,9 @@ def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_r
     assert where(sec, "PANCREATITIS") == ["designated_medical_events"]
     assert where(sec, "SOMNOLENCE NEONATAL") == ["pregnancy_and_newborn"]
     # Nothing is dropped without a count, and the threshold is shown.
-    assert sec["left_out"] == {"non_clinical": 1, "serious_share_unknown": 1}
+    assert sec["left_out"] == {"non_clinical": 1, "serious_share_unknown": 1, "not_mostly_serious": 2}
     assert any("1 serious terms outside the screen are left out as non-clinical" in x for x in sec["limits"])
+    assert any("2 terms outside the screen have 50% or fewer of their reports flagged serious" in x
+               for x in sec["limits"])
     assert any("1 terms outside the screen have no serious count" in x for x in sec["limits"])
     assert sec["serious_threshold"] == 0.5 and "more than 50%" in sec["groups"]["missed_serious"]
