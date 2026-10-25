@@ -7,11 +7,14 @@ from app.schemas import Finding, Signal
 
 # MedDRA terms about the product, its use or the reporting process rather than a clinical event.
 # "INTENTIONAL" alone is not enough: INTENTIONAL SELF-INJURY and INTENTIONAL OVERDOSE are clinical events.
+# The last line follows eval/LABELLING_RULES.md (not_meaningful): efficacy terms like "drug ineffective", a
+# bare "drug interaction" with no named event and induced abortion. Social-circumstance terms are in SOCIAL.
 ADMINISTRATIVE = re.compile(
     r"\bPRODUCT\b|OFF LABEL|DRUG INEFFECTIVE|DOSE OMISSION|MEDICATION ERROR|WRONG |INAPPROPRIATE SCHEDULE|"
     r"INCORRECT (DOSE|ROUTE)|EXPIRED|NO ADVERSE EVENT|UNEVALUABLE|THERAPY (INTERRUPTED|CESSATION|CHANGE)|"
     r"INTENTIONAL PRODUCT|ACCIDENTAL EXPOSURE|EXPOSURE (VIA|DURING)|DEVICE |TREATMENT NONCOMPLIANCE|PRESCRIBED "
-    r"(OVERDOSE|UNDERDOSE)|INSURANCE|DRUG ABUSE|CIRCUMSTANCE OR INFORMATION")
+    r"(OVERDOSE|UNDERDOSE)|INSURANCE|DRUG ABUSE|CIRCUMSTANCE OR INFORMATION|"
+    r"TREATMENT FAILURE|THERAPEUTIC RESPONSE|^DRUG INTERACTION$|^ABORTION INDUCED$")
 # MedDRA social-circumstance terms: consequences in a person's life, not the clinical event behind them.
 # In the 23 Oct evaluation montelukast LOSS OF PERSONAL INDEPENDENCE IN DAILY ACTIVITIES went to review next twice.
 SOCIAL = re.compile(

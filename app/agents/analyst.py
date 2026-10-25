@@ -8,10 +8,10 @@ label sentences relevant to each reaction, and classify calls run in small paral
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from app.adapters.meterless import MeterlessError, NightshiftClient
+from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
 from app.agents.rules import route
 from app.agents.skeptic import compact
-from app.data.label import excerpt_block
+from app.data.label import excerpt_block, norm
 from app.schemas import Finding, Signal
 
 # Includes reasoning tokens. Ultra used 2,100 to 4,100 per classify call on 22 Oct; 4,000 truncated one reply.
@@ -110,6 +110,8 @@ class Analyst:
             return []
         try:
             return self._pick(ctx, rows)
+        except MeterlessUnauthorized:
+            raise  # a bad Runtime token fails every call; stop the run instead of degrading
         except (MeterlessError, ValueError) as e:
             self.llm.tracer.event(self.name, "degraded", step="pick", error=str(e)[:200],
                                   fallback="no extra picks; the top rows by chi2 are still assessed")
@@ -124,11 +126,13 @@ class Analyst:
         system = PICK_SYSTEM.replace("EXTRA", str(self.extra))
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": system},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS)
-        known = {s.reaction for s in rows}
-        picked = [p["reaction"] for p in out.get("picked", []) if isinstance(p, dict) and p.get("reaction") in known]
+        # Match names case- and space-insensitively, and keep the table's spelling.
+        known = {norm(s.reaction): s.reaction for s in rows}
+        replies = [p for p in out.get("picked", []) if isinstance(p, dict)]
+        picked = [known[norm(str(p.get("reaction") or ""))] for p in replies
+                  if norm(str(p.get("reaction") or "")) in known]
         self.llm.tracer.event(self.name, "picked", reactions=picked,
-                              dropped=[p for p in out.get("picked", []) if isinstance(p, dict)
-                                       and p.get("reaction") not in known])
+                              dropped=[p for p in replies if norm(str(p.get("reaction") or "")) not in known])
         return list(dict.fromkeys(picked))[:self.extra]
 
     def classify(self, ctx: dict, reactions: list[str], feedback: dict | None = None) -> tuple[list[Finding], str]:
@@ -173,6 +177,8 @@ class Analyst:
                 self.llm.tracer.event(self.name, "omitted", reaction=r, fallback="one reaction per call")
                 try:
                     again = self._classify_batch(ctx, [r], fb)[0]
+                except MeterlessUnauthorized:
+                    raise
                 except (MeterlessError, ValueError):
                     again = []
                 f += again
@@ -180,6 +186,8 @@ class Analyst:
                     failed.append(r)
                     self.llm.tracer.event(self.name, "unclassified", reaction=r, error="omitted from the reply")
             return f, s, failed
+        except MeterlessUnauthorized:
+            raise  # a bad Runtime token fails every call; stop the run instead of marking every item failed
         except (MeterlessError, ValueError) as e:  # ValueError: no JSON object even after the repair request
             if len(batch) == 1:  # already as small as it gets; the client has used its retry
                 self.llm.tracer.event(self.name, "unclassified", reaction=batch[0], error=str(e)[:200])
@@ -191,6 +199,8 @@ class Analyst:
             for r in batch:
                 try:
                     found += self._classify_batch(ctx, [r], fb)[0]
+                except MeterlessUnauthorized:
+                    raise
                 except (MeterlessError, ValueError) as e2:
                     failed.append(r)
                     self.llm.tracer.event(self.name, "unclassified", reaction=r, error=str(e2)[:200])
@@ -218,9 +228,17 @@ class Analyst:
         out = self.llm.chat_json(self.name, self.model, [{"role": "system", "content": CLASSIFY_SYSTEM},
                                                          {"role": "user", "content": user}], max_tokens=MAX_TOKENS,
                                  fail_fast=len(reactions) > 1)
-        wanted = set(reactions)
-        findings = [Finding.from_dict(d) for d in out.get("findings", []) if isinstance(d, dict)]
-        return [f for f in findings if f.reaction in wanted], str(out.get("summary", ""))
+        # Match names case- and space-insensitively and keep the table's spelling; the first finding per reaction wins.
+        wanted = {norm(r): r for r in reactions}
+        findings: dict[str, Finding] = {}
+        for d in out.get("findings", []):
+            if isinstance(d, dict):
+                f = Finding.from_dict(d)
+                name = wanted.get(norm(f.reaction))
+                if name and name not in findings:
+                    f.reaction = name
+                    findings[name] = f
+        return list(findings.values()), str(out.get("summary", ""))
 
     def run(self, ctx: dict) -> tuple[list[Finding], str]:
         """The top rows are classified while the pick call chooses the extras, then the extras are classified:

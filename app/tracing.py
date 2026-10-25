@@ -41,6 +41,8 @@ def progress_line(rec: dict) -> str | None:
     if k in ("llm_retry", "llm_deadline"):
         return f"{who} model call failed ({str(d.get('error'))[:90]}); " + (
             "splitting the batch" if k == "llm_deadline" else "retrying")
+    if k == "nightshift_warning":
+        return f"Nightshift setup warning: {d['warning']}"
     if k in ("degraded", "unclassified", "omitted"):
         return f"{who} {k}: {d.get('reaction') or d.get('step')}; {d.get('fallback') or d.get('error') or ''}"[:200]
     if k == "findings":

@@ -6,7 +6,8 @@ unresolved when the evidence available cannot settle it."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from app.adapters.meterless import MeterlessError, NightshiftClient
+from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
+from app.adapters.zetaris import ZetarisError
 from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
 from app.agents.skeptic import compact
 from app.data.faers import DataClerk
@@ -16,6 +17,7 @@ from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 UNPICKED_ROWS = 15
 UNREVIEWED = "passed code checks; model review unavailable (Nightshift error), reasoning not reviewed"
 NO_VERDICT = "passed code checks; the Reviewer's reply gave no valid verdict for it, reasoning not reviewed"
+RECHECK_FAILED = "numbers not verified: the Zetaris re-check query failed"
 
 SYSTEM = """You are the Reviewer in a drug-safety review team. The Analyst has assessed FAERS reactions for one drug: what kind of term each is ("context"), whether the current label covers it ("label_coverage"), and how urgently an analyst should look at it ("review_priority"). FAERS statistics show reporting patterns, not causation.
 
@@ -97,7 +99,12 @@ class Reviewer:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
         names reactions nobody has looked at yet."""
         verdicts, checked = [], []
-        res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
+        try:
+            res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
+        except ZetarisError as e:
+            # Without the re-check the numbers cannot be verified, so no finding is reviewed (no crash).
+            return ([Verdict(f.reaction, "unreviewed", f"{RECHECK_FAILED} ({str(e)[:200]})", {}) for f in findings],
+                    [], "")
         for f in findings:
             checks = code_checks(f, fresh.get(f.reaction), ctx["label"], ctx["evidence_ids"] | {res.query_id})
             checked.append((f, checks, res.query_id))
@@ -125,14 +132,15 @@ class Reviewer:
         for f, checks, _ in checked:
             bad = failed(checks)
             v = llm.get(norm(f.reaction), {})
+            decision = str(v.get("decision") or "").strip().lower()
             extra = {"objection": str(v.get("objection") or ""), "next_check": str(v.get("next_check") or "")}
             if bad:
                 verdicts.append(Verdict(f.reaction, "reject", "failed code checks: " + "; ".join(bad), checks,
                                         objection=extra["objection"] or "; ".join(bad), next_check=extra["next_check"]))
-            elif v.get("decision") in ("reject", "unresolved", "unreviewed"):
-                reason = UNREVIEWED if v["decision"] == "unreviewed" else str(v.get("reason", ""))
-                verdicts.append(Verdict(f.reaction, v["decision"], reason, checks, **extra))
-            elif v.get("decision") == "accept":
+            elif decision in ("reject", "unresolved", "unreviewed"):
+                reason = UNREVIEWED if decision == "unreviewed" else str(v.get("reason", ""))
+                verdicts.append(Verdict(f.reaction, decision, reason, checks, **extra))
+            elif decision == "accept":
                 verdicts.append(Verdict(f.reaction, "accept", str(v.get("reason") or "passed code checks"), checks,
                                         **extra))
             else:
@@ -152,6 +160,8 @@ class Reviewer:
         try:
             return self.llm.chat_json(self.name, self.model, messages, max_tokens=MAX_TOKENS,
                                       fail_fast=len(batch) > 1)
+        except MeterlessUnauthorized:
+            raise  # a bad Runtime token fails every call; stop the run instead of marking items not reviewed
         except (MeterlessError, ValueError) as e:  # ValueError: no JSON object even after the repair request
             if len(batch) > 1:
                 # Smaller calls succeed more often: review one finding per call before giving up.

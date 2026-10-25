@@ -29,6 +29,7 @@ class Settings:
     reviewer_model: str
     source_timeout: int
     model_timeout: int
+    model_stream: bool
     max_retries: int
     reviewer_rounds: int
     parallel: int
@@ -60,10 +61,13 @@ def get_settings() -> Settings:
         analyst_model=e("ANALYST_MODEL", e("HUNTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         reviewer_model=e("REVIEWER_MODEL", e("JUDGE_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")),
         source_timeout=int(e("SOURCE_TIMEOUT_SECONDS", "20")),
-        # Nightshift ends a provider call at about 50 s (provider_deadline), so 90 s covers every call that can
-        # succeed. One retry: on 23 Oct 125 of 132 failed attempts were that deadline, and retrying the same
-        # prompt mostly hit it again (organisers' guide: model calls bounded at 30 to 90 s).
+        # Whole-call limit (organisers' guide: model calls bounded at 30 to 90 s). A streamed call is cut when it
+        # runs past it; the same value is the socket timeout, which for a stream bounds the gap between chunks.
+        # One retry: on 23 Oct 125 of 132 failed attempts were Nightshift's 45 s provider deadline on buffered
+        # calls, and retrying the same prompt mostly hit it again.
         model_timeout=int(e("MODEL_TIMEOUT_SECONDS", "90")),
+        # Stream model replies. Off brings back the buffered calls that Nightshift cut at 45 s.
+        model_stream=e("MODEL_STREAM", "true").lower() not in ("false", "0", "no", "off"),
         max_retries=int(e("MAX_RETRIES", "1")),
         # One revision round: on 24 Oct a second round rarely changed an answer (a repeated dispute closes as
         # unresolved anyway) and cost about two minutes that the Skeptic needed.

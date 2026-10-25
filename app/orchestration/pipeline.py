@@ -12,6 +12,7 @@ from app.adapters.meterless import NightshiftClient
 from app.adapters.zetaris import ZetarisClient
 from app.agents.analyst import Analyst, screen_table
 from app.agents.reviewer import Reviewer
+from app.agents.reviewer import failed as failed_checks
 from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
 from app.data.faers import DataClerk, validate_drug
@@ -173,8 +174,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                                  for q in queue),
               **{f"skeptic_{k}": v for k, v in skeptic_counts.items()}}
 
-    queries, degraded = {}, []
-    model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0}
+    queries, degraded, setup_warnings = {}, [], []
+    model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
+                   "served_by_other_model": 0}
     with tracer.path.open(encoding="utf-8") as fh:
         for line in fh:
             e = json.loads(line)
@@ -188,6 +190,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
                 model_calls["without_receipt"] += ns is None
                 model_calls["with_memory_injected"] += bool(ns and ns["hmem_injected"])
                 model_calls["with_reasoning_scaffold"] += bool(ns and ns["scaffold_active"])
+                model_calls["served_by_other_model"] += bool(e.get("served_by") and e["served_by"] != e.get("model"))
+            if e["event"] == "nightshift_warning" and e["warning"] not in setup_warnings:
+                setup_warnings.append(e["warning"])
 
     dossier = {
         "run_id": tracer.run_id,
@@ -204,6 +209,8 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
         "degraded_steps": degraded,
         # Nightshift steps our app did not ask for, counted from each call's receipt (see nightshift_steps).
         "model_calls": model_calls,
+        # Empty when Nightshift is set up as the README says; see setup_problems in the adapter.
+        "nightshift_warnings": setup_warnings,
         "analyst_summary": summary,
         "rounds": rounds,
         "run_time": {"seconds": round(time.monotonic() - started), "budget_seconds": settings.run_budget,
@@ -373,11 +380,18 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     queue = []
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
-        queue.append({**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None, **sev(r),
-                      "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
-                      "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
-                      "history": e["history"],
-                      **({"co_reported_drugs": skeptic[r]} if skeptic and r in skeptic else {})})
+        item = {**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None, **sev(r),
+                "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
+                "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
+                "history": e["history"],
+                **({"co_reported_drugs": skeptic[r]} if skeptic and r in skeptic else {})}
+        bad = failed_checks(v.checks)
+        if e["status"] == "unresolved" and bad and item["review_priority"] == "review_next":
+            # A claim that code has shown to be wrong must not head the queue as "review next".
+            item["review_priority"] = "insufficient_evidence"
+            item["status_note"] = " ".join(x for x in (item["status_note"], "Ranked below review_next because the "
+                                                       "Analyst's last claim failed code checks: " + "; ".join(bad)) if x)
+        queue.append(item)
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,

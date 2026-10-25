@@ -1,4 +1,5 @@
 """Offline unit tests: no Zetaris, no Nightshift. Run: python -I -m pytest tests"""
+import json
 import sys
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from app.data.label import excerpt_block, retrieve  # noqa: E402
 from app.agents.reviewer import code_checks, failed  # noqa: E402
 from app.data.faers import DataClerk, drug_search, signal_sql, slug, sql_str, validate_drug  # noqa: E402
 from app.orchestration.pipeline import review_queue, settle  # noqa: E402
-from app.schemas import Finding, Signal, Verdict  # noqa: E402
+from app.schemas import Finding, QueryResult, Signal, Verdict  # noqa: E402
 
 LABEL = {"boxed_warning": "WARNING: SERIOUS NEUROPSYCHIATRIC EVENTS  Serious neuropsychiatric (NP) events have been reported."}
 FRESH = Signal("NIGHTMARE", a=1200, b=170000, c=9000, d=20500000, prr=7.14, chi2=9807.4)
@@ -216,11 +217,110 @@ def test_trace_keeps_full_prompt_and_reply_but_not_the_token(monkeypatch):
     monkeypatch.setattr(client, "_post", lambda body: {"model": "served", "choices": [
         {"message": {"content": reply, "reasoning_content": "hidden steps"}}]})
     client.chat("reviewer", "m", messages)
-    (_, kind, data), = client.tracer.events
+    # The call is served by another model than the one asked for, so a setup warning follows it.
+    (_, kind, data), = [e for e in client.tracer.events if e[1] == "llm_call"]
     assert kind == "llm_call" and data["messages"] == messages and data["reply"] == reply
     assert data["reasoning"] == "hidden steps" and data["served_by"] == "served"
     assert "secret-token-xyz" not in json.dumps(client.tracer.events)
     assert data["nightshift"] is None  # no inline receipt in this reply
+
+
+def test_read_sse_assembles_a_streamed_reply_like_a_buffered_one():
+    from app.adapters.meterless import nightshift_steps, read_sse
+    # Frame shapes from Nightshift's streamChat (openai.mjs): role, content deltas, trace frames we ignore,
+    # the terminal frame with the receipt, then usage and [DONE].
+    frames = [{"model": "m", "choices": [{"delta": {"role": "assistant"}}]},
+              {"model": "m", "choices": [{"delta": {"content": "thinking...</think>"}}]},
+              {"meterless_trace": {"lanes": []}, "choices": []},
+              {"model": "m", "choices": [{"delta": {"content": '{"ok": 1}'}}]},
+              {"model": "served", "choices": [{"delta": {}, "finish_reason": "stop"}],
+               "meterless": {"receipt": {"receipt_id": "r1", "phases": [{"phase": "final"}]}}},
+              {"model": "served", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 7}}]
+    lines = [("data: " + json.dumps(f)).encode() for f in frames] + [b"", b"data: [DONE]"]
+    reply = read_sse(lines)
+    assert reply["choices"][0]["message"]["content"] == 'thinking...</think>{"ok": 1}'
+    assert reply["model"] == "served" and reply["usage"]["completion_tokens"] == 7
+    assert nightshift_steps(reply)["receipt_id"] == "r1"
+
+
+def sse(*frames):
+    return [("data: " + (f if isinstance(f, str) else json.dumps(f))).encode() for f in frames]
+
+
+def test_read_sse_keeps_nightshifts_detail_from_an_error_frame():
+    from app.adapters.meterless import read_sse
+    # Real shape (proxy.js openAIError): a generic message, the cause only in meterless_detail.
+    lines = sse({"choices": [{"delta": {"role": "assistant"}}]},
+                {"error": {"message": "Meterless provider request failed.", "type": "api_error",
+                           "code": "provider_error", "meterless_detail": "provider_deadline"}}, "[DONE]")
+    with pytest.raises(MeterlessError, match="provider_error: provider_deadline") as e:
+        read_sse(lines)
+    assert e.value.retryable
+
+
+def test_read_sse_rejects_a_stream_that_stops_mid_answer():
+    from app.adapters.meterless import read_sse
+    with pytest.raises(MeterlessError, match="before the reply finished"):
+        read_sse(sse({"choices": [{"delta": {"content": "half an ans"}}]}))
+
+
+def test_chat_retries_a_streamed_failure_but_not_a_missing_provider(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    monkeypatch.setattr(meterless.time, "sleep", lambda s: None)
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=2), FakeTracer())
+    frames = {"provider_error": sse({"error": {"code": "provider_error", "meterless_detail": "provider_deadline"}}),
+              "ok": sse({"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}, "[DONE]"),
+              "none": sse({"error": {"code": "no_provider_configured", "message": "No provider"}})}
+    replies = ["provider_error", "ok"]
+    monkeypatch.setattr(client, "_post", lambda body: meterless.read_sse(frames[replies.pop(0)]))
+    assert client.chat("analyst", "m", [{"role": "user", "content": "hi"}]) == "ok"
+    replies = ["none", "ok"]
+    with pytest.raises(MeterlessError, match="no_provider_configured"):
+        client.chat("analyst", "m", [{"role": "user", "content": "hi"}])
+    assert replies == ["ok"]  # not retried
+
+
+def test_post_turns_a_half_written_frame_into_a_retryable_error(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless
+
+    class Resp:
+        def __enter__(self):
+            return iter([b'data: {"choices": [{"delta": {"content": "hal'])
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(meterless.urllib.request, "urlopen", lambda req, timeout: Resp())
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", meterless_url="http://x",
+                                                        meterless_app="a", model_timeout=1, model_stream=True),
+                                        FakeTracer())
+    with pytest.raises(MeterlessError, match="broken reply"):
+        client._post({"model": "m"})
+
+
+def test_post_streams_by_default(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    sent = {}
+
+    class Resp:
+        def __enter__(self):
+            return iter(sse({"model": "m", "choices": [{"delta": {"content": "hi"}}]}, "[DONE]"))
+
+        def __exit__(self, *a):
+            return False
+
+    def urlopen(req, timeout):
+        sent["body"], sent["headers"] = json.loads(req.data), dict(req.header_items())
+        return Resp()
+    monkeypatch.setattr(meterless.urllib.request, "urlopen", urlopen)
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", meterless_url="http://x",
+                                                        meterless_app="a", model_timeout=1, model_stream=True),
+                                        FakeTracer())
+    assert client._post({"model": "m"})["choices"][0]["message"]["content"] == "hi"
+    assert sent["body"]["stream"] is True and sent["headers"]["Meterless-trace"] == "on"
+    assert sent["headers"]["Meterless-tier-split"] == "off"
 
 
 def test_trace_records_nightshift_memory_and_scaffold_from_the_receipt():
@@ -661,6 +761,49 @@ def test_rate_limit_pauses_all_calls_then_retries(monkeypatch):
     assert [k for _, k, _ in client.tracer.events] == ["llm_retry", "llm_retry", "llm_call"]
     assert [d["wait_s"] for _, k, d in client.tracer.events if k == "llm_retry"] == [15, 30]
     assert sleeps == [15, 30]
+
+
+def test_a_rate_limit_inside_a_stream_also_pauses_all_calls(monkeypatch):
+    # A streamed call already has its 200, so NVIDIA's 429 arrives as an error frame, not an HTTP status.
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    sleeps = []
+    monkeypatch.setattr(meterless.time, "sleep", lambda s: sleeps.append(round(s)))
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=0), FakeTracer())
+    frames = {"429": sse({"error": {"code": "provider_error", "meterless_detail": "nvidia_429"}}),
+              "ok": sse({"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}, "[DONE]")}
+    replies = ["429", "ok"]
+    monkeypatch.setattr(client, "_post", lambda body: meterless.read_sse(frames[replies.pop(0)]))
+    assert client.chat("analyst", "m", [{"role": "user", "content": "x"}]) == "ok"
+    assert [d.get("reason") for _, k, d in client.tracer.events if k == "llm_retry"] == ["rate_limited"]
+    assert sleeps == [15]
+
+
+def test_a_streamed_provider_deadline_still_splits_the_batch(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless
+    client = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", max_retries=1), FakeTracer())
+    monkeypatch.setattr(client, "_post", lambda body: meterless.read_sse(
+        sse({"error": {"code": "provider_error", "meterless_detail": "provider_deadline"}})))
+    with pytest.raises(meterless.MeterlessDeadline):
+        client.chat("analyst", "m", [{"role": "user", "content": "x"}], fail_fast=True)
+
+
+def test_a_streamed_reply_past_the_call_limit_is_cut():
+    import time
+    from app.adapters.meterless import read_sse
+    # The socket timeout only bounds the gap between chunks; the whole call is bounded here.
+    lines = sse({"choices": [{"delta": {"content": "still thinking"}}]}, "[DONE]")
+    with pytest.raises(MeterlessError, match="call_time_limit"):
+        read_sse(lines, deadline=time.monotonic() - 1)
+    assert read_sse(sse({"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}),
+                    deadline=time.monotonic() + 60)["choices"][0]["message"]["content"] == "ok"
+
+
+def test_a_nightshift_setup_warning_is_shown_on_the_console():
+    from app.tracing import progress_line
+    line = progress_line({"agent": "analyst", "event": "nightshift_warning", "warning": "served another model"})
+    assert line == "Nightshift setup warning: served another model"
 
 
 def test_skeptic_round_without_time_records_evidence_but_skips_the_review():

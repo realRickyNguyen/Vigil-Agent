@@ -128,12 +128,14 @@ flowchart TD
 
 ## Results so far
 
-A development evaluation against a hand-labelled set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 22 Oct with the first version of the decision contract:
-- **Accuracy:** 93% of the Analyst's first-round assessments and 95% of final assessments matched the reference label, among the clear reference items the agents assessed.
-- **Coverage is the main gap:** the first round assessed only 27 of the 80 clear reference items.
-- **The Reviewer mostly confirmed:** across these runs it fixed one finding, kept one wrong one, and added 16 reactions the Analyst had skipped.
+A development evaluation against a reference set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 24 Oct with each drug once and montelukast twice more. That run used one branch of the code before the 25 Oct merge; the merged code has not been evaluated yet.
+- **Accuracy:** 93% of the Analyst's first-round assessments (26 of 28) and 89% of final assessments (49 of 55) matched the reference label, among the clear reference items the agents assessed. Rules settled 27 of these, all correctly, and the model was right on 22 of 28.
+- **The errors:** of the 6 final errors, 3 are reference rows written from older label versions whose wording today's labels no longer contain, 2 are judgement calls between a broader and a narrower term, and 1 is a model error (a contraindication counted as label coverage).
+- **Coverage is the main gap:** the first round assessed 24 of the 80 clear reference items, and 43 had a final answer.
+- **The Reviewer mostly confirmed:** it kept 26 correct findings and 2 wrong ones, and added 5 or 6 reactions per run that the Analyst had skipped.
+- **Stable and faster:** three montelukast runs agreed on 95% of the reactions they shared, and each run took 8 to 11 minutes.
 
-These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/](eval/reports/).
+These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/eval-20261024T022640Z.md](eval/reports/eval-20261024T022640Z.md).
 
 ## Status
 
@@ -166,6 +168,13 @@ cp .env.example .env
 
 Fill in the Zetaris and Nightshift values. The NVIDIA key goes into Nightshift, not `.env`.
 
+Set up Nightshift before the first run. Nightshift 1.2.1 ignores the model an app asks for and routes each call by its own settings, so leave it only the model Vigil uses.
+- one lane running `nvidia/nemotron-3-ultra-550b-a55b`, with every other lane stopped
+- Setup › Preferences › race width 1
+- Setup › Preferences › Quality track, with the quality race and the reasoning scaffold both off, then restart Nightshift
+
+Without these, calls can go to other models, and about half are answered unstreamed and cut off at 45 s. Each run checks this and warns, in the console and in the dossier's `nightshift_warnings`, when a call was served by another model or with the scaffold on.
+
 ```bash
 python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 ```
@@ -190,7 +199,7 @@ Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.json
 - **Co-reported drugs:** the Skeptic adjusts for one co-drug at a time, and only for the top co-drugs of the top findings. Adjusting for all co-drugs together needs case-level data. The most frequent co-drug is often just the usual companion treatment, and a rarer co-drug can be the one that matters. The Omega score flags combinations to review; it does not show a pharmacological interaction, and interactions among three or more drugs are not assessed.
 - **Labels:** the app takes the newest single-ingredient prescription label openFDA has for the generic name (from the 10 newest). Generic labels of the same drug can differ, and the chosen one is named in the dossier.
 - **Combination products:** both search fields include products that combine the drug with others (about 1% of atorvastatin's reports, 7% of metformin's, 47% of acetaminophen's). The dossier records the share, and above 5% the agents are told a reaction may belong to the partner drug.
-- **Nightshift memory:** Nightshift's H-MEM can add earlier answers to a prompt after the app sends it, and we found no way to turn it off. Each model call's trace event records how many memories were injected (from Nightshift's own receipt), and the dossier counts them under `model_calls`, so runs can be compared with that in view.
+- **Nightshift memory:** Nightshift's H-MEM adds earlier answers to a prompt after the app sends it, and the model treated them as vetted, which repeated one wrong answer across runs. The app keeps it out by sending a fresh `meterless-scope` on every call, because Nightshift walls its memory by scope. The World Model is the app's memory of past decisions instead. Each model call's trace event records how many memories were injected (from Nightshift's own receipt), and the dossier counts them under `model_calls`, so a run shows it was none.
 - **Shared model:** the Analyst and Reviewer use the same model, so their agreement is not independent corroboration. The code checks are the independent part.
 
 ## Data and privacy
