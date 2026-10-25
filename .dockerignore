@@ -1,0 +1,23 @@
+# Secrets stay out of the image; they are passed at runtime (--env-file).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.toml
+secrets/
+credentials/
+
+# Per-machine output and state; mount logs/ and state/ instead.
+logs/
+state/
+
+# Not needed to run the app.
+.git/
+.claude/
+**/__pycache__/
+.venv/
+.pytest_cache/
+zetaris-platform/
+zetaris-platform.zip

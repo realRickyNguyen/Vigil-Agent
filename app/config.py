@@ -1,6 +1,7 @@
 """Settings from environment variables, with .env in the project root as a fallback.
 Secrets are read here and passed to adapters; nothing in this module prints them."""
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,22 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
         if "=" in line:
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
+
+
+LOOPBACK = re.compile(r"^(https?://)(localhost|127\.0\.0\.1)(?=[:/]|$)")
+
+
+def in_container() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def host_url(url: str) -> str:
+    """Inside a Docker container, localhost is the container itself; Zetaris and Nightshift run on the host,
+    which Docker Desktop names host.docker.internal. So the .env written for running on the machine also works
+    with `docker run --env-file .env`. Set DOCKER_HOST_REWRITE=false to keep the addresses as given."""
+    if in_container() and os.environ.get("DOCKER_HOST_REWRITE", "true").lower() != "false":
+        return LOOPBACK.sub(r"\1host.docker.internal", url)
+    return url
 
 
 @dataclass(frozen=True)
@@ -43,14 +60,25 @@ class Settings:
     skeptic_co_drugs: int = 3
 
 
+def env_value(value: str | None) -> str | None:
+    """`docker run --env-file` keeps everything after the = sign, so drop an inline comment and matching quotes
+    the way load_dotenv does for a .env read from disk."""
+    if value is None:
+        return None
+    value = re.sub(r"\s+#.*$", "", value).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return value
+
+
 def get_settings() -> Settings:
     load_dotenv()
-    e = os.environ.get
+    e = lambda key, default=None: env_value(os.environ.get(key, default))  # noqa: E731
     return Settings(
-        zetaris_url=e("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0").rstrip("/"),
+        zetaris_url=host_url(e("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0").rstrip("/")),
         zetaris_key=e("ZETARIS_API_KEY", ""),
         zetaris_org=e("ZETARIS_ORG_ID", "1"),
-        meterless_url=e("METERLESS_BASE_URL", "http://127.0.0.1:8088/v1").rstrip("/"),
+        meterless_url=host_url(e("METERLESS_BASE_URL", "http://127.0.0.1:8088/v1").rstrip("/")),
         meterless_token=e("METERLESS_RUNTIME_TOKEN", ""),
         meterless_app=e("METERLESS_APP", "vigil"),
         # Pinned Nemotron lanes, so the award evidence does not depend on meterless/auto routing.

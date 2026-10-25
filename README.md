@@ -146,7 +146,8 @@ These are **development checks, not clinical validation**. The reference labels 
 | Meterless World Model engine: label versions and verdicts kept across runs, with conformance tests | |
 | Ranked review queue with coverage counts; JSONL traces | Reporter-type evidence as a second Skeptic check |
 | Skeptic: co-reported drug check (adjusted PRR, co-drug PRR, Omega interaction) for the top findings | |
-| Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, `POST /run`, Dockerfile, sample mode |
+| Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, sample mode |
+| `POST /run` API with structured errors; Dockerfile | |
 
 ## Run it
 
@@ -186,6 +187,35 @@ python -I run.py --drug montelukast
 ```
 
 Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.jsonl` (every query and model call).
+
+### As an API
+
+```bash
+python -I run.py
+```
+
+With no arguments `run.py` starts the API on port 8000 (`PORT` or `--port` to change it). A run takes several minutes and handles one investigation at a time, because parallel runs share the NVIDIA per-minute cap.
+
+```bash
+curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @input_examples/example_1.json
+```
+
+- `POST /run` takes `{"drug": "montelukast"}` or `{"run_id": "demo-001", "input": {"drug": "montelukast"}, "options": {"wait": true}}`. It answers when the run ends with `status`, `output` (summary, accepted review-next items, unresolved items, the full dossier), the agents, the models, `trace_id`, `log_file` and `execution_time_seconds`.
+- With `"options": {"wait": false}` it answers `202` at once; `GET /runs/<run_id>` then reports `running` or the finished result.
+- Failures come back as `{"status": "error", "error": {"type", "message", "recoverable"}}`: `InvalidInput` (400), `DrugNotFound` (404), `Busy` or `RunIdInUse` (409), `ZetarisUnavailable`, `NightshiftUnavailable` or `NightshiftUnauthorized` (502), `SampleModeNotImplemented` (501). The trace records the error too.
+- `GET /health` shows the configured models and service addresses (never keys) and whether a run is in progress.
+
+### With Docker
+
+```bash
+docker build -t vigil .
+```
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/state:/app/state" vigil
+```
+
+Zetaris and Nightshift keep running on the host. Inside the container, `localhost` and `127.0.0.1` in the settings become `host.docker.internal` (set `DOCKER_HOST_REWRITE=false` to turn that off), so the same `.env` works. The `logs/` mount keeps traces and dossiers; the `state/` mount keeps the World Model between runs. Progress lines appear in `docker logs`. The image holds no secrets: `.env` is excluded at build time and read at `docker run`.
 
 ## Limitations
 

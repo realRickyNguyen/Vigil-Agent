@@ -32,7 +32,7 @@ Windows 11 Home, 15.8 GB RAM, **disk is tight** (C: about 8 GB free). Docker run
   - Receipts with per-request routing detail are in `%APPDATA%\ai.meterless.runtime\meterless.json`.
 - **Cursor**: not used by the team since 23 Oct; uninstalled from this laptop for disk space.
 - `scripts/smoke_test.py` checks Zetaris GUI, Zetaris REST `SELECT 1` and a model reply (3 PASS expected). It proves connectivity only, not a working agent. Run it as `python -I scripts/smoke_test.py`.
-- Open items: finish the agent system (current focus), then `SAMPLE_MODE`, Dockerfile, `POST /run`, investigation page, deck and video. Full list in `docs/HANDOFF.md`.
+- Open items: finish the agent system (Bryan, on `fix/eval-logic`), then `SAMPLE_MODE`, investigation page, deck and video. `POST /run` and the Dockerfile are built (branch `feature/api-docker`, 25 Oct). Full list in `docs/HANDOFF.md`.
 
 ## Start and stop routines
 When the user says **"lets begin"**: start Docker Desktop and wait for the engine; `docker compose up -d` in `~/zetaris-platform`, wait about 2 minutes, run `./verify.sh`; launch `meterless-runtime.exe` and check `lanes.toml` still has the Ultra lane (ask the user to stop Lightning if it is running); run the smoke test; report failures.
@@ -45,7 +45,7 @@ When the user says **"we are done for today"**: `docker compose stop` (never `do
 - Do not run an Ubuntu `docker login` against a stuck engine; if `docker version` hangs inside Ubuntu, restart Docker Desktop and WSL first.
 
 ## Layout
-Built: `run.py`, `app/` (adapters, data, agents, engines, orchestration, schemas, tracing), `scripts/zetaris/`, `eval/`, `tests/`, `input_examples/`, `logs/` (gitignored). Code map in `docs/HANDOFF.md`. Still to add: `Dockerfile`, `POST /run`, `SAMPLE_MODE`, `output_examples/` (real outputs only, never loaded at runtime). Zetaris REST call: `POST {ZETARIS_REST_URL}/sql-editor/sqls/run` with a bearer key, `X-Org-ID`, a fresh UUID `X-Request-ID`, and a UUID `queryId` in the body.
+Built: `run.py` (no arguments: the API in `app/server.py`), `Dockerfile`, `app/` (adapters, data, agents, engines, orchestration, schemas, server, tracing), `scripts/zetaris/`, `eval/`, `tests/`, `input_examples/`, `logs/` (gitignored). Code map in `docs/HANDOFF.md`. Still to add: `SAMPLE_MODE`, `output_examples/` (real outputs only, never loaded at runtime). Zetaris REST call: `POST {ZETARIS_REST_URL}/sql-editor/sqls/run` with a bearer key, `X-Org-ID`, a fresh UUID `X-Request-ID`, and a UUID `queryId` in the body.
 
 ## More detail
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
