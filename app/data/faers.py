@@ -30,6 +30,9 @@ LABEL_FIELDS = tuple(dict.fromkeys(SECTIONS + (INDICATION,) + PATIENT + PHARMACO
 # Both fields that name a co-drug, so the list matches what drug_search() finds.
 CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
+# Report sources (app/data/sources.py). Counting by occurcountry needs .exact (plain fails with HTTP 500, checked
+# 25 Oct); primarysource.qualification is a code, 1 to 5, and comes back as a number.
+SOURCE_FIELDS = {"country": "occurcountry.exact", "reporter": "primarysource.qualification"}
 SERIOUS_FLAGS = {"serious": "serious:1", "death": "seriousnessdeath:1"}
 COUNT_LIMIT = 999  # openFDA's largest count list without a key
 PAIR_COUNTS = ("n", "n_r", "n_x", "n_xr", "n_y", "n_yr", "n_xy", "n_xyr")
@@ -342,6 +345,35 @@ class DataClerk:
                          agent="skeptic")
         rec = res.records()[0]
         return res, {k: int(float(rec.get(k) or 0)) for k in PAIR_COUNTS}
+
+    def report_sources(self, drug: str, reaction: str | None = None) -> tuple[list[str], dict]:
+        """The drug's reports, or those of one of its reactions, by country of the event and by who reported, from two
+        openFDA counts registered in Zetaris, with the report total from the drug's own tables. Reports that leave a
+        field blank are not counted, so the total minus the counts is the unknown share. A part whose query fails is
+        None, and its check says "unknown"; the run goes on."""
+        s = slug(drug)
+        search, what = drug_search(drug), drug
+        total = f"SELECT SUM(reports) FROM openfda.faers_d2_{s}_total"
+        if reaction:
+            search, what = f"{search}+AND+{phrase(REACTION_FIELD, reaction)}", f"{drug} and {reaction}"
+            total = f"SELECT SUM(reports) FROM openfda.faers_d2_{s}_reactions WHERE reaction = {sql_str(reaction)}"
+        out, qids = {"country": None, "reporter": None, "reports": None}, []
+        for part, field in SOURCE_FIELDS.items():
+            try:
+                raw = self._count_table(search, field, f"register reports by {part} for {what}", COUNT_LIMIT)
+                res = self.z.run(f"SELECT CAST(r.term AS STRING) AS term, r.`count` AS reports, ({total}) AS total "
+                                 f"FROM openfda_rest.{raw} LATERAL VIEW explode(results) AS r",
+                                 f"reports by {part} for {what}")
+            except ZetarisError:
+                continue
+            qids.append(res.query_id)
+            recs = res.records()
+            # "1.0" and "1" are the same qualification code, whichever type Zetaris gives the term.
+            out[part] = {(str(int(float(t))) if re.fullmatch(r"\d+(\.0+)?", t) else t): int(float(rec["reports"]))
+                         for rec in recs for t in [str(rec["term"])]}
+            if recs and recs[0].get("total") is not None:
+                out["reports"] = int(float(recs[0]["total"]))
+        return qids, out
 
     def label(self, drug: str) -> tuple[str | None, dict]:
         """Sections of the label choose_label() picks from the newest ones. Fields vary between labels (and

@@ -4,7 +4,10 @@ evidence, a label term that is not in the label, or an inconsistent priority is 
 The model then accepts, rejects (with an objection the Analyst must answer), or marks a finding
 unresolved when the evidence available cannot settle it."""
 import json
+import math
+import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 
 from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
 from app.adapters.zetaris import ZetarisError
@@ -12,6 +15,7 @@ from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
 from app.agents.skeptic import compact
 from app.data.faers import DataClerk
 from app.data.label import EFFECT, META, effect_text, excerpt_block, label_sentence, norm, search
+from app.data.sources import compact as sources_compact
 from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
@@ -31,6 +35,8 @@ For each finding, decide:
 A treated condition that the label says the drug may cause or worsen (for example low blood pressure with a blood-pressure drug) is correctly "covered". A symptom, sign, measure or complication of the treated disease is "treated_condition" even when the label does not mention it; reject it as a clinical_event sent for review just because the label does not list it. A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support. The same holds for a Limitation of Use, drug interactions, pharmacokinetics and pharmacology. A reaction the label names only as an expected effect of the drug (mechanism_of_action or pharmacodynamics) is "unclear", not "covered" or "not_found". Each reaction's "Code search" line says which sections code searched and where it found the name; a "not_found" must agree with it.
 
 Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. "attenuated_by" is context too: co-drugs that lower the PRR by 30% or more without taking it below 2. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
+
+Some review_next findings carry "report_sources", where their reports come from, computed from database counts. "one_country" means one country holds most reports with a known country, well above the drug's usual share, which often means copies of one case re-filed by many companies. "lawyer_reports" means lawyers filed 20% or more of the reports that say who reported, as in litigation. "few_health_professionals" means under half of them came from health professionals. "unknown" means too few reports say. These describe evidence quality, not whether the pattern is real. Name a raised flag in your objection or next_check, but never reject a finding for a flag alone. "unknown" can also mean the counts could not be fetched, and a "status" in place of flags means the check had not finished or failed.
 
 FAERS counts have no denominator: reject reasoning or a next_check that compares a PRR or report count with an incidence or clinical-trial frequency, unless the check names another data source with a denominator. Do not make that comparison in your own objection or next_check either.
 
@@ -95,6 +101,7 @@ def failed(checks: dict) -> list[str]:
 
 class Reviewer:
     name = "reviewer"
+    source_wait = 45  # seconds a review waits, in all, for report-source checks before going on without them
 
     def __init__(self, llm: NightshiftClient, model: str, clerk: DataClerk, parallel: int = 2):
         self.llm = llm
@@ -126,11 +133,15 @@ class Reviewer:
                    for f, ch, qid in checked]
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}
         unpicked = [s for s in ctx["passing"] if norm(s.reaction) not in done][:UNPICKED_ROWS]
+        # review_next findings last, so their report-source checks (started with this round) have time to finish.
+        # One deadline for the whole review, never past the run's budget, so waits cannot stack across batches.
+        payload.sort(key=lambda p: p.get("review_priority") == "review_next")
+        deadline = min(time.monotonic() + self.source_wait, ctx.get("run_ends", math.inf))
 
         # Small parallel batches for the same reason as the Analyst's; only the first looks for missing reactions.
         batches = [payload[i:i + BATCH] for i in range(0, len(payload), BATCH)]
         with ThreadPoolExecutor(max_workers=self.parallel) as pool:
-            outs = list(pool.map(lambda ib: self._review_batch(ctx, ib[1], unpicked if ib[0] == 0 else None),
+            outs = list(pool.map(lambda ib: self._review_batch(ctx, ib[1], unpicked if ib[0] == 0 else None, deadline),
                                  enumerate(batches)))
         llm, missing, summaries = {}, [], []
         for i, out in enumerate(outs):
@@ -159,7 +170,25 @@ class Reviewer:
                 verdicts.append(Verdict(f.reaction, "unreviewed", NO_VERDICT, checks, **extra))
         return verdicts, missing, " ".join(s for s in summaries if s)
 
-    def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None) -> dict:
+    def report_sources(self, ctx: dict, reaction: str, deadline: float | None = None) -> dict | None:
+        """The item's report-source check (app/data/sources.py) for the prompt, waiting for it until the review's
+        deadline; None if the item has none."""
+        fut = ctx.get("sources", {}).get(reaction)
+        if fut is None:
+            return None
+        try:
+            wait = self.source_wait if deadline is None else max(0.0, deadline - time.monotonic())
+            return sources_compact(fut.result(timeout=wait))
+        except FutureTimeout:
+            return {"status": "not finished in time for this review"}
+        except Exception as e:  # context only, so no failure of this check may stop the review
+            return {"status": f"failed: {str(e)[:200]}"}
+
+    def _review_batch(self, ctx: dict, batch: list[dict], unpicked: list[Signal] | None,
+                      deadline: float | None = None) -> dict:
+        for p in batch:
+            if "report_sources" not in p and (ev := self.report_sources(ctx, p["reaction"], deadline)) is not None:
+                p["report_sources"] = ev
         extra = (f"Strongest screen rows nobody has classified yet (query {ctx['screen_qid']}):\n"
                  f"{screen_table(unpicked, UNPICKED_ROWS)}\n\n" if unpicked else
                  "Another batch reviews missing reactions; return \"missing\": [].\n\n")
@@ -178,7 +207,8 @@ class Reviewer:
                 # Smaller calls succeed more often: review one finding per call before giving up.
                 self.llm.tracer.event(self.name, "degraded", step="review", batch=names, error=str(e)[:200],
                                       fallback="one finding per call")
-                outs = [self._review_batch(ctx, [p], unpicked if i == 0 else None) for i, p in enumerate(batch)]
+                outs = [self._review_batch(ctx, [p], unpicked if i == 0 else None, deadline)
+                        for i, p in enumerate(batch)]
                 return {"verdicts": [v for o in outs for v in o.get("verdicts") or []],
                         "missing": outs[0].get("missing") or [],
                         "summary": " ".join(str(o.get("summary") or "") for o in outs)}

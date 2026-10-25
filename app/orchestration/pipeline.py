@@ -5,6 +5,7 @@ The result is the dossier."""
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -17,6 +18,7 @@ from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
 from app.data.faers import DataClerk, validate_drug
 from app.data.label import search
+from app.data.sources import check as check_report_sources
 from app.engines.world_model import WorldModel
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
@@ -29,10 +31,13 @@ SCREEN_ROWS = 30
 # review of the Skeptic's challenges). Below that the step is skipped and says so.
 REVISION_NEEDS = 120
 CHALLENGE_NEEDS = 90
+# Seconds the dossier waits, at most, for report-source checks still running at the end of a run.
+SOURCE_WAIT = 30
 
 NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
-    "Reporter type, e.g. lawyer-driven reporting",
+    "Reporter type and country only for review-next items, as context flags. Copies of one case re-filed by many "
+    "companies are not collapsed into patients",
     "Reporting spikes over time (notoriety bias)",
     "Co-reported drugs beyond the Skeptic's top co-drugs, items beyond its top review_next items, and "
     "interactions among three or more drugs. Adjustment is for one co-drug at a time",
@@ -44,6 +49,17 @@ NOT_YET_CHECKED = [
 
 
 def investigate(request: dict, settings: Settings, tracer: Tracer | None = None) -> dict:
+    """One run. The report-source checks' pool is shut down however the run ends, so a run that stops on an error
+    (a rejected Nightshift token) does not leave queued Zetaris and openFDA calls behind it."""
+    sources_pool = ThreadPoolExecutor(max_workers=4)
+    try:
+        return run_investigation(request, settings, tracer, sources_pool)
+    finally:
+        sources_pool.shutdown(wait=False, cancel_futures=True)
+
+
+def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
+                      sources_pool: ThreadPoolExecutor) -> dict:
     tracer = tracer or Tracer(settings.logs_dir)
     started = time.monotonic()
     left = lambda: settings.run_budget - (time.monotonic() - started)  # noqa: E731
@@ -74,7 +90,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
         "label_choice": clerk.label_choice, "combination": combination, "seriousness": severity,
-        "screen_qid": screen_res.query_id, "screen_passing": len(passing),
+        "screen_qid": screen_res.query_id, "screen_passing": len(passing), "run_ends": started + settings.run_budget,
         "screen_shown": min(SCREEN_ROWS, len(passing)),
         "screen_table": screen_table(passing, SCREEN_ROWS),
         "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set())
@@ -92,6 +108,18 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     # Reviewer's rejections and missing reactions nobody has attempted yet. A dispute that cannot be settled
     # ends as "unresolved" rather than being accepted when the rounds run out.
     names = {s.reaction for s in passing}
+    # Where each review-next item's reports come from (app/data/sources.py), context for the Reviewer. Zetaris and
+    # openFDA only, so it runs in the background. The drug's usual mix starts now, and each item's check as soon as a
+    # round's findings mark it review_next. The Reviewer waits for an item's result only when it reaches that item.
+    usual_sources = sources_pool.submit(clerk.report_sources, drug) if settings.source_items else None
+    ctx["sources"] = {}
+    stats = {s.reaction: s for s in passing}
+
+    def check_sources(fs: list[Finding]) -> None:
+        for r in source_targets(fs, set(ctx["sources"]), settings.source_items):
+            ctx["sources"][r] = sources_pool.submit(check_report_sources, clerk, drug, r, usual_sources,
+                                                    stats[r].a if r in stats else None)
+
     findings, summary = analyst.run(ctx)
     tracer.event("analyst", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
@@ -99,6 +127,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     rounds, new_missing = [], []
     background, prefetch = ThreadPoolExecutor(max_workers=1), None
     for rnd in range(1, settings.reviewer_rounds + 2):
+        check_sources(findings)
         verdicts, missing, reviewer_summary = reviewer.review(ctx, findings, attempted)
         by = {v.reaction: v for v in verdicts}
         retry = []
@@ -161,7 +190,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     background.shutdown()
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
-    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity, label)
+    sources = collect_sources(ctx, tracer, min(SOURCE_WAIT, max(0.0, left())))
+    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity, label,
+                         sources)
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -173,7 +204,9 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
               **{s: sum(q["workflow_status"] == s for q in queue) for s in STATUS},
               "review_next": sum(q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"
                                  for q in queue),
-              **{f"skeptic_{k}": v for k, v in skeptic_counts.items()}}
+              **{f"skeptic_{k}": v for k, v in skeptic_counts.items()},
+              "report_sources_checked": sum("flags" in ev for ev in sources.values()),
+              "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values())}
 
     queries, degraded, setup_warnings = {}, [], []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
@@ -243,6 +276,31 @@ def settle(f: Finding, v: Verdict, history: list[dict]) -> tuple[str, str]:
     if any(h["decision"] == "reject" and h["claim"] == claim for h in history):
         return "unresolved", "the Analyst returned to an answer the Reviewer had already rejected"
     return "rejected", ""
+
+
+def source_targets(findings: list[Finding], have: set[str], cap: int) -> list[str]:
+    """review_next findings whose report sources are not being checked yet, keeping the run's total at cap."""
+    new = [f.reaction for f in findings if f.review_priority == "review_next" and f.reaction not in have]
+    return list(dict.fromkeys(new))[:max(0, cap - len(have))]
+
+
+def collect_sources(ctx: dict, tracer: Tracer, wait: float) -> dict:
+    """Each item's report-source check, waiting at most `wait` seconds in all for any still running. A check that
+    is not back by then, or failed, is recorded as such rather than holding up the dossier."""
+    deadline, out = time.monotonic() + wait, {}
+    for r, fut in ctx.get("sources", {}).items():
+        try:
+            ev = fut.result(timeout=max(0.0, deadline - time.monotonic()))
+        except Exception as e:  # context only, so no failure of this check may stop the run
+            ev = {"status": "not finished" if isinstance(e, FutureTimeout) else f"failed: {str(e)[:200]}"}
+            tracer.event("data_clerk", "degraded", step="report sources", reaction=r, error=ev["status"],
+                         fallback="no report-source flags for this item")
+        out[r] = ev
+        ctx["evidence_ids"] |= set(ev.get("query_ids", []))
+        if "flags" in ev:
+            tracer.event("data_clerk", "report_sources", reaction=r, flags=ev["flags"], summary=ev["summary"],
+                         query_ids=ev["query_ids"])
+    return out
 
 
 def skeptic_targets(ctx: dict, state: dict, top: int) -> list[str]:
@@ -372,15 +430,18 @@ STATUS_ORDER = {"unresolved": 0, "reviewed": 1, "not_reviewed": 2, "pending": 3,
 
 
 def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str],
-                 skeptic: dict | None = None, severity: dict | None = None, label: dict | None = None) -> list[dict]:
+                 skeptic: dict | None = None, severity: dict | None = None, label: dict | None = None,
+                 sources: dict | None = None) -> list[dict]:
     """The analyst's queue: every assessed reaction with its priority, objection and next check, plus
     reactions that were named for review but never reached, ranked review_next first. The serious and death
     shares are shown, not used for ranking: they describe whole reports, not the reaction. Each item carries the
-    code's label search, so a "not found" says what was searched and an expected effect is quoted."""
+    code's label search, so a "not found" says what was searched and an expected effect is quoted, and a review-next
+    item its report sources (context flags, never used for ranking either)."""
     stats = {s.reaction: s for s in passing}
     def extra(r):
         return (({"seriousness": severity[r]} if severity and r in severity else {})
-                | ({"label_search": search(r, label)} if label else {}))
+                | ({"label_search": search(r, label)} if label else {})
+                | ({"report_sources": sources[r]} if sources and r in sources else {}))
     queue = []
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
