@@ -153,14 +153,31 @@ These are **development checks, not clinical validation**. None of us is a pharm
 
 | Built | Next |
 |---|---|
-| Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | Live evaluation of the current decision contract (implemented and unit-tested) |
+| Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | A held-out evaluation, and a person's review of the reference sets |
 | Analyst and Reviewer loop with code checks, objections, unresolved disputes and fallbacks | A live run that shows a label change reopening earlier verdicts (shown offline so far) |
 | Meterless World Model engine: label versions and verdicts kept across runs, with conformance tests | |
-| Ranked review queue with coverage counts; JSONL traces | Reporter-type evidence as a second Skeptic check |
+| Ranked review queue with coverage counts; JSONL traces | Report sources as a Skeptic check (today they are context for the Reviewer) |
 | Label search across every fetched section, report sources, uncertainty marks, the manual-review flag and the serious-term safety net (25 Oct) | A broader-term match for the label search |
 | Skeptic: co-reported drug check (adjusted PRR, co-drug PRR, Omega interaction) for the top findings | |
 | Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, sample mode |
 | `POST /run` API with structured errors; Dockerfile | |
+| Plain early stops for unknown, misspelt, brand-only and label-less drug names, before any model call (26 Oct) | |
+
+## Not in this version
+
+We left these out before the 26 Oct freeze. Each is a known gap, stated here so it isn't mistaken for a hidden one.
+
+- **A faster model for some roles.** Both agents use Nemotron Ultra. We didn't test giving the Analyst's first pass to Nemotron Super, because Nightshift 1.2.1 doesn't honour a model pin, so two models can't yet be routed reliably.
+- **Control over how long the model thinks.** No setting reaches Ultra's reasoning through Nightshift, and a prompt asking for shorter reasoning wasn't tested because it could cost accuracy.
+- **The World Model read path.** Label versions and verdicts are kept across runs, but the agents don't read them yet. Reopening a verdict after a label change has been shown offline only.
+- **Broader-term label matching.** The label search matches a reaction's name, set synonyms and simple changes. A broader label term, such as "diabetic ketoacidosis" for euglycaemic diabetic ketoacidosis, isn't recognised as coverage.
+- **An "expected pharmacology" category.** A reaction the label names only in its pharmacology is marked "unclear".
+- **The brand holder's label.** Vigil takes the newest single-ingredient prescription label, which can be a repackager's copy.
+- **Brand and salt names.** Vigil searches by generic name. A brand name stops with a pointer to its generic, and a salt form runs but finds fewer reports than the base name (17% fewer for metformin hydrochloride than metformin), with no warning.
+- **A backtest of early detection.** openFDA keeps only the latest version of each case, so the past can't be rebuilt, and we make no early-detection claim.
+- **Case-level review.** Vigil works on aggregate counts, with no duplicate removal or narrative review.
+- **A human-reviewed reference set and a held-out evaluation.** Both reference sets were drafted by an AI assistant and haven't been reviewed by a pharmacovigilance professional. All scores are one run per drug, on drugs used while building Vigil.
+- **Higher rate limits.** Runs use openFDA without a key and an NVIDIA trial key, so rate limits shape run time.
 
 ## Run it
 
