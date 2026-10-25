@@ -112,13 +112,26 @@ class NetZetaris:
                            [[r, str(n), None if a is None else str(a)] for r, n, a in rows])
 
 
-def section(z, drug, signals=(), passing=(), queue=(), label=None):
+def section(z, drug, signals=(), passing=(), queue=(), label=None, severity=None):
     raw = DataClerk(z).serious_terms(drug)
-    return raw, assemble(raw, list(signals), list(passing), list(queue), label or {})
+    return raw, assemble(raw, list(signals), list(passing), list(queue), label or {}, severity)
+
+
+SECTION_NAMES = ("designated_medical_events", "missed_serious_terms", "pregnancy_and_newborn")
 
 
 def by_name(sec):
-    return {i["reaction"]: i for i in sec["terms"]}
+    return {i["reaction"]: i for name in SECTION_NAMES for i in sec[name]}
+
+
+def where(sec, reaction):
+    return [name for name in SECTION_NAMES if any(i["reaction"] == reaction for i in sec[name])]
+
+
+def serious(counts: dict) -> dict:
+    """Severity rows shaped like DataClerk.seriousness(), from {reaction: (serious, reports)}."""
+    return {r: {"serious": s, "death": 0, "serious_share": round(s / n, 3), "death_share": 0.0}
+            for r, (s, n) in counts.items()}
 
 
 def test_zuranolone_breast_milk_and_neonatal_terms_are_caught_with_no_openfda_call():
@@ -129,17 +142,18 @@ def test_zuranolone_breast_milk_and_neonatal_terms_are_caught_with_no_openfda_ca
     assert (milk["reports"], milk["all_drug_reports"], milk["screen_status"]) == (22, None, "not_screened")
     assert (neonatal["reports"], neonatal["screen_status"]) == (8, "not_screened")
     assert "outside the all-drugs top 999 (smallest count 9,059)" in milk["screen_detail"]
-    # An exposure term is left out of the hidden-terms list by the rules, but the pregnancy group keeps it.
-    assert milk["groups"] == ["pregnancy_or_newborn"]
-    assert neonatal["groups"] == ["pregnancy_or_newborn", "hidden_by_all_drugs_cap"]
-    assert t["ACUTE KIDNEY INJURY"]["groups"] == ["designated_medical_event"]
+    # Pregnancy and newborn terms have their own section, the exposure term included.
+    assert where(sec, "EXPOSURE VIA BREAST MILK") == where(sec, "SOMNOLENCE NEONATAL") == ["pregnancy_and_newborn"]
+    assert where(sec, "ACUTE KIDNEY INJURY") == ["designated_medical_events"]
     assert "fewer than 3 reports" in t["ACUTE KIDNEY INJURY"]["screen_detail"]
     # A complete own list holds every term, so nothing is registered and no openFDA call is made.
     assert z.tables == {} and raw["direct"] == [] and sec["openfda"]["requests"] == 0
     assert sec["lists"]["own_full"] is False and sec["note"] == NOTE
-    hidden = [i["reaction"] for i in sec["terms"] if "hidden_by_all_drugs_cap" in i["groups"]]
-    assert len(hidden) == 10 and "SOMNAMBULISM" in hidden  # 10th, as the exposure term is left out
-    assert t["POOR FEEDING INFANT"]["groups"] == ["pregnancy_or_newborn"]  # 11th, so only in the pregnancy group
+    assert where(sec, "POOR FEEDING INFANT") == ["pregnancy_and_newborn"]
+    reports = [i["reports"] for i in sec["pregnancy_and_newborn"]]
+    assert reports == sorted(reports, reverse=True)  # most-reported first
+    # With no serious counts, no missed serious term is listed, and the section says why.
+    assert sec["missed_serious_terms"] == [] and any("serious counts were not available" in x for x in sec["limits"])
 
 
 def empagliflozin_direct(url):
@@ -148,21 +162,23 @@ def empagliflozin_direct(url):
     return EMPAGLIFLOZIN_WORDS + CO_REPORTED
 
 
-def test_empagliflozin_ketoacidosis_and_fourniers_gangrene_are_caught_by_the_hidden_terms_list():
+def test_empagliflozin_ketoacidosis_and_fourniers_gangrene_are_missed_serious_terms():
+    # Serious counts recorded read-only from Zetaris on 25 Oct (DataClerk.seriousness).
+    severity = serious({"EUGLYCAEMIC DIABETIC KETOACIDOSIS": (2234, 2273), "FOURNIER^S GANGRENE": (1202, 1207)})
     z = NetZetaris(EMPAGLIFLOZIN, sizes(999, 32), empagliflozin_direct)
-    raw, sec = section(z, "empagliflozin")
+    raw, sec = section(z, "empagliflozin", severity=severity)
     t = by_name(sec)
-    for r, n in (("EUGLYCAEMIC DIABETIC KETOACIDOSIS", 2273), ("FOURNIER^S GANGRENE", 1207)):
-        assert r not in DESIGNATED_MEDICAL_EVENTS
-        assert (t[r]["reports"], t[r]["groups"], t[r]["screen_status"]) == (n, ["hidden_by_all_drugs_cap"],
-                                                                              "not_screened")
-    assert "BRONCHIECTASIS" not in t  # the 11th
+    for r, n, share in (("EUGLYCAEMIC DIABETIC KETOACIDOSIS", 2273, 0.983), ("FOURNIER^S GANGRENE", 1207, 0.996)):
+        assert r not in DESIGNATED_MEDICAL_EVENTS and where(sec, r) == ["missed_serious_terms"]
+        assert (t[r]["reports"], t[r]["serious_share"], t[r]["screen_status"]) == (n, share, "not_screened")
+    assert [i["reaction"] for i in sec["missed_serious_terms"]][:2] == ["EUGLYCAEMIC DIABETIC KETOACIDOSIS",
+                                                                        "FOURNIER^S GANGRENE"]
     # Designated medical events below the drug's own cutoff come from the direct count, with their all-drugs count.
     sjs = t["STEVENS-JOHNSON SYNDROME"]
     assert (sjs["reports"], sjs["all_drug_reports"]) == (23, 21989) and sjs["count_from"].startswith("direct openFDA")
     assert "outside the drug's own top 999 (smallest count 32)" in sjs["screen_detail"]
     assert "outside the all-drugs" not in sjs["screen_detail"]
-    assert t["SEPSIS NEONATAL"]["groups"] == ["pregnancy_or_newborn"]
+    assert where(sec, "SEPSIS NEONATAL") == ["pregnancy_and_newborn"]
     # The own list's count is kept for a term both lists have, and co-reported terms are left out.
     assert t["MATERNAL EXPOSURE DURING PREGNANCY"]["count_from"] == "drug's own list"
     assert "NAUSEA" not in t and "DIARRHOEA" not in t
@@ -197,10 +213,9 @@ def test_semaglutide_optic_ischaemic_neuropathy_is_caught_by_the_designated_medi
     raw, sec = section(z, "semaglutide")
     t = by_name(sec)
     ion = t["OPTIC ISCHAEMIC NEUROPATHY"]
-    assert "designated_medical_event" in ion["groups"] and ion["reports"] == 869
+    assert where(sec, "OPTIC ISCHAEMIC NEUROPATHY") == ["designated_medical_events"] and ion["reports"] == 869
     assert ion["screen_status"] == "not_screened" and ion["count_from"] == "drug's own list"
-    assert "PRODUCT COMMUNICATION ISSUE" not in t  # administrative, left out of the hidden terms
-    assert t["WEIGHT LOSS POOR"]["groups"] == ["hidden_by_all_drugs_cap"]
+    assert "PRODUCT COMMUNICATION ISSUE" not in t  # administrative, and no serious counts here anyway
 
 
 def test_a_full_direct_count_recounts_only_its_absent_terms_with_an_anchor():
@@ -240,14 +255,14 @@ def test_a_term_the_agents_assessed_points_to_its_queue_item_and_is_not_repeated
     label = {"adverse_reactions": "Somnolence was common.", "effective_time": "20260101"}  # made up
     _, sec = section(z, "zuranolone", signals, [], queue, label)
     t = by_name(sec)
-    assert [i["reaction"] for i in sec["terms"]].count("SOMNOLENCE NEONATAL") == 1
+    assert [i["reaction"] for name in SECTION_NAMES for i in sec[name]].count("SOMNOLENCE NEONATAL") == 1
     item = t["SOMNOLENCE NEONATAL"]
     assert item["screen_status"] == "in_review_queue" and "workflow status reviewed" in item["screen_detail"]
     assert "label_status" not in item
     below = t["MATERNAL EXPOSURE DURING PREGNANCY"]
     assert below["screen_status"] == "below_screen" and "PRR 0.77, chi-squared 0.2" in below["screen_detail"]
     assert t["EXPOSURE VIA BREAST MILK"]["label_status"].startswith("Not named in any section searched.")
-    assert sec["terms"][-1]["reaction"] == "SOMNOLENCE NEONATAL"  # not screened first, the queue's items last
+    assert where(sec, "SOMNOLENCE NEONATAL") == ["pregnancy_and_newborn"]  # still listed, pointing to the queue
 
 
 def test_a_caret_name_is_found_on_a_label_that_writes_an_apostrophe():
@@ -273,8 +288,8 @@ def test_a_failed_direct_count_degrades_and_keeps_the_own_list_terms():
     z = NetZetaris(EMPAGLIFLOZIN, sizes(999, 32), empagliflozin_direct, fail=("pregnancy and newborn words",))
     job, tracer = Future(), Tracer()
     job.set_result(DataClerk(z).serious_terms("empagliflozin"))
-    sec = collect(job, 1, tracer, [], [], [], {})
-    assert sec["status"] == "done" and "FOURNIER^S GANGRENE" in by_name(sec)
+    sec = collect(job, 1, tracer, [], [], [], {}, serious({"FOURNIER^S GANGRENE": (1202, 1207)}))
+    assert sec["status"] == "done" and where(sec, "FOURNIER^S GANGRENE") == ["missed_serious_terms"]
     assert "SEPSIS NEONATAL" not in by_name(sec)
     assert any("failed" in x and "pregnancy and newborn words" in x for x in sec["limits"])
     assert [d["step"] for k, d in tracer.events if k == "degraded"] == ["safety net direct count"]
@@ -292,7 +307,8 @@ def test_a_failed_or_unfinished_safety_net_never_stops_the_run():
     failing, tracer = Future(), Tracer()
     failing.set_exception(ZetarisError("HTTP 500"))
     sec = collect(failing, 1, tracer, [], [], [], {})
-    assert sec["status"].startswith("failed") and sec["terms"] == [] and sec["note"] == NOTE
+    assert sec["status"].startswith("failed") and sec["term_count"] == 0 and sec["note"] == NOTE
+    assert all(sec[name] == [] for name in SECTION_NAMES)
     assert collect(Future(), 0.01, tracer, [], [], [], {})["status"] == "not finished"
     assert [d["step"] for k, d in tracer.events if k == "degraded"] == ["safety net", "safety net"]
 
@@ -424,7 +440,7 @@ def test_a_whole_run_never_promotes_safety_net_terms(tmp_path, monkeypatch):
     t = by_name(net)
     assert t["SOMNOLENCE NEONATAL"]["screen_status"] == "not_screened"
     assert t["PANCREATITIS"]["screen_status"] == "in_review_queue" and "label_status" not in t["PANCREATITIS"]
-    assert dossier["counts"]["safety_net_terms"] == len(net["terms"]) > 0
+    assert dossier["counts"]["safety_net_terms"] == net["term_count"] == len(by_name(net)) > 0
     assert dossier["counts"]["review_next"] == baseline["counts"]["review_next"]
     assert set(net["query_ids"]) <= set(dossier["evidence_queries"]) | {"q-own", "q-size"}
 
@@ -434,3 +450,32 @@ def test_a_whole_run_degrades_when_the_safety_net_query_fails(tmp_path, monkeypa
     assert dossier["safety_net"]["status"].startswith("failed: HTTP 500")
     assert any(d["step"] == "safety net" for d in dossier["degraded_steps"])
     assert dossier["counts"]["safety_net_terms"] == 0 and len(dossier["review_queue"]) == 2
+
+
+def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_reported_first():
+    # Bryan's rule of 25 Oct. Made-up rows (reaction, reports with the drug, all-drug reports or None if outside the
+    # all-drugs top 999), and made-up serious counts.
+    own = [("GASTROINTESTINAL HYPOMOTILITY", 100, None), ("FOOD CRAVING", 750, None), ("HALF SERIOUS TERM", 200, None),
+           ("SMALL SERIOUS TERM", 50, None), ("SCREENED SERIOUS TERM", 300, 50000), ("THIN SERIOUS TERM", 2, 50000),
+           ("PRODUCT DOSE OMISSION ISSUE", 100, None), ("NO SERIOUS COUNT TERM", 80, None),
+           ("PANCREATITIS", 400, None), ("SOMNOLENCE NEONATAL", 8, None)]
+    severity = serious({"GASTROINTESTINAL HYPOMOTILITY": (99, 100), "FOOD CRAVING": (108, 750),
+                        "HALF SERIOUS TERM": (100, 200), "SMALL SERIOUS TERM": (50, 50),
+                        "SCREENED SERIOUS TERM": (300, 300), "THIN SERIOUS TERM": (2, 2),
+                        "PRODUCT DOSE OMISSION ISSUE": (90, 100), "PANCREATITIS": (390, 400),
+                        "SOMNOLENCE NEONATAL": (1, 8)})
+    _, sec = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
+    missed = [i["reaction"] for i in sec["missed_serious_terms"]]
+    # More than half serious and outside the screen (by a cap or the 3-report floor), most-reported first, no cap.
+    assert missed == ["GASTROINTESTINAL HYPOMOTILITY", "SMALL SERIOUS TERM", "THIN SERIOUS TERM"]
+    assert by_name(sec)["GASTROINTESTINAL HYPOMOTILITY"]["serious_share"] == 0.99
+    # Exactly half is not more than half, a screened term is not missed, and a mostly non-serious term is out.
+    assert "HALF SERIOUS TERM" not in missed and "SCREENED SERIOUS TERM" not in missed and "FOOD CRAVING" not in missed
+    # Designated medical events and pregnancy terms keep their own sections, whatever their serious share.
+    assert where(sec, "PANCREATITIS") == ["designated_medical_events"]
+    assert where(sec, "SOMNOLENCE NEONATAL") == ["pregnancy_and_newborn"]
+    # Nothing is dropped without a count, and the threshold is shown.
+    assert sec["left_out"] == {"non_clinical": 1, "serious_share_unknown": 1}
+    assert any("1 serious terms outside the screen are left out as non-clinical" in x for x in sec["limits"])
+    assert any("1 terms outside the screen have no serious count" in x for x in sec["limits"])
+    assert sec["serious_threshold"] == 0.5 and "more than 50%" in sec["groups"]["missed_serious"]

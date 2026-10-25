@@ -7,10 +7,13 @@ These were all in the drug's own list that day but outside the all-drugs one. Zu
 (22 reports) and SOMNOLENCE NEONATAL (8). Empagliflozin had EUGLYCAEMIC DIABETIC KETOACIDOSIS (2,273) and FOURNIER^S
 GANGRENE (1,207). Semaglutide had OPTIC ISCHAEMIC NEUROPATHY (869).
 
-There are three groups of terms.
+There are three sections, and a term sits in the first that takes it.
 - EMA's designated medical events, a fixed list of 62 MedDRA terms.
-- Pregnancy, breastfeeding and newborn terms, by whole words in the name.
-- The drug's 10 most-reported clinical terms that the all-drugs cap hides.
+- Missed serious terms. Every clinical term outside the screen where more than half of the drug's reports with it are
+  flagged serious in FAERS, most-reported first, with no cap. Bryan chose this rule on 25 Oct, after the earlier "10
+  most-reported hidden terms" listed FOOD CRAVING and SENSITIVE SKIN for semaglutide and missed its medullary thyroid
+  cancer and necrotising pancreatitis. The serious counts are the ones the run already fetches (DataClerk.seriousness).
+- Pregnancy, breastfeeding and newborn terms, by whole words in the name, most-reported first, with no cap.
 Each term gets its reports with the drug, its screen status and what the label search found. The counts come from the
 Data Clerk's SQL (DataClerk.serious_terms). Nothing here is promoted. These terms never enter the review queue, its
 ranking or any prompt."""
@@ -52,13 +55,18 @@ PREGNANCY_NEWBORN_WORDS = (
     "INFANT", "BABY", "BREAST MILK", "BREAST FEEDING", "LACTATION")
 # The same words as one regular expression, for Spark SQL's RLIKE (Java) and for Python. Both find it anywhere.
 PREGNANCY_NEWBORN = r"\b(" + "|".join(PREGNANCY_NEWBORN_WORDS) + r")\b"
-HIDDEN_TOP = 10
+# A missed term is listed when more than this share of the drug's reports with it are flagged serious.
+SERIOUS_SHARE = 0.5
 SCREEN_FLOOR = 3  # signal_sql's min_a, so the screen keeps reactions with at least this many reports
 GROUPS = {"designated_medical_event": DME_SOURCE,
+          "missed_serious": f"clinical terms outside the screen with more than {SERIOUS_SHARE:.0%} of the drug's "
+                            f"reports with them flagged serious in FAERS (death, life-threatening, hospitalisation, "
+                            f"disability, congenital anomaly or another serious outcome), most-reported first",
           "pregnancy_or_newborn": "pregnancy, breastfeeding and newborn terms, by whole words in the name ("
-                                  + ", ".join(PREGNANCY_NEWBORN_WORDS) + ")",
-          "hidden_by_all_drugs_cap": f"the drug's {HIDDEN_TOP} most-reported clinical terms outside the all-drugs "
-                                     f"top 999"}
+                                  + ", ".join(PREGNANCY_NEWBORN_WORDS) + "), most-reported first"}
+# The dossier's name for each group's section, in the dossier's order.
+SECTIONS = {"designated_medical_event": "designated_medical_events", "missed_serious": "missed_serious_terms",
+            "pregnancy_or_newborn": "pregnancy_and_newborn"}
 KIND_NAMES = {"designated_medical_event": "designated medical events",
               "pregnancy_or_newborn": "pregnancy and newborn words"}
 STATUS_ORDER = {"not_screened": 0, "passes_not_assessed": 1, "below_screen": 2, "in_review_queue": 3}
@@ -70,8 +78,9 @@ def pregnancy_or_newborn(reaction: str) -> bool:
 
 
 def non_clinical(reaction: str) -> bool:
-    """The rules' non-clinical terms (app/agents/rules.py), left out of the hidden-terms list only. In the fixed groups
-    an exposure or a product term is the information, such as a breastfed infant or a contaminated product."""
+    """The rules' non-clinical terms (app/agents/rules.py), left out of the missed serious terms only, and counted. In
+    the other sections an exposure or a product term is the information, such as a breastfed infant or a contaminated
+    product."""
     return any(p.search(reaction) for p in (ADMINISTRATIVE, SOCIAL, PREGNANCY_EXPOSURE))
 
 
@@ -79,28 +88,44 @@ def number(value) -> int | None:
     return None if value is None else int(float(value))
 
 
-def terms(raw: dict) -> dict:
-    """{reaction: {"reports", "all_drug_reports", "count_from", "groups"}} from DataClerk.serious_terms()."""
+def outside_screen(rec: dict) -> bool:
+    """Not in the all-drugs top 999, or under the screen's report floor, so the screen never reaches it."""
+    return rec.get("all_reports") is None or number(rec["reports"]) < SCREEN_FLOOR
+
+
+def terms(raw: dict, severity: dict | None = None, left_out: dict | None = None) -> dict:
+    """{reaction: {"reports", "all_drug_reports", "count_from", "groups", "serious_share"}} from
+    DataClerk.serious_terms() and the run's serious counts (DataClerk.seriousness). A term takes one group, the first
+    of designated medical event, pregnancy or newborn, missed serious. left_out, if given, counts the terms outside the
+    screen that the missed serious terms leave out, so nothing is dropped without a count."""
     out: dict[str, dict] = {}
+    severity = severity or {}
+    left_out = left_out if left_out is not None else {}
 
     def add(rec: dict, group: str, count_from: str) -> None:
-        t = out.setdefault(rec["reaction"], {"reports": number(rec["reports"]),
-                                             "all_drug_reports": number(rec.get("all_reports")),
-                                             "count_from": count_from, "groups": []})
-        if group not in t["groups"]:
-            t["groups"].append(group)
+        sev = severity.get(rec["reaction"]) or {}
+        out.setdefault(rec["reaction"], {"reports": number(rec["reports"]),
+                                         "all_drug_reports": number(rec.get("all_reports")),
+                                         "count_from": count_from, "groups": [group],
+                                         "serious_share": sev.get("serious_share")})
 
     own = raw["own"]
     dme = set(DESIGNATED_MEDICAL_EVENTS)
     for rec in own:
-        if rec["reaction"] in dme:
+        r = rec["reaction"]
+        if r in dme:
             add(rec, "designated_medical_event", OWN)
-        if pregnancy_or_newborn(rec["reaction"]):
+        elif pregnancy_or_newborn(r):
             add(rec, "pregnancy_or_newborn", OWN)
-    hidden = sorted((r for r in own if r.get("all_reports") is None and not non_clinical(r["reaction"])),
-                    key=lambda r: (-number(r["reports"]), r["reaction"]))
-    for rec in hidden[:HIDDEN_TOP]:
-        add(rec, "hidden_by_all_drugs_cap", OWN)
+        elif outside_screen(rec):
+            serious = (severity.get(r) or {}).get("serious")
+            if serious is None:
+                left_out["serious_share_unknown"] = left_out.get("serious_share_unknown", 0) + 1
+            elif serious > SERIOUS_SHARE * number(rec["reports"]):
+                if non_clinical(r):
+                    left_out["non_clinical"] = left_out.get("non_clinical", 0) + 1
+                else:
+                    add(rec, "missed_serious", OWN)
     have = {r["reaction"] for r in own}
     for d in raw.get("direct", []):
         for rec in d.get("rows", []):
@@ -143,18 +168,28 @@ def label_status(reaction: str, label: dict) -> str:
     return search(reaction, label)["summary"]
 
 
-def limits(raw: dict, sizes: dict) -> list[str]:
+def limits(raw: dict, sizes: dict, left_out: dict | None = None, have_severity: bool = True) -> list[str]:
+    left_out = left_out or {}
     out = ["Designated medical events are matched by exact name, and pregnancy, breastfeeding and newborn terms by "
            "whole words in the name, so a related term that uses none of those words is missed.",
-           f"The {HIDDEN_TOP} hidden terms come from the drug's own list, and the app's rules for non-clinical terms "
-           f"(administrative, social, pregnancy exposure) leave some such terms in."]
+           f"Missed serious terms come from the drug's own list, where the run's serious counts cover them. The serious "
+           f"flag is for the whole report, which may list other reactions."]
+    if not have_severity:
+        out.append("The run's serious counts were not available, so no missed serious terms are listed this run.")
+    elif left_out.get("serious_share_unknown"):
+        out.append(f"{left_out['serious_share_unknown']:,} terms outside the screen have no serious count (they are "
+                   f"below the cutoff of the drug's serious-report list), so they could not be judged and are not "
+                   f"listed.")
+    if left_out.get("non_clinical"):
+        out.append(f"{left_out['non_clinical']:,} serious terms outside the screen are left out as non-clinical by the "
+                   f"app's rules (administrative, social or pregnancy-exposure terms).")
     if not sizes["own_full"]:
         out.append(f"The drug's own list is complete ({sizes['own_terms']:,} terms), so it holds every reaction "
                    f"reported with the drug and no direct openFDA count was needed.")
         return out
     out.append(f"The drug's own list is full ({sizes['own_terms']:,} terms, smallest count {sizes['own_cutoff']:,}). "
                f"Designated medical events missing from it were counted directly in openFDA, and pregnancy and newborn "
-               f"terms by an openFDA word search. Hidden terms below its cutoff are not ranked.")
+               f"terms by an openFDA word search. Missed serious terms below its cutoff are not seen.")
     direct = raw.get("direct", [])
     dme = [d for d in direct if d["kind"] == "designated_medical_event"]
     named = {r["reaction"] for d in dme for r in d.get("rows", [])}
@@ -184,50 +219,61 @@ def limits(raw: dict, sizes: dict) -> list[str]:
     return out
 
 
-def assemble(raw: dict, signals: list, passing: list, queue: list[dict], label: dict) -> dict:
-    """The dossier section from DataClerk.serious_terms() and the run's screen and queue."""
+def assemble(raw: dict, signals: list, passing: list, queue: list[dict], label: dict,
+             severity: dict | None = None) -> dict:
+    """The dossier section from DataClerk.serious_terms(), the run's serious counts, screen and queue. Its three
+    sections are listed in SECTIONS. Designated medical events keep their order (not screened first, then by reports),
+    and the other two are most-reported first."""
     s = raw["sizes"]
     sizes = {"own_terms": number(s["own_terms"]), "own_cutoff": number(s["own_cutoff"]),
              "all_terms": number(s["all_terms"]), "all_cutoff": number(s["all_cutoff"])}
     sizes["own_full"] = sizes["own_terms"] >= 999
     screened = {x.reaction: x for x in signals}
     queued = {q["reaction"]: q["workflow_status"] for q in queue}
-    items = []
-    for r, t in terms(raw).items():
+    left_out: dict = {}
+    sections_out = {name: [] for name in SECTIONS.values()}
+    for r, t in terms(raw, severity, left_out).items():
         status, detail = screen_status(r, t, sizes, screened, {x.reaction for x in passing}, queued)
         item = {"reaction": r, "reports": t["reports"], "all_drug_reports": t["all_drug_reports"],
-                "groups": t["groups"], "count_from": t["count_from"], "screen_status": status,
+                "serious_share": t["serious_share"], "count_from": t["count_from"], "screen_status": status,
                 "screen_detail": detail}
         if status != "in_review_queue":
             item["label_status"] = label_status(r, label)
-        items.append(item)
-    items.sort(key=lambda i: (STATUS_ORDER[i["screen_status"]], -i["reports"], i["reaction"]))
+        sections_out[SECTIONS[t["groups"][0]]].append(item)
+    sections_out["designated_medical_events"].sort(
+        key=lambda i: (STATUS_ORDER[i["screen_status"]], -i["reports"], i["reaction"]))
+    for name in ("missed_serious_terms", "pregnancy_and_newborn"):
+        sections_out[name].sort(key=lambda i: (-i["reports"], i["reaction"]))
     reads, registered = sum("query_id" in d for d in raw.get("direct", [])), raw.get("registered_now", 0)
-    return {"status": "done", "note": NOTE, "groups": GROUPS, "lists": sizes, "terms": items,
+    return {"status": "done", "note": NOTE, "groups": GROUPS, "serious_threshold": SERIOUS_SHARE, "lists": sizes,
+            **sections_out, "term_count": sum(len(v) for v in sections_out.values()), "left_out": left_out,
             "openfda": {"requests": registered + reads, "registered_now": registered, "direct_reads": reads,
                         "note": "Each read of a direct count's REST table fetches openFDA once, and registering a new "
                                 "one costs one more the first time. The drug's own list and the all-drugs list are "
                                 "the screen's tables, read from Zetaris's cache."},
-            "limits": limits(raw, sizes), "query_ids": raw["query_ids"]}
+            "limits": limits(raw, sizes, left_out, bool(severity)), "query_ids": raw["query_ids"]}
 
 
-def collect(job, wait: float, tracer, signals: list, passing: list, queue: list[dict], label: dict) -> dict:
+def collect(job, wait: float, tracer, signals: list, passing: list, queue: list[dict], label: dict,
+            severity: dict | None = None) -> dict:
     """The section, waiting at most `wait` seconds for the background job. A job that is not back, or failed, gives a
     section that says so and a degraded trace event. It never stops the run."""
     try:
         raw = job.result(timeout=max(0.0, wait))
-        section = assemble(raw, signals, passing, queue, label)
+        section = assemble(raw, signals, passing, queue, label, severity)
     except Exception as e:  # shown for a person to review, so no failure here may stop the run
         status = "not finished" if isinstance(e, FutureTimeout) else f"failed: {str(e)[:200]}"
         tracer.event("data_clerk", "degraded", step="safety net", error=status,
                      fallback="no serious-term safety net this run")
-        return {"status": status, "note": NOTE, "terms": [], "query_ids": []}
+        return {"status": status, "note": NOTE, **{name: [] for name in SECTIONS.values()}, "term_count": 0,
+                "query_ids": []}
     for d in raw.get("direct", []):
         if "error" in d:
             tracer.event("data_clerk", "degraded", step="safety net direct count", error=d["error"][:200],
                          fallback=f"no counts below the drug's own cutoff for {len(d['values'])} "
                                   f"{KIND_NAMES[d['kind']]}")
-    tracer.event("data_clerk", "safety_net", terms=len(section["terms"]),
-                 not_screened=sum(i["screen_status"] == "not_screened" for i in section["terms"]),
+    items = [i for name in SECTIONS.values() for i in section[name]]
+    tracer.event("data_clerk", "safety_net", terms=len(items), by_section={n: len(section[n]) for n in SECTIONS.values()},
+                 not_screened=sum(i["screen_status"] == "not_screened" for i in items),
                  openfda_requests=section["openfda"]["requests"], query_ids=section["query_ids"])
     return section

@@ -206,7 +206,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity, label,
                          sources)
     # Only now, with every model call done and the queue ranked, is the safety net read.
-    net = collect_safety_net(net_job, min(SOURCE_WAIT, max(0.0, left())), tracer, signals, passing, queue, label)
+    net = collect_safety_net(net_job, min(SOURCE_WAIT, max(0.0, left())), tracer, signals, passing, queue, label,
+                             severity)
     ctx["evidence_ids"] |= set(net["query_ids"])
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
@@ -224,7 +225,7 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
               "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values()),
               "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue),
               "manual_review": sum(q["manual_review"]["needed"] for q in queue),
-              "safety_net_terms": len(net["terms"])}
+              "safety_net_terms": net["term_count"]}
 
     queries, degraded, setup_warnings = {}, [], []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
