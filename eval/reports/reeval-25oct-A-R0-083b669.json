@@ -1,0 +1,390 @@
+{
+ "gold": "gold_v2.jsonl",
+ "scores": [
+  {
+   "run_id": "20261025T072719Z-dcfa6b",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 9,
+    "correct": 8,
+    "accuracy": 0.889
+   },
+   "final": {
+    "scored": 7,
+    "correct": 7,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 7,
+    "not_reviewed": 1,
+    "unresolved_was_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 4
+    },
+    "rule": {
+     "correct": 3
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "likely_indication_or_disease (ambiguous)": 1,
+     "possible_new_signal (ambiguous)": 2,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "FULL BLOOD COUNT ABNORMAL",
+    "OBSTRUCTIVE AIRWAYS DISORDER"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "NIGHTMARE",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "failed": 1
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 4,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 19,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 0
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 1,
+     "challenge_not_reviewed": 1,
+     "priority_changed": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T080114Z-0cdb6f",
+   "drug": "atorvastatin",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 9,
+    "correct": 9,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 8,
+    "correct": 8,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "not_reviewed": 3,
+    "kept_correct": 6
+   },
+   "added_after_missing": {
+    "count": 2,
+    "scored": 2,
+    "correct": 2,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 5
+    },
+    "analyst": {
+     "correct": 3
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 7,
+    "gold": {
+     "possible_new_signal (ambiguous)": 4,
+     "not in gold": 3
+    }
+   },
+   "unresolved": [
+    "DIABETES MELLITUS"
+   ],
+   "ambiguous_classified": 7,
+   "not_in_gold": [
+    "CARDIAC FAILURE CONGESTIVE",
+    "DIABETES MELLITUS",
+    "HYPERKALAEMIA",
+    "MACULAR DEGENERATION",
+    "SYNCOPE"
+   ],
+   "open_items": {},
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 2,
+    "on_label -> on_label": 6
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 0
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 3,
+     "challenge_not_reviewed": 3,
+     "priority_changed": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T081259Z-d4c33c",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 13,
+    "correct": 12,
+    "accuracy": 0.923
+   },
+   "final": {
+    "scored": 13,
+    "correct": 12,
+    "accuracy": 0.923
+   },
+   "reviewer_effect": {
+    "kept_correct": 12,
+    "kept_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 1,
+     "correct": 8
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 5,
+    "gold": {
+     "possible_new_signal (ambiguous)": 4,
+     "on_label": 1
+    }
+   },
+   "unresolved": [
+    "CHRONIC KIDNEY DISEASE",
+    "IMPAIRED GASTRIC EMPTYING"
+   ],
+   "ambiguous_classified": 4,
+   "not_in_gold": [
+    "CHRONIC KIDNEY DISEASE",
+    "SHOCK"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 7,
+    "on_label -> on_label": 5,
+    "on_label -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T084640Z-188701",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 14,
+   "round1": {
+    "scored": 13,
+    "correct": 12,
+    "accuracy": 0.923
+   },
+   "final": {
+    "scored": 11,
+    "correct": 10,
+    "accuracy": 0.909
+   },
+   "reviewer_effect": {
+    "unresolved_was_correct": 2,
+    "kept_correct": 10,
+    "kept_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 8
+    },
+    "analyst": {
+     "correct": 2,
+     "wrong": 1
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 1,
+    "gold": {
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "COMPLETED SUICIDE",
+    "DEPRESSION",
+    "INTENTIONAL SELF-INJURY"
+   ],
+   "ambiguous_classified": 1,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HALLUCINATION",
+    "HYPONATRAEMIA",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "on_label -> likely_indication_or_disease": 1,
+    "on_label -> on_label": 10
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 3,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T090814Z-16518f",
+   "drug": "isotretinoin",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 14,
+    "correct": 14,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 12,
+    "correct": 12,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 12,
+    "not_reviewed": 2
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 6
+    },
+    "rule": {
+     "correct": 6
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "not_meaningful (ambiguous)": 1,
+     "possible_new_signal": 1,
+     "possible_new_signal (ambiguous)": 1,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "PREGNANCY",
+    "UNINTENDED PREGNANCY"
+   ],
+   "ambiguous_classified": 2,
+   "not_in_gold": [
+    "ANXIETY",
+    "DRY EYE"
+   ],
+   "open_items": {},
+   "confusion_final": {
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 9,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 0
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}

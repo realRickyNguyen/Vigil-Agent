@@ -1,0 +1,387 @@
+{
+ "gold": "gold_v2.jsonl",
+ "scores": [
+  {
+   "run_id": "20261025T091934Z-8d4142",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 10,
+    "correct": 10,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 10,
+    "correct": 10,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 10
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 6
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 6,
+    "gold": {
+     "likely_indication_or_disease (ambiguous)": 1,
+     "possible_new_signal (ambiguous)": 4,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 6,
+   "not_in_gold": [
+    "AGGRESSION",
+    "ANXIETY",
+    "NIGHTMARE",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 5,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 3
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 1,
+     "challenge_not_reviewed": 1,
+     "priority_changed": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T093028Z-dd472b",
+   "drug": "atorvastatin",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 9,
+    "correct": 9,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 9,
+    "correct": 9,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 9
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 5
+    },
+    "analyst": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 6,
+    "gold": {
+     "possible_new_signal (ambiguous)": 4,
+     "not in gold": 2
+    }
+   },
+   "unresolved": [
+    "TRANSIENT ISCHAEMIC ATTACK"
+   ],
+   "ambiguous_classified": 7,
+   "not_in_gold": [
+    "CARDIAC FAILURE CONGESTIVE",
+    "HYPOMAGNESAEMIA",
+    "MACULAR DEGENERATION",
+    "TRANSIENT ISCHAEMIC ATTACK"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 3,
+    "on_label -> on_label": 6
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 3,
+     "challenge_not_reviewed": 3,
+     "priority_changed": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T094242Z-36dbff",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 12,
+    "correct": 11,
+    "accuracy": 0.917
+   },
+   "final": {
+    "scored": 12,
+    "correct": 11,
+    "accuracy": 0.917
+   },
+   "reviewer_effect": {
+    "kept_correct": 11,
+    "kept_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 1,
+     "correct": 8
+    },
+    "rule": {
+     "correct": 3
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 5,
+    "gold": {
+     "possible_new_signal (ambiguous)": 3,
+     "on_label": 1,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "IMPAIRED GASTRIC EMPTYING"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "CHRONIC KIDNEY DISEASE",
+    "CORONARY ARTERY DISEASE",
+    "PANCREATITIS ACUTE",
+    "SHOCK"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 7,
+    "on_label -> on_label": 4,
+    "on_label -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T095355Z-b5d91a",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 14,
+   "round1": {
+    "scored": 13,
+    "correct": 13,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 13,
+    "correct": 13,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 13
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 8
+    },
+    "analyst": {
+     "correct": 5
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 2,
+    "gold": {
+     "on_label (ambiguous)": 2
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 5,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HYPERHIDROSIS",
+    "HYPONATRAEMIA",
+    "MANIA",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "on_label -> on_label": 13
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T100333Z-999438",
+   "drug": "isotretinoin",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 13,
+    "correct": 13,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 13,
+    "correct": 13,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 13
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 5
+    },
+    "rule": {
+     "correct": 8
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "not_meaningful (ambiguous)": 2,
+     "possible_new_signal": 1,
+     "possible_new_signal (ambiguous)": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 4,
+   "not_in_gold": [
+    "ABORTION SPONTANEOUS",
+    "BLOOD CHOLESTEROL INCREASED",
+    "DEPRESSED MOOD",
+    "DRY EYE",
+    "SUICIDE ATTEMPT"
+   ],
+   "open_items": {
+    "pending": 3,
+    "failed": 1
+   },
+   "confusion_final": {
+    "not_meaningful -> not_meaningful": 3,
+    "on_label -> on_label": 9,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 19,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 5,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}

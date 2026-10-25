@@ -1,0 +1,169 @@
+{
+ "gold": "gold_v2.jsonl",
+ "scores": [
+  {
+   "run_id": "20261025T111951Z-ff5945",
+   "drug": "montelukast",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 10,
+    "correct": 9,
+    "accuracy": 0.9
+   },
+   "final": {
+    "scored": 10,
+    "correct": 10,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 9,
+    "fixed": 1
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 6
+    },
+    "rule": {
+     "correct": 4
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 5,
+    "gold": {
+     "likely_indication_or_disease (ambiguous)": 1,
+     "possible_new_signal (ambiguous)": 3,
+     "not in gold": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 5,
+   "not_in_gold": [
+    "ABNORMAL BEHAVIOUR",
+    "AGGRESSION",
+    "ANXIETY",
+    "DEPRESSION",
+    "GASTROOESOPHAGEAL REFLUX DISEASE",
+    "NIGHTMARE",
+    "SUICIDAL IDEATION",
+    "URTICARIA"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 5,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 3
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 5,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 1,
+     "challenge_not_reviewed": 0,
+     "priority_changed": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T113131Z-d278f5",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 14,
+   "round1": {
+    "scored": 13,
+    "correct": 13,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 14,
+    "correct": 14,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 13
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 1,
+    "correct": 1,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 8
+    },
+    "analyst": {
+     "correct": 6
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 1,
+    "gold": {
+     "on_label (ambiguous)": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 4,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HYPERHIDROSIS",
+    "HYPONATRAEMIA",
+    "MANIA",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "on_label -> on_label": 14
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}
