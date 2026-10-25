@@ -151,8 +151,9 @@ def test_semaglutide_decreased_appetite_records_every_section_searched():
     s = search("DECREASED APPETITE", OZEMPIC)
     assert s["found"] == [] and s["named_in"] == []
     assert s["searched"] == ["adverse_reactions", "spl_medguide", "pharmacodynamics", "pharmacokinetics"]
-    assert s["summary"].startswith("Not named in any section searched. Searched 4 sections: adverse_reactions, "
-                                   "spl_medguide, pharmacodynamics, pharmacokinetics.")
+    assert s["summary"] == ("Not named in any section searched. That is about the label only, not whether it is the "
+                            "treated condition. Searched 4 sections: adverse_reactions, spl_medguide, pharmacodynamics, "
+                            "pharmacokinetics.")
     ok = code_checks(claim("DECREASED APPETITE", "not_found"), sig("DECREASED APPETITE"), OZEMPIC, {"q-1"})
     assert ok["not_named_in_label"] == (True, "label text does not name 'decreased appetite'")
 
@@ -264,3 +265,24 @@ def test_the_dossier_item_carries_the_label_search():
     by = {q["reaction"]: q for q in queue}
     assert by["DECREASED APPETITE"]["label_search"]["summary"].startswith("Not named in any section searched.")
     assert "reduces body weight" in by["WEIGHT DECREASED"]["label_search"]["summary"]
+
+
+def test_a_curated_synonym_names_the_reaction_before_the_expected_effect():
+    # Ozempic's chosen label (25 Oct). The warning names hypoglycemia, and the pharmacology lowers blood glucose. On
+    # 25 Oct the search line showed only the pharmacology, and the Analyst marked BLOOD GLUCOSE DECREASED unclear.
+    label = {"warnings_and_cautions": "( 5.4 ) • Hypoglycemia: Concomitant use with an insulin secretagogue or insulin "
+                                      "may increase the risk of hypoglycemia, including severe hypoglycemia.",
+             "mechanism_of_action": "Semaglutide reduces blood glucose through a mechanism where it stimulates insulin "
+                                    "secretion and lowers glucagon secretion, both in a glucose-dependent manner.",
+             "pharmacokinetics": "Hepatic impairment did not change exposure."}
+    s = search("BLOOD GLUCOSE DECREASED", label)
+    assert [(h["section"], h["how"], h["match"]) for h in s["found"] if h["kind"] == "effect"] ==         [("warnings_and_cautions", "related", "hypoglycemia")]
+    assert s["summary"].startswith('Named by a related term ("hypoglycemia") in sections that can support coverage: '
+                                   'warnings_and_cautions. Also an expected effect of the drug (mechanism_of_action')
+    assert "warnings_and_cautions" in s["named_in"]
+    assert any(m.startswith("not_named_in_label") for m in check(claim("BLOOD GLUCOSE DECREASED", "not_found"), label))
+    # A related term never settles coverage by rule, and the broad liver stems name nothing.
+    assert route(sig("BLOOD GLUCOSE DECREASED"), label, ["q-1"]) is None
+    assert search("TRANSAMINASES INCREASED", label)["found"] == []
+    block = excerpt_block(["BLOOD GLUCOSE DECREASED"], label, "q-l")
+    assert "Code search: Named by a related term" in block

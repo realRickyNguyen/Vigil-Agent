@@ -86,7 +86,8 @@ def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set
         # holds the parts that make it wrong (label.search).
         named = search(f.reaction, label)["named_in"]
         c["not_named_in_label"] = (not named, f"label text {'names' if named else 'does not name'} "
-                                              f"'{f.reaction.lower()}'" + (f" in {', '.join(named)}" if named else ""))
+                                              f"'{f.reaction.lower()}'" + (f", or a related term, in {', '.join(named)}"
+                                                                           if named else ""))
     if f.review_priority == "review_next":
         # Only an unlabelled clinical event can be sent for review, and it must say what to check.
         c["priority_consistent"] = (f.context == "clinical_event" and f.label_coverage in ("not_found", "unclear"),

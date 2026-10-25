@@ -109,6 +109,22 @@ def synonym_stems(reaction: str) -> list[str]:
     return [extra for pattern, extras in SYNONYMS if re.search(pattern, term) for extra in extras]
 
 
+# Synonym stems too broad to name a reaction on their own ("hepatic impairment" is no liver enzyme rise).
+BROAD_SYNONYMS = {"hepat", "liver"}
+
+
+def related_in(reaction: str, text: str) -> str | None:
+    """The first word in text that a curated synonym stem names (SYNONYMS, less BROAD_SYNONYMS), such as
+    "hypoglycemia" for BLOOD GLUCOSE DECREASED. On 25 Oct, without this, semaglutide's search line showed only the
+    pharmacology's glucose lowering and the Analyst marked the hypoglycaemia warning's reaction unclear."""
+    t = us(norm(text))
+    for stem in synonym_stems(reaction):
+        m = re.search(rf"\b{re.escape(stem)}[a-z]*", t) if stem not in BROAD_SYNONYMS else None
+        if m:
+            return m.group(0)
+    return None
+
+
 def sections(label: dict) -> dict:
     return {k: v for k, v in label.items() if k not in META and v}
 
@@ -297,17 +313,21 @@ def find_term(reaction: str, label: dict, kinds: tuple[str, ...] = ("indication"
 
 def search(reaction: str, label: dict) -> dict:
     """Where the label names the reaction, part by part, done in code before any model call. "named_in" lists the
-    parts that make "not found" wrong, which are a name in the indications or an effect part, a change in an effect
-    part, or a change in the pharmacology (an expected effect of the drug). The rest is shown, never counted."""
+    parts that make "not found" wrong, which are a name in the indications or an effect part, a change or a related
+    term (a curated synonym) in an effect part, or a change in the pharmacology (an expected effect of the drug).
+    The rest is shown, never counted."""
     found, searched = [], []
     for sec, part, kind, text in parts(label):
         searched.append(sec)
         name = name_in(reaction, text)
         change = None if name else change_in(reaction, text)
-        if name or change:
-            quote = (label_sentence(text, name) or name) if name else change
-            found.append({"section": sec, "part": part, "kind": kind, "how": "name" if name else "change",
-                          "match": name, "quote": quote})
+        related = related_in(reaction, text) if kind == "effect" and not (name or change) else None
+        if name or change or related:
+            word = name or related
+            quote = (label_sentence(text, word) or word) if word else change
+            found.append({"section": sec, "part": part, "kind": kind,
+                          "how": "name" if name else "change" if change else "related", "match": word,
+                          "quote": quote})
     named = [h for h in found if (h["kind"] == "indication" and h["how"] == "name") or h["kind"] == "effect"
              or (h["kind"] == "expected_effect" and h["how"] == "change")]
     out = {"searched": list(dict.fromkeys(searched)), "found": found,
@@ -333,7 +353,12 @@ def explain(s: dict, searched: bool = True) -> str:
     if by("effect", "change"):
         out.append(f"Described in other words in sections that can support coverage: "
                    f"{', '.join(where(h) for h in by('effect', 'change'))}.")
-    out += [f"Expected effect of the drug ({h['section']}, not an adverse effect, never coverage): \"{h['quote']}\""
+    if by("effect", "related"):
+        terms = list(dict.fromkeys(f'"{h["match"]}"' for h in by("effect", "related")))
+        out.append(f"Named by a related term ({', '.join(terms)}) in sections that can support coverage: "
+                   f"{', '.join(where(h) for h in by('effect', 'related'))}.")
+    also = "Also an expected" if by("effect") else "Expected"
+    out += [f"{also} effect of the drug ({h['section']}, not an adverse effect, never coverage): \"{h['quote']}\""
             for h in by("expected_effect", "change")]
     if by("expected_effect", "name"):
         out.append(f"Mentioned in the pharmacology ({', '.join(where(h) for h in by('expected_effect', 'name'))}), "
@@ -342,7 +367,10 @@ def explain(s: dict, searched: bool = True) -> str:
         out.append(f"{'Also named' if len(by('not_coverage')) < len(s['found']) else 'Named only'} where it never counts "
                    f"as coverage: {', '.join(where(h) for h in by('not_coverage'))}.")
     if not s["found"]:
-        out.append("Not named in any section searched.")
+        # Said plainly because on 25 Oct the Analyst read "not named" as a reason to call montelukast CHEST DISCOMFORT
+        # a clinical event, skipping the treated-condition question it should decide first.
+        out.append("Not named in any section searched. That is about the label only, not whether it is the treated "
+                   "condition.")
     if searched:
         out.append(f"Searched {len(s['searched'])} sections: {', '.join(s['searched'])}.")
     return " ".join(out)
