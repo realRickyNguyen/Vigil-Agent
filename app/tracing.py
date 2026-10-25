@@ -61,6 +61,9 @@ def progress_line(rec: dict) -> str | None:
                 f"screened ({d['openfda_requests']} openFDA requests)")
     if k == "co_drug_check":
         return f"{who} checked {d['reaction']} against its co-reported drugs: {d['outcome']}"
+    if k == "early_checks":
+        return (f"{who} starts its co-drug checks while the Reviewer works: "
+                f"{', '.join(d['candidates']) or 'no review_next findings'}")
     if k == "budget_stop":
         return f"{who} skips the {d['step']}: {d['seconds_left']} s left in the run's time budget"
     if k == "remembered":

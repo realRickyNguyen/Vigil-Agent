@@ -283,7 +283,10 @@ class NightshiftClient:
             attempt += 1
             if attempt > self.s.max_retries:
                 break
-            time.sleep(5 * attempt)
+            # A first-byte cut means no reply had started, so the retry goes out at once. Over 18 runs on 24 and
+            # 25 Oct there were 58 such cuts, about 3 a run, each followed by a 5 s wait.
+            if "ttfb_timeout" not in last:
+                time.sleep(5 * attempt)
         raise MeterlessError(last)
 
     def chat_json(self, agent: str, model: str, messages: list[dict], **kw) -> dict:

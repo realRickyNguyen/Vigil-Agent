@@ -255,9 +255,11 @@ class Analyst:
                     findings[name] = f
         return list(findings.values()), str(out.get("summary") or "")
 
-    def run(self, ctx: dict) -> tuple[list[Finding], str]:
+    def run(self, ctx: dict, on_selection=None) -> tuple[list[Finding], str]:
         """The top rows are classified while the pick call chooses the extras, then the extras are classified:
-        the pick no longer holds up classification (1 to 3 minutes on 23 Oct)."""
+        the pick no longer holds up classification (1 to 3 minutes on 23 Oct). on_selection(reactions) is called
+        once the reactions to assess are fixed, before the extras are classified, so work that needs only their
+        names can start."""
         always = [s.reaction for s in ctx["passing"][:self.top]]
         with ThreadPoolExecutor(max_workers=1) as pool:
             picking = pool.submit(self.pick, ctx)
@@ -267,7 +269,9 @@ class Analyst:
                             "rule": f"the {self.top} strongest rows by chi2, plus up to {self.extra} chosen by the model"}
         self.llm.tracer.event(self.name, "selection", **ctx["selection"])
         ctx["picked"] = list(dict.fromkeys(always + chosen))
-        extra = [r for r in ctx["picked"] if r not in always]
+        if on_selection:
+            on_selection(ctx["picked"])
+        extra =[r for r in ctx["picked"] if r not in always]
         if extra:
             more, more_summary = self.classify(ctx, extra)
             findings += more

@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 from app.adapters.zetaris import ZetarisClient, ZetarisError
 from app.data.label import (INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, POPULATIONS, SECTIONS,
@@ -320,30 +321,41 @@ class DataClerk:
         self.label_choice = None
 
     def register_drug(self, drug: str) -> dict:
-        """Create the per-drug REST tables and views if they do not exist yet."""
+        """Create the per-drug REST tables and views if they do not exist yet. Each statement is a round trip of
+        2 to 2.5 s even when the table already exists, and eight in a row took a median of 22 s (24 and 25 Oct
+        traces). So they run side by side, in two steps: the raw tables first, then the views and caches that
+        read them."""
         s = slug(drug)
         q = urllib.parse.quote(f'"{drug}"')
         search = f"search={drug_search(drug)}"
-        created = {
-            "reactions_raw": self.z.ensure(rest_table(
+        raws = {
+            "reactions_raw": (rest_table(
                 f"faers_d2_{s}_reactions_raw",
                 f"{OPENFDA}/event.json?{search}&count=patient.reaction.reactionmeddrapt.exact&limit=999"),
                 f"register FAERS reaction counts for {drug}"),
-            "total_raw": self.z.ensure(rest_table(
+            "total_raw": (rest_table(
                 f"faers_d2_{s}_total_raw", f"{OPENFDA}/event.json?{search}&count=serious"),
                 f"register FAERS report total for {drug}"),
-            "label_raw": self.z.ensure(rest_table(
+            "label_raw": (rest_table(
                 f"label_d2_{s}_raw", f"{OPENFDA}/label.json?search=openfda.generic_name:{q}"
                                      f"&sort=effective_time:desc&limit={LABEL_CANDIDATES}"),
                 f"register the newest labels for {drug}"),
-            "reactions": self.z.ensure(count_view(f"faers_d2_{s}_reactions", f"faers_d2_{s}_reactions_raw", "reaction"),
-                                       f"flatten reaction counts for {drug}"),
-            "total": self.z.ensure(count_view(f"faers_d2_{s}_total", f"faers_d2_{s}_total_raw", "serious_flag"),
-                                   f"flatten report total for {drug}"),
         }
-        # Cache every run: CACHE TABLE is cheap once cached, and the cache does not survive a Zetaris restart.
-        for raw in (f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw", f"label_d2_{s}_raw"):
-            self.z.run(f"CACHE TABLE openfda_rest.{raw}", f"cache {raw}", ddl=True)
+        views = {
+            "reactions": (count_view(f"faers_d2_{s}_reactions", f"faers_d2_{s}_reactions_raw", "reaction"),
+                          f"flatten reaction counts for {drug}"),
+            "total": (count_view(f"faers_d2_{s}_total", f"faers_d2_{s}_total_raw", "serious_flag"),
+                      f"flatten report total for {drug}"),
+        }
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            created = dict(zip(raws, pool.map(lambda a: self.z.ensure(*a), raws.values())))
+            view_jobs = [pool.submit(self.z.ensure, *a) for a in views.values()]
+            # Cache every run: CACHE TABLE is cheap once cached, and the cache does not survive a Zetaris restart.
+            cache_jobs = [pool.submit(self.z.run, f"CACHE TABLE openfda_rest.{raw}", f"cache {raw}", ddl=True)
+                          for raw in (f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw", f"label_d2_{s}_raw")]
+            created.update(zip(views, [j.result() for j in view_jobs]))
+            for j in cache_jobs:
+                j.result()
         return created
 
     def totals(self, drug: str) -> dict:

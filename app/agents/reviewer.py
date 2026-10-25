@@ -113,14 +113,19 @@ class Reviewer:
         self.clerk = clerk
         self.parallel = parallel
 
-    def review(self, ctx: dict, findings: list[Finding], seen: set[str]) -> tuple[list[Verdict], list[dict], str]:
+    def review(self, ctx: dict, findings: list[Finding], seen: set[str],
+               recheck: tuple[list[str], tuple] | None = None) -> tuple[list[Verdict], list[dict], str]:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
-        names reactions nobody has looked at yet."""
+        names reactions nobody has looked at yet. `recheck` is (reactions, (QueryResult, {reaction: Signal})) from
+        a re-check already run; it is used only when it covers every finding, otherwise the re-check runs here."""
         verdicts, checked = [], []
         if not findings:  # an empty re-check would fetch the drug's whole screen
             return [], [], ""
         try:
-            res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
+            if recheck and {f.reaction for f in findings} <= set(recheck[0]):
+                res, fresh = recheck[1]
+            else:
+                res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
         except ZetarisError as e:
             # Without the re-check the numbers cannot be verified, so no finding is reviewed (no crash).
             self.llm.tracer.event(self.name, "degraded", step="recheck", error=str(e)[:200], fallback="not reviewed")

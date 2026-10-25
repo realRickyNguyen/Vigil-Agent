@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from app.adapters.meterless import NightshiftClient
-from app.adapters.zetaris import ZetarisClient
+from app.adapters.zetaris import ZetarisClient, ZetarisError
 from app.agents.analyst import Analyst, screen_table
 from app.agents.reviewer import Reviewer
 from app.agents.reviewer import failed as failed_checks
@@ -37,6 +37,8 @@ REVISION_NEEDS = 120
 CHALLENGE_NEEDS = 90
 # Seconds the dossier waits, at most, for report-source checks still running at the end of a run.
 SOURCE_WAIT = 30
+# Extra review_next findings the Skeptic checks early, in case the Reviewer turns one of its top ones down.
+EARLY_EXTRA = 1
 
 NOT_YET_CHECKED = [
     "Confounding by indication beyond the Analyst's judgement (no stratified counts yet)",
@@ -56,17 +58,19 @@ NOT_YET_CHECKED = [
 
 
 def investigate(request: dict, settings: Settings, tracer: Tracer | None = None) -> dict:
-    """One run. The report-source checks' pool is shut down however the run ends, so a run that stops on an error
-    (a rejected Nightshift token) does not leave queued Zetaris and openFDA calls behind it."""
-    sources_pool = ThreadPoolExecutor(max_workers=4)
+    """One run. The background pools (report sources, and the re-check and Skeptic checks that overlap the model
+    calls) are shut down however the run ends, so a run that stops on an error (a rejected Nightshift token) does not
+    leave queued Zetaris and openFDA calls behind it."""
+    sources_pool, background = ThreadPoolExecutor(max_workers=4), ThreadPoolExecutor(max_workers=2)
     try:
-        return run_investigation(request, settings, tracer, sources_pool)
+        return run_investigation(request, settings, tracer, sources_pool, background)
     finally:
         sources_pool.shutdown(wait=False, cancel_futures=True)
+        background.shutdown(wait=False, cancel_futures=True)
 
 
 def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
-                      sources_pool: ThreadPoolExecutor) -> dict:
+                      sources_pool: ThreadPoolExecutor, background: ThreadPoolExecutor) -> dict:
     tracer = tracer or Tracer(settings.logs_dir)
     started = time.monotonic()
     left = lambda: settings.run_budget - (time.monotonic() - started)  # noqa: E731
@@ -85,14 +89,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     # Evidence, all through Zetaris.
     created = clerk.register_drug(drug)
     tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
-    totals = clerk.totals(drug)
-    # Independent Zetaris queries side by side; the Zetaris client keeps no state between calls.
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        jobs = [pool.submit(clerk.signals, drug), pool.submit(clerk.label, drug),
-                pool.submit(clerk.combination_products, drug, totals["drug_reports"]),
-                pool.submit(clerk.seriousness, drug), pool.submit(clerk.scope, drug)]
-        (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
-            (scope_res, scope_rec) = [j.result() for j in jobs]
+    totals, (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
+        (scope_res, scope_rec) = gather_evidence(clerk, drug)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     # The serious-term safety net (app/data/safety_net.py) is Zetaris and openFDA only, so it runs in the background
     # from here. Its terms never go into ctx, so no prompt, review item or ranking sees them.
@@ -133,15 +131,33 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
             ctx["sources"][r] = sources_pool.submit(check_report_sources, clerk, drug, r, usual_sources,
                                                     stats[r].a if r in stats else None)
 
-    findings, summary = analyst.run(ctx)
+    # Zetaris work that needs no model runs in the background while the model calls go on.
+    rechecking, targets = {}, None
+
+    def start_recheck(picked: list[str]) -> None:
+        # The Reviewer's re-check needs only the reaction names, which are fixed once the pick is in, so it runs
+        # while the Analyst classifies the extra picks (11.5 s median on its own, 24 and 25 Oct traces).
+        rechecking["names"] = list(picked)
+        rechecking["job"] = background.submit(clerk.recheck, drug, list(picked), "reviewer")
+
+    findings, summary = analyst.run(ctx, on_selection=start_recheck)
     tracer.event("analyst", "findings", round=1, findings=[f.to_dict() for f in findings], summary=summary)
     attempted = {f.reaction for f in findings} | set(ctx.get("unclassified", []))
+    early = None
+    if settings.skeptic_items:
+        # The Skeptic's checks are Zetaris only, so they run while the Reviewer reviews round 1. Run after it,
+        # they took a median of 82 s with nothing else running (24 and 25 Oct traces). Its targets are only known
+        # once the Reviewer has accepted them, so it checks one more of the Analyst's review_next findings than it
+        # needs: in those 18 runs the Analyst's top 4 held all 51 targets.
+        candidates = early_skeptic_targets(ctx, findings, settings.skeptic_items + EARLY_EXTRA)
+        tracer.event("skeptic", "early_checks", candidates=candidates)
+        early = background.submit(lambda c=candidates: dict(zip(c, skeptic_checks(ctx, skeptic, c))))
     state: dict = {}  # reaction -> {"finding", "verdict", "status", "history"}
     rounds, new_missing = [], []
-    background, prefetch = ThreadPoolExecutor(max_workers=1), None
     for rnd in range(1, settings.reviewer_rounds + 2):
         check_sources(findings)
-        verdicts, missing, reviewer_summary = reviewer.review(ctx, findings, attempted)
+        verdicts, missing, reviewer_summary = reviewer.review(
+            ctx, findings, attempted, recheck=early_recheck(rechecking) if rnd == 1 else None)
         by = {v.reaction: v for v in verdicts}
         retry = []
         for f in findings:
@@ -164,9 +180,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                        "missing": len(new_missing)})
         if rnd == 1 and settings.skeptic_items:
             # The Skeptic's targets are findings the Reviewer has just accepted, which the revision round does
-            # not touch, so its Zetaris checks run while the Analyst revises the rejected ones.
+            # not touch.
             targets = skeptic_targets(ctx, state, settings.skeptic_items)
-            prefetch = background.submit(lambda t=targets: (t, skeptic_checks(ctx, skeptic, t)))
         if (not retry and not new_missing) or rnd > settings.reviewer_rounds:
             break
         if left() < REVISION_NEEDS:
@@ -192,15 +207,18 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                 else "review rounds ran out before the Reviewer's objection was settled"))
             tracer.event("orchestrator", "dispute_unresolved", reaction=r, reason=entry["note"])
     skeptic_counts = {"checked": 0, "challenged": 0, "challenge_not_reviewed": 0, "priority_changed": 0}
-    if prefetch is not None:
-        prefetched = prefetch.result()  # skeptic.check catches its own Zetaris errors
+    if targets is not None:
+        done = early.result()  # skeptic.check catches its own Zetaris errors
+        late = [r for r in targets if r not in done]
+        tracer.event("skeptic", "early_checks_used", targets=targets, from_early=[r for r in targets if r in done],
+                     checked_now=late, unused=[r for r in done if r not in targets])
+        prefetched = (targets, skeptic_evidence(ctx, skeptic, targets, done))
         review = left() >= CHALLENGE_NEEDS
         if not review:
             skipped.append("skeptic challenge review")
             tracer.event("orchestrator", "budget_stop", step="skeptic challenge review", seconds_left=round(left()))
         skeptic_counts = skeptic_round(ctx, state, skeptic, reviewer, analyst, tracer, settings.skeptic_items,
                                        prefetched=prefetched, review=review)
-    background.shutdown()
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
     sources = collect_sources(ctx, tracer, min(SOURCE_WAIT, max(0.0, left())))
@@ -327,6 +345,44 @@ def collect_sources(ctx: dict, tracer: Tracer, wait: float) -> dict:
     return out
 
 
+def gather_evidence(clerk: DataClerk, drug: str) -> tuple:
+    """The Data Clerk's evidence queries side by side; the Zetaris client keeps no state between calls. Only the
+    combination query needs the totals (its share is of the drug's reports), so the others no longer wait for the
+    totals query (8.8 s median, 24 and 25 Oct traces). A drug with no reports still fails at the totals."""
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        jobs = [pool.submit(clerk.signals, drug), pool.submit(clerk.label, drug), pool.submit(clerk.seriousness, drug),
+                pool.submit(clerk.scope, drug)]
+        totals = clerk.totals(drug)
+        combo = pool.submit(clerk.combination_products, drug, totals["drug_reports"])
+        screen, label, severity, scope = [j.result() for j in jobs]
+        return totals, screen, label, combo.result(), severity, scope
+
+
+def early_recheck(rechecking: dict) -> tuple[list[str], tuple] | None:
+    """The re-check started at the Analyst's selection, as (reactions, (QueryResult, {reaction: Signal})). None if
+    it never started or failed, so the Reviewer runs it itself and handles a second failure as before."""
+    if "job" not in rechecking:
+        return None
+    try:
+        return rechecking["names"], rechecking["job"].result()
+    except ZetarisError:
+        return None
+
+
+def early_skeptic_targets(ctx: dict, findings: list[Finding], top: int) -> list[str]:
+    """The Analyst's strongest (by chi2) round-1 review_next findings, before the Reviewer has seen them."""
+    stats = {s.reaction: s for s in ctx["passing"]}
+    return sorted((f.reaction for f in findings if f.review_priority == "review_next"),
+                  key=lambda r: -(stats[r].chi2 if r in stats else 0))[:top]
+
+
+def skeptic_evidence(ctx: dict, skeptic: Skeptic, targets: list[str], early: dict) -> list[dict]:
+    """Each target's checks, in target order: from the early checks where they covered it, otherwise run now."""
+    late = [r for r in targets if r not in early]
+    now = dict(zip(late, skeptic_checks(ctx, skeptic, late))) if late else {}
+    return [early[r] if r in early else now[r] for r in targets]
+
+
 def skeptic_targets(ctx: dict, state: dict, top: int) -> list[str]:
     """The strongest (by chi2) review_next findings the Reviewer has accepted."""
     stats = {s.reaction: s for s in ctx["passing"]}
@@ -337,7 +393,7 @@ def skeptic_targets(ctx: dict, state: dict, top: int) -> list[str]:
 
 def skeptic_checks(ctx: dict, skeptic: Skeptic, picked: list[str]) -> list[dict]:
     """The Skeptic's Zetaris checks for each target. The items are independent, so they run side by side
-    (about 80 s each on 23 Oct). No model calls, so this can overlap the revision round."""
+    (about 80 s each on 23 Oct). No model calls, so this can overlap the Reviewer's first round."""
     stats = {s.reaction: s for s in ctx["passing"]}
     with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
         return list(pool.map(lambda r: skeptic.check(ctx["drug"], r, stats[r].prr if r in stats else None), picked))
@@ -350,7 +406,7 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
     gets one revision and the Reviewer one more look; a dispute still open after that ends as unresolved.
     If the Reviewer's look at the challenge itself fails (model call failed), the round-1 verdict stands and the
     item says the challenge was not reviewed, rather than losing its earlier review.
-    prefetched: (targets, checks) already run, from the end of the first review round. review=False when the
+    prefetched: (targets, checks) already run, mostly while the first review round ran. review=False when the
     run's time budget leaves no room for the challenge review: the evidence is still recorded."""
     picked, checks = prefetched if prefetched is not None else (None, None)
     if picked is None:
