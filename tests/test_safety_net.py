@@ -267,16 +267,18 @@ def test_a_term_the_agents_assessed_points_to_its_queue_item_and_is_not_repeated
     assert [i["reaction"] for name in SECTION_NAMES for i in sec[name]].count("SOMNOLENCE NEONATAL") == 1
     item = t["SOMNOLENCE NEONATAL"]
     assert item["screen_status"] == "in_review_queue" and "workflow status reviewed" in item["screen_detail"]
-    assert "label_status" not in item
+    assert item["label_status"] == "not_mentioned"  # every row has a label status, a queued one too
     below = t["MATERNAL EXPOSURE DURING PREGNANCY"]
     assert below["screen_status"] == "below_screen" and "PRR 0.77, chi-squared 0.2" in below["screen_detail"]
-    assert t["EXPOSURE VIA BREAST MILK"]["label_status"].startswith("Not named in any section searched.")
+    milk = t["EXPOSURE VIA BREAST MILK"]
+    assert milk["label_status"] == "not_mentioned" and milk["label_detail"].startswith("Not named in any section")
     assert where(sec, "SOMNOLENCE NEONATAL") == ["pregnancy_and_newborn"]  # still listed, pointing to the queue
 
 
 def test_a_caret_name_is_found_on_a_label_that_writes_an_apostrophe():
     # Empagliflozin's chosen label writes "Fournier's gangrene" (recorded 25 Oct); this sentence is made up around it.
-    from app.data.safety_net import label_status
+    from app.data.safety_net import label_view
+    label_status = lambda r, lab: label_view(r, lab)["label_detail"]  # noqa: E731
     label = {"warnings_and_cautions": "Necrotizing fasciitis of the perineum (Fournier\u2019s gangrene) has occurred.",
              "effective_time": "20260101"}
     assert label_status("FOURNIER^S GANGRENE", label).startswith("Named in sections that can support coverage")
@@ -436,19 +438,21 @@ def net_raw():
 
 def test_a_whole_run_never_promotes_safety_net_terms(tmp_path, monkeypatch):
     dossier, prompts = run(tmp_path / "with", monkeypatch, net_raw())
-    baseline, _ = run(tmp_path / "without", monkeypatch, {"own": [], "sizes": sizes(461, 1), "direct": [],
+    baseline, baseline_prompts = run(tmp_path / "without", monkeypatch, {"own": [], "sizes": sizes(461, 1), "direct": [],
                                                           "query_ids": []})
     net, queue = dossier["safety_net"], dossier["review_queue"]
     names = {q["reaction"] for q in queue}
     assert names == {"FULL BLOOD COUNT ABNORMAL", "PANCREATITIS"}
     assert "SOMNOLENCE NEONATAL" not in names and "EXPOSURE VIA BREAST MILK" not in names
     assert not any("SOMNOLENCE NEONATAL" in p or "BREAST MILK" in p or "FEELING DRUNK" in p for p in prompts)
+    # Every agent gets the same input, word for word, as in a run whose safety net is empty.
+    assert prompts == baseline_prompts and len(prompts) > 0
     # Same queue, in the same order, with the same priorities, as a run whose safety net is empty.
     strip = lambda q: [(i["reaction"], i["review_priority"], i["workflow_status"]) for i in q]  # noqa: E731
     assert strip(queue) == strip(baseline["review_queue"])
     t = by_name(net)
     assert t["SOMNOLENCE NEONATAL"]["screen_status"] == "not_screened"
-    assert t["PANCREATITIS"]["screen_status"] == "in_review_queue" and "label_status" not in t["PANCREATITIS"]
+    assert t["PANCREATITIS"]["screen_status"] == "in_review_queue" and "label_status" in t["PANCREATITIS"]
     assert dossier["counts"]["safety_net_terms"] == net["term_count"] == len(by_name(net)) > 0
     assert dossier["counts"]["review_next"] == baseline["counts"]["review_next"]
     assert set(net["query_ids"]) <= set(dossier["evidence_queries"]) | {"q-own", "q-size"}
@@ -492,3 +496,50 @@ def test_missed_serious_terms_are_those_mostly_serious_outside_the_screen_most_r
                for x in sec["limits"])
     assert any("1 terms outside the screen have no serious count" in x for x in sec["limits"])
     assert sec["serious_threshold"] == 0.5 and "more than 50%" in sec["groups"]["missed_serious"]
+
+
+def test_each_section_is_in_clinical_order_with_a_summary_line_and_a_thin_mark():
+    # Bryan's display of 25 Oct. Made-up rows, all outside the all-drugs top 999, made-up serious counts and a made-up
+    # label. (reaction, reports, all-drugs reports), and serious counts as (serious, reports).
+    own = [("PANCREATITIS", 1, None), ("ACUTE KIDNEY INJURY", 5, None), ("RHABDOMYOLYSIS", 3, None),
+           ("ANGIOEDEMA", 2, None), ("SEIZURE", 40, None), ("SYNCOPE", 50, None), ("TACHYCARDIA", 20, None),
+           ("HYPOMANIA", 15, None), ("BRADYCARDIA", 2, None), ("EXPOSURE VIA BREAST MILK", 22, None),
+           ("SOMNOLENCE NEONATAL", 8, None), ("PREMATURE DELIVERY", 6, None)]
+    severity = serious({"PANCREATITIS": (1, 1), "ACUTE KIDNEY INJURY": (5, 5), "RHABDOMYOLYSIS": (3, 3),
+                        "ANGIOEDEMA": (2, 2), "SEIZURE": (30, 40), "SYNCOPE": (50, 50), "TACHYCARDIA": (12, 20),
+                        "HYPOMANIA": (14, 15), "BRADYCARDIA": (2, 2), "EXPOSURE VIA BREAST MILK": (2, 22),
+                        "SOMNOLENCE NEONATAL": (1, 8), "PREMATURE DELIVERY": (6, 6)})
+    label = {"adverse_reactions": "Pancreatitis has been reported. Seizure occurred in 2 patients.",
+             "warnings_and_cautions": "Premature delivery has been reported.",
+             "contraindications": "Do not use in patients with a history of angioedema or syncope.",
+             "effective_time": "20260101"}
+    _, sec = section(NetZetaris(own, sizes(461, 1)), "zuranolone", label=label, severity=severity)
+    names = lambda name: [i["reaction"] for i in sec[name]]  # noqa: E731
+    # Not mentioned first, then mentioned only outside effect text, then covered, each by serious reports. HYPOMANIA
+    # has fewer reports than TACHYCARDIA but more serious ones. A designated medical event with 1 report is still shown.
+    assert names("designated_medical_events") == ["ACUTE KIDNEY INJURY", "RHABDOMYOLYSIS", "ANGIOEDEMA", "PANCREATITIS"]
+    assert names("missed_serious_terms") == ["HYPOMANIA", "TACHYCARDIA", "BRADYCARDIA", "SYNCOPE", "SEIZURE"]
+    assert names("pregnancy_and_newborn") == ["EXPOSURE VIA BREAST MILK", "SOMNOLENCE NEONATAL", "PREMATURE DELIVERY"]
+    t = by_name(sec)
+    assert [t[r]["label_status"] for r in ("HYPOMANIA", "SYNCOPE", "SEIZURE")] == [
+        "not_mentioned", "mentioned_outside_effect_text", "covered"]
+    assert t["SYNCOPE"]["label_sections"] == ["contraindications"] and t["HYPOMANIA"]["label_sections"] == []
+    assert t["SEIZURE"]["label_sections"][0].startswith("adverse_reactions")
+    # Every row has reports, serious reports and share, the flag and the thin mark (under 3 reports).
+    assert (t["TACHYCARDIA"]["reports"], t["TACHYCARDIA"]["serious_reports"], t["TACHYCARDIA"]["serious_share"]) == (
+        20, 12, 0.6)
+    assert sorted(r for r, i in t.items() if i["thin"]) == ["ANGIOEDEMA", "BRADYCARDIA", "PANCREATITIS"]
+    assert [r for r, i in t.items() if i["designated_medical_event"]] == names("designated_medical_events")
+    # The summary line comes first and counts every listed term, with the 5 unmentioned ones with most serious reports.
+    s = sec["summary"]
+    assert list(sec)[0] == "summary" and (s["terms"], s["outside_screen"], s["not_mentioned"],
+                                          s["mentioned_outside_effect_text"]) == (12, 12, 7, 2)
+    assert [x["reaction"] for x in s["top_not_mentioned"]] == ["HYPOMANIA", "TACHYCARDIA", "ACUTE KIDNEY INJURY",
+                                                               "RHABDOMYOLYSIS", "EXPOSURE VIA BREAST MILK"]
+    assert s["text"].startswith("12 terms listed (4 designated medical events, 5 missed serious terms, 3 pregnancy and "
+                                "newborn terms), 12 of them outside the screen. The label doesn't mention 7 of them")
+    assert "HYPOMANIA (14 of 15 reports serious)" in s["text"]
+    # No label, so every term is unchecked and the summary says so.
+    _, bare = section(NetZetaris(own, sizes(461, 1)), "zuranolone", severity=severity)
+    assert {i["label_status"] for name in SECTION_NAMES for i in bare[name]} == {"no_label"}
+    assert "No current label was found" in bare["summary"]["text"]

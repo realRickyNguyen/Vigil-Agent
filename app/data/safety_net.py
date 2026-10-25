@@ -9,21 +9,23 @@ GANGRENE (1,207). Semaglutide had OPTIC ISCHAEMIC NEUROPATHY (869).
 
 There are three sections, and a term sits in the first that takes it.
 - EMA's designated medical events, a fixed list of 62 MedDRA terms.
-- Pregnancy, breastfeeding and newborn terms, by whole words in the name, most-reported first, with no cap.
+- Pregnancy, breastfeeding and newborn terms, by whole words in the name, with no cap.
 - Missed serious terms. Every clinical term outside the screen (outside the all-drugs top 999, or under 3 reports)
-  where more than half of the drug's reports with it are flagged serious in FAERS, most-reported first, with no cap.
+  where more than half of the drug's reports with it are flagged serious in FAERS, with no cap.
   Bryan chose this rule on 25 Oct, after the earlier "10 most-reported hidden terms" listed FOOD CRAVING and SENSITIVE
   SKIN for semaglutide and missed its medullary thyroid cancer and necrotising pancreatitis. The serious counts are the
   ones the run already fetches (DataClerk.seriousness).
-The dossier lists the sections in SECTIONS order, with the missed serious terms second.
-Each term gets its reports with the drug, its screen status and what the label search found. The counts come from the
+The dossier gives a summary line first, then the sections in SECTIONS order, with the missed serious terms second.
+Each section is in Bryan's clinical order of 25 Oct (ORDER), with terms the label doesn't mention first. Each term
+gets its reports, serious reports and serious share, its label status (covered, mentioned only outside effect text,
+or not mentioned), a designated medical event flag, a thin mark under 3 reports and its screen status. The counts come from the
 Data Clerk's SQL (DataClerk.serious_terms). Nothing here is promoted. These terms never enter the review queue, its
 ranking or any prompt."""
 import re
 from concurrent.futures import TimeoutError as FutureTimeout
 
 from app.agents.rules import ADMINISTRATIVE, PREGNANCY_EXPOSURE, SOCIAL
-from app.data.label import search, sections
+from app.data.label import search, sections, where
 
 NOTE = "This list sits outside the screen. It is shown for a person to review, and its terms are not signals."
 DME_SOURCE = ("EMA designated medical events (DME) list, EMA/326038/2020, June 2020, 62 MedDRA preferred terms, in "
@@ -63,16 +65,30 @@ SCREEN_FLOOR = 3  # signal_sql's min_a, so the screen keeps reactions with at le
 GROUPS = {"designated_medical_event": DME_SOURCE,
           "missed_serious": f"clinical terms outside the screen with more than {SERIOUS_SHARE:.0%} of the drug's "
                             f"reports with them flagged serious in FAERS (death, life-threatening, hospitalisation, "
-                            f"disability, congenital anomaly or another serious outcome), most-reported first",
+                            f"disability, congenital anomaly or another serious outcome)",
           "pregnancy_or_newborn": "pregnancy, breastfeeding and newborn terms, by whole words in the name ("
-                                  + ", ".join(PREGNANCY_NEWBORN_WORDS) + "), most-reported first"}
+                                  + ", ".join(PREGNANCY_NEWBORN_WORDS) + ")"}
 # The dossier's name for each group's section, in the dossier's order.
 SECTIONS = {"designated_medical_event": "designated_medical_events", "missed_serious": "missed_serious_terms",
             "pregnancy_or_newborn": "pregnancy_and_newborn"}
+SECTION_WORDS = {"designated_medical_events": "designated medical events",
+                 "missed_serious_terms": "missed serious terms", "pregnancy_and_newborn": "pregnancy and newborn terms"}
 KIND_NAMES = {"designated_medical_event": "designated medical events",
               "pregnancy_or_newborn": "pregnancy and newborn words"}
-STATUS_ORDER = {"not_screened": 0, "passes_not_assessed": 1, "below_screen": 2, "in_review_queue": 3}
 OWN = "drug's own list"
+# Bryan's clinical order of 25 Oct, for every section. A reviewer's first question is whether a serious reaction is
+# already on the label, so terms the label doesn't mention come first. Display only, as nothing here reaches an agent.
+LABEL_RANK = {"no_label": 0, "not_mentioned": 0, "mentioned_outside_effect_text": 1, "covered": 2}
+ORDER = ("In each section, terms the label doesn't mention come first, then terms it names only outside effect text "
+         "(such as a contraindication, the indications or the pharmacology), then terms its effect text covers. Within "
+         "each, terms run by serious reports, most first, with an unknown serious count last, then by reports.")
+LEGEND = {"label_status": "covered (named in warnings, adverse reactions, patient counselling or a leaflet's side "
+                          "effects, with the sections in label_sections), mentioned_outside_effect_text (named only "
+                          "where coverage doesn't count, with the sections), not_mentioned, or no_label",
+          "serious_reports": "reports with the drug and the term that are flagged serious, or null when unknown",
+          "designated_medical_event": "on EMA's designated medical events list",
+          "thin": f"fewer than {SCREEN_FLOOR} reports with the drug, too few to judge"}
+SUMMARY_TOP = 5
 
 
 def pregnancy_or_newborn(reaction: str) -> bool:
@@ -96,7 +112,7 @@ def outside_screen(rec: dict) -> bool:
 
 
 def terms(raw: dict, severity: dict | None = None, left_out: dict | None = None) -> dict:
-    """{reaction: {"reports", "all_drug_reports", "count_from", "groups", "serious_share"}} from
+    """{reaction: {"reports", "all_drug_reports", "count_from", "groups", "serious_reports", "serious_share"}} from
     DataClerk.serious_terms() and the run's serious counts (DataClerk.seriousness). A term takes one group, the first
     of designated medical event, pregnancy or newborn, missed serious. left_out, if given, counts the terms outside the
     screen that the missed serious terms leave out, so nothing is dropped without a count."""
@@ -109,6 +125,7 @@ def terms(raw: dict, severity: dict | None = None, left_out: dict | None = None)
         out.setdefault(rec["reaction"], {"reports": number(rec["reports"]),
                                          "all_drug_reports": number(rec.get("all_reports")),
                                          "count_from": count_from, "groups": [group],
+                                         "serious_reports": sev.get("serious"),
                                          "serious_share": sev.get("serious_share")})
 
     own = raw["own"]
@@ -143,7 +160,7 @@ def terms(raw: dict, severity: dict | None = None, left_out: dict | None = None)
 
 
 def screen_status(reaction: str, t: dict, sizes: dict, screened: dict, passing: set, queued: dict) -> tuple[str, str]:
-    """(status, plain sentence). A term the agents assessed only points to its queue item, so it is not repeated."""
+    """(status, plain sentence). A term the agents assessed points to its queue item for their judgement."""
     if reaction in queued:
         return "in_review_queue", f"In the review queue (workflow status {queued[reaction]}); see that item."
     if reaction in passing:
@@ -164,11 +181,56 @@ def screen_status(reaction: str, t: dict, sizes: dict, screened: dict, passing: 
     return "not_screened", "Not screened, because " + " and ".join(why) + "."
 
 
-def label_status(reaction: str, label: dict) -> str:
-    """The label search's summary. The search reads FAERS's ^ as an apostrophe (label.norm)."""
+def label_view(reaction: str, label: dict) -> dict:
+    """What the whole-label search (label.search) found, as three states. Covered means named in effect text, the only
+    text that can support coverage. mentioned_outside_effect_text means named only where coverage doesn't count, such
+    as a contraindication, the indications or the pharmacology. label_detail is the search's own summary. The search
+    reads FAERS's ^ as an apostrophe (label.norm)."""
     if not sections(label or {}):
-        return "No current label was found."
-    return search(reaction, label)["summary"]
+        return {"label_status": "no_label", "label_sections": [], "label_detail": "No current label was found."}
+    s = search(reaction, label)
+    effect = [where(h) for h in s["found"] if h["kind"] == "effect"]
+    other = [where(h) for h in s["found"] if h["kind"] != "effect"]
+    status = "covered" if effect else "mentioned_outside_effect_text" if other else "not_mentioned"
+    return {"label_status": status, "label_sections": list(dict.fromkeys(effect or other)),
+            "label_detail": s["summary"]}
+
+
+def clinical_key(item: dict) -> tuple:
+    """Bryan's clinical order (ORDER). Not mentioned first, by serious reports, an unknown count last."""
+    serious = item["serious_reports"]
+    return LABEL_RANK[item["label_status"]], serious is None, -(serious or 0), -item["reports"], item["reaction"]
+
+
+def summary(sections_out: dict, have_label: bool) -> dict:
+    """The line at the top of the section. Its counts cover every listed term, and its top terms are the label's
+    unmentioned ones with the most serious reports, from any section."""
+    items = [i for name in SECTIONS.values() for i in sections_out[name]]
+    section_of = {i["reaction"]: name for name in SECTIONS.values() for i in sections_out[name]}
+    outside = sum(i["screen_status"] == "not_screened" for i in items)
+    unmentioned = sorted((i for i in items if i["label_status"] == "not_mentioned"), key=clinical_key)
+    elsewhere = sum(i["label_status"] == "mentioned_outside_effect_text" for i in items)
+    top = unmentioned[:SUMMARY_TOP]
+
+    def show(i: dict) -> str:
+        if i["serious_reports"] is None:
+            return f"{i['reaction']} ({i['reports']:,} reports, serious count unknown)"
+        return f"{i['reaction']} ({i['serious_reports']:,} of {i['reports']:,} reports serious)"
+
+    counts = ", ".join(f"{len(sections_out[n]):,} {SECTION_WORDS[n]}" for n in SECTIONS.values())
+    text = f"{len(items):,} terms listed ({counts}), {outside:,} of them outside the screen."
+    if not have_label:
+        text += " No current label was found, so none could be checked against it."
+    else:
+        text += (f" The label doesn't mention {len(unmentioned):,} of them and names {elsewhere:,} more only outside "
+                 f"effect text.")
+        if top:
+            text += (f" The {len(top)} it doesn't mention with the most serious reports are "
+                     f"{'; '.join(show(i) for i in top)}.")
+    return {"text": text, "terms": len(items), "outside_screen": outside, "not_mentioned": len(unmentioned),
+            "mentioned_outside_effect_text": elsewhere,
+            "top_not_mentioned": [{"reaction": i["reaction"], "section": section_of[i["reaction"]],
+                                   "serious_reports": i["serious_reports"], "reports": i["reports"]} for i in top]}
 
 
 def limits(raw: dict, sizes: dict, left_out: dict | None = None, have_severity: bool = True) -> list[str]:
@@ -227,9 +289,8 @@ def limits(raw: dict, sizes: dict, left_out: dict | None = None, have_severity: 
 
 def assemble(raw: dict, signals: list, passing: list, queue: list[dict], label: dict,
              severity: dict | None = None) -> dict:
-    """The dossier section from DataClerk.serious_terms(), the run's serious counts, screen and queue. Its three
-    sections are listed in SECTIONS. Designated medical events keep their order (not screened first, then by reports),
-    and the other two are most-reported first."""
+    """The dossier section from DataClerk.serious_terms(), the run's serious counts, screen and queue. A summary line
+    comes first, then the three sections in SECTIONS order, each in Bryan's clinical order (ORDER), with no cap."""
     s = raw["sizes"]
     sizes = {"own_terms": number(s["own_terms"]), "own_cutoff": number(s["own_cutoff"]),
              "all_terms": number(s["all_terms"]), "all_cutoff": number(s["all_cutoff"])}
@@ -238,20 +299,19 @@ def assemble(raw: dict, signals: list, passing: list, queue: list[dict], label: 
     queued = {q["reaction"]: q["workflow_status"] for q in queue}
     left_out: dict = {}
     sections_out = {name: [] for name in SECTIONS.values()}
+    dme = set(DESIGNATED_MEDICAL_EVENTS)
     for r, t in terms(raw, severity, left_out).items():
         status, detail = screen_status(r, t, sizes, screened, {x.reaction for x in passing}, queued)
-        item = {"reaction": r, "reports": t["reports"], "all_drug_reports": t["all_drug_reports"],
-                "serious_share": t["serious_share"], "count_from": t["count_from"], "screen_status": status,
-                "screen_detail": detail}
-        if status != "in_review_queue":
-            item["label_status"] = label_status(r, label)
+        item = {"reaction": r, "designated_medical_event": r in dme, "reports": t["reports"],
+                "serious_reports": t["serious_reports"], "serious_share": t["serious_share"],
+                "thin": t["reports"] < SCREEN_FLOOR, **label_view(r, label), "screen_status": status,
+                "screen_detail": detail, "all_drug_reports": t["all_drug_reports"], "count_from": t["count_from"]}
         sections_out[SECTIONS[t["groups"][0]]].append(item)
-    sections_out["designated_medical_events"].sort(
-        key=lambda i: (STATUS_ORDER[i["screen_status"]], -i["reports"], i["reaction"]))
-    for name in ("missed_serious_terms", "pregnancy_and_newborn"):
-        sections_out[name].sort(key=lambda i: (-i["reports"], i["reaction"]))
+    for rows in sections_out.values():
+        rows.sort(key=clinical_key)
     reads, registered = sum("query_id" in d for d in raw.get("direct", [])), raw.get("registered_now", 0)
-    return {"status": "done", "note": NOTE, "groups": GROUPS, "serious_threshold": SERIOUS_SHARE, "lists": sizes,
+    return {"summary": summary(sections_out, bool(sections(label or {}))), "status": "done", "note": NOTE,
+            "order": ORDER, "legend": LEGEND, "groups": GROUPS, "serious_threshold": SERIOUS_SHARE, "lists": sizes,
             **sections_out, "term_count": sum(len(v) for v in sections_out.values()), "left_out": left_out,
             "openfda": {"requests": registered + reads, "registered_now": registered, "direct_reads": reads,
                         "note": "Each read of a direct count's REST table fetches openFDA once, and registering a new "
@@ -271,8 +331,8 @@ def collect(job, wait: float, tracer, signals: list, passing: list, queue: list[
         status = "not finished" if isinstance(e, FutureTimeout) else f"failed: {str(e)[:200]}"
         tracer.event("data_clerk", "degraded", step="safety net", error=status,
                      fallback="no serious-term safety net this run")
-        return {"status": status, "note": NOTE, **{name: [] for name in SECTIONS.values()}, "term_count": 0,
-                "query_ids": []}
+        return {"summary": {"text": f"No safety net this run ({status}), so nothing is listed."}, "status": status,
+                "note": NOTE, **{name: [] for name in SECTIONS.values()}, "term_count": 0, "query_ids": []}
     for d in raw.get("direct", []):
         if "error" in d:
             tracer.event("data_clerk", "degraded", step="safety net direct count", error=d["error"][:200],
