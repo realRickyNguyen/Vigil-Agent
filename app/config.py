@@ -58,7 +58,6 @@ class Settings:
     analyst_extra: int = 5
     skeptic_items: int = 3
     skeptic_co_drugs: int = 3
-    source_items: int = 10
 
 
 def env_value(value: str | None) -> str | None:
@@ -119,7 +118,4 @@ def get_settings() -> Settings:
         analyst_extra=max(0, int(e("ANALYST_EXTRA", "5"))),
         skeptic_items=max(0, int(e("SKEPTIC_ITEMS", "3"))),
         skeptic_co_drugs=max(1, int(e("SKEPTIC_CO_DRUGS", "3"))),
-        # Review-next items whose report sources (country, reporter type) are checked. Each costs two openFDA calls,
-        # and each run two more for the drug's usual mix.
-        source_items=max(0, int(e("SOURCE_ITEMS", "10"))),
     )

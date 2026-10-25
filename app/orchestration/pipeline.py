@@ -19,6 +19,7 @@ from app.config import Settings
 from app.data import uncertainty
 from app.data.faers import DataClerk, scope_summary, validate_drug
 from app.data.label import search
+from app.data.sources import SOURCE_ITEMS
 from app.data.sources import check as check_report_sources
 from app.engines.world_model import WorldModel
 from app.orchestration.manual_review import manual_review
@@ -117,12 +118,12 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     # Where each review-next item's reports come from (app/data/sources.py), context for the Reviewer. Zetaris and
     # openFDA only, so it runs in the background. The drug's usual mix starts now, and each item's check as soon as a
     # round's findings mark it review_next. The Reviewer waits for an item's result only when it reaches that item.
-    usual_sources = sources_pool.submit(clerk.report_sources, drug) if settings.source_items else None
+    usual_sources = sources_pool.submit(clerk.report_sources, drug) if SOURCE_ITEMS else None
     ctx["sources"] = {}
     stats = {s.reaction: s for s in passing}
 
     def check_sources(fs: list[Finding]) -> None:
-        for r in source_targets(fs, set(ctx["sources"]), settings.source_items):
+        for r in source_targets(fs, set(ctx["sources"]), SOURCE_ITEMS):
             ctx["sources"][r] = sources_pool.submit(check_report_sources, clerk, drug, r, usual_sources,
                                                     stats[r].a if r in stats else None)
 

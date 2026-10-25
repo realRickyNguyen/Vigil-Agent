@@ -356,7 +356,8 @@ def test_source_items_zero_makes_no_source_calls(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "ZetarisClient", lambda settings, tracer: None)
     monkeypatch.setattr(pipeline, "DataClerk", lambda z: clerk)
     monkeypatch.setattr(pipeline, "NightshiftClient", lambda settings, tracer: RunLLM(tracer))
-    dossier = pipeline.investigate({"drug": "montelukast"}, run_settings(tmp_path, source_items=0),
+    monkeypatch.setattr(pipeline, "SOURCE_ITEMS", 0)
+    dossier = pipeline.investigate({"drug": "montelukast"}, run_settings(tmp_path),
                                    pipeline.Tracer(tmp_path, echo=False))
     assert clerk.sources_asked == [] and dossier["counts"]["report_sources_checked"] == 0
 
