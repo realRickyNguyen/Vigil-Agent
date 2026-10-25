@@ -106,6 +106,8 @@ The results at Ricky's code defaults (4 model calls at a time, 1 revision round,
 
 ## Known limits
 
+- **What "thin" means.** A row is marked thin evidence only under 5 reports or when IC025 is at or below 0. So a 5 to 9-report row with a positive IC025 is "not thin", and the model repeats that to the reader ("a=5, PRR=4.63, not thin"). On 25 Oct that covered sotagliflozin POLLAKIURIA (5 reports), HYPOGLYCAEMIA (8) and PALPITATIONS (9). For a clinical reader, a higher report threshold, or wording like "not marked thin", may be safer.
+
 - **The label search finds names, set synonyms and simple changes only.** A broader term, such as "suicidal thoughts and behaviors" for SUICIDE ATTEMPT, isn't found, and the "not named" line says so.
 - **A leaflet's "most important information" part can list risk factors.** Metformin's "get dehydrated" is an example. A name there still blocks "not found", which is why the rules don't settle coverage from patient text.
 - **Background Zetaris calls can outlive the run.** The report-source and safety-net pools cancel queued work when a run ends, but a call already running finishes. So `run.py` can wait after the dossier is written, and a late query line can land in the trace after `run_end`. This has no effect on results.
