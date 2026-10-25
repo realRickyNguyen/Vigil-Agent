@@ -60,7 +60,7 @@ Public data makes this harder, not easier. For montelukast (an asthma drug), the
 | `workflow_status`: did the review finish, and how? | reviewed · unresolved · not reviewed · pending · failed |
 | `history` | each round's claim, verdict and objection |
 
-The dossier also reports **coverage**: how many reactions were screened, passed the statistical screen, were shown to the agents, assessed, reviewed, left unresolved or not reached. Nothing unfinished is presented as finished. The trace (`logs/trace-<run>.jsonl`) records every Zetaris query, every model call (including which model actually answered), and every agent message.
+The dossier also reports **coverage**: how many reactions were screened, passed the statistical screen, were shown to the agents, assessed, reviewed, left unresolved or not reached. "Reviewed" means the Reviewer model accepted the finding, not that a safety professional checked it. The trace (`logs/trace-<run>.jsonl`) records every Zetaris query, every model call (including which model actually answered), and every agent message.
 
 ## Why this needs agents
 
@@ -68,14 +68,16 @@ The statistics don't need an LLM, and Vigil doesn't use one for them: disproport
 
 - **Matching medical terms to label prose.** FAERS uses standard medical terms (MedDRA); labels use free text. "Nightmare" is covered by "sleep disturbances". "Productive cough" sits under "cough". "Full blood count abnormal" is broader than the label's "thrombocytopenia", so it is not covered. Keyword matching gets these wrong.
 - **Telling the disease from the drug.** Wheezing for an asthma drug, or blood glucose for a diabetes drug, reflects the patients' illness. Deciding this needs knowledge of what the drug treats and what that condition looks like.
-- **Choosing what deserves attention.** Montelukast alone has 256 reactions that pass the statistical screen. An analyst's time goes to the few that matter.
+- **Choosing what deserves attention.** Montelukast alone has 256 reactions that pass the statistical screen. Vigil orders them by reporting strength and label status so an analyst can start at the top. It does not yet weigh seriousness, outcome or vulnerable groups.
 - **Arguing with itself.** A single model pass can't challenge its own first reading. Vigil has a second agent whose job is to object, and the first agent has to answer.
 
 Code keeps the agents honest. The Reviewer's checks cannot be overruled by a model:
-- every cited number is re-queried from Zetaris
-- every cited query ID must exist
+- the report count and PRR each finding cites are re-queried from Zetaris
+- at least one cited query ID must exist
 - every claimed label term must actually appear in the label
 - "review next" is only allowed for an unlabelled clinical event that comes with a next check
+
+Numbers written into free text, such as the reasoning, are not checked.
 
 ## How it works
 
@@ -92,7 +94,7 @@ flowchart TD
     CLERK --> HUNTER["Analyst (Nemotron via Nightshift)<br/>picks candidates, assesses context,<br/>label coverage, priority, next check"]
     RULES --> JUDGE
     HUNTER --> JUDGE["Reviewer<br/>code checks against Zetaris and the label,<br/>then accept / reject with objection / unresolved"]
-    JUDGE -- "rejections + missing reactions<br/>(max 2 rounds)" --> HUNTER
+    JUDGE -- "rejections + missing reactions<br/>(1 revision round by default)" --> HUNTER
     JUDGE --> SKEPTIC["Skeptic (code)<br/>co-reported drugs: adjusted PRR,<br/>co-drug PRR, interaction score"]
     SKEPTIC <--> Z
     SKEPTIC -- "challenged findings<br/>(Reviewer, then one Analyst revision)" --> JUDGE
@@ -100,11 +102,11 @@ flowchart TD
 ```
 
 - **Data Clerk (code):** for any drug name, registers openFDA REST sources as Zetaris tables at runtime, computes the report-based 2×2 table (PRR, chi-squared, Evans screen) in SQL, and fetches the current label.
-- **Analyst (Nemotron Ultra via Nightshift):** always assesses the 15 strongest signals by chi-squared and may add up to 5 more of its own choice from the next 15, then assesses each one in small batches. It sees only the label sentences relevant to that reaction, plus the indication and the boxed warning.
-- **Reviewer (code, then Nemotron Ultra):** runs the code checks first. It then accepts, rejects with an objection the Analyst must answer, or marks a finding unresolved when the evidence can't settle it. It also names important reactions nobody has looked at yet.
+- **Analyst (Nemotron Ultra via Nightshift):** always assesses the 15 strongest signals by chi-squared and may add up to 5 more of its own choice from the next 15, then assesses each one in its own call. It sees only the label sentences relevant to that reaction, plus the indication and the boxed warning.
+- **Reviewer (code, then Nemotron Ultra):** runs the code checks first. It then accepts, rejects with an objection the Analyst must answer, or marks a finding unresolved when the evidence can't settle it. It also names up to 3 unassessed reactions that it expects a reviewer to want to see.
 - **Skeptic (code, Zetaris counts):** takes the strongest accepted "review next" findings (top 3 by chi²) and checks them against the drugs most often reported alongside them (top 3, salts merged). For each co-drug it asks whether the reaction is disproportionate for the co-drug itself, whether this drug's PRR stays at 2 or above once the co-drug is adjusted for (Mantel-Haenszel over reports with and without it), and whether reports naming both drugs show more of the reaction than either alone predicts (the Omega interaction measure, Norén et al., *Statistics in Medicine* 2008). A finding is challenged only when the adjusted PRR falls below 2 for some co-drug; the co-drug's own signal and the interaction score are shown as context, because in our test runs neither separated real signals from the patients' shared conditions. A challenged finding goes back to the Reviewer with these numbers; if the Reviewer rejects it, the Analyst gets one revision and the Reviewer a final look. The Skeptic never changes a priority itself.
-- **Loop:** at most 2 revision rounds. Accepted findings are never redone. If the agents go round in circles, or an objection is still standing when the rounds run out, the finding closes as **unresolved** rather than being accepted by default.
-- **Resilience:** small parallel batches, retries, one-item-per-call fallbacks. Anything that still fails is reported as `failed` or `not_reviewed`, never guessed.
+- **Loop:** one revision round by default (`REVIEWER_ROUNDS`), inside a 10-minute run budget (`RUN_BUDGET_SECONDS`) that skips later steps when time runs out and records what it skipped. Accepted findings are never redone. If the agents go round in circles, or an objection is still standing when the rounds run out, the finding closes as **unresolved** rather than being accepted by default.
+- **Resilience:** parallel one-reaction calls, streamed replies, retries and a shared pause on rate limits. Anything that still fails is reported as `failed` or `not_reviewed`, never guessed.
 
 ## How Vigil answers Track 02
 
@@ -115,7 +117,7 @@ flowchart TD
 | **Investigate complex questions** | "Which of this drug's reported patterns deserve a closer look, and why?" There are hundreds of screen-positive reactions, each needing interpretation, not lookup |
 | **Across multiple data sources** | Two openFDA datasets, adverse-event counts (this drug and the whole database) and drug labels, joined through Zetaris tables registered at runtime for any drug. Statistics and label prose are combined in one investigation. A third stream, the co-reported drugs on each top finding's reports, is queried through Zetaris for the Skeptic. |
 | **Connect findings** | Each finding links its numbers, the matching label sentence, the Reviewer's objection and the Analyst's answer, round by round |
-| **Evidence-backed answers or recommendations** | A ranked recommendation (review next / insufficient evidence / lower priority). Every number traces to a query ID and its SQL; every label quote is extracted by code; unresolved disputes are shown, not hidden |
+| **Evidence-backed answers or recommendations** | A ranked recommendation (review next / insufficient evidence / lower priority). Every number in the structured fields traces to a query ID and its SQL; every label quote is extracted by code; unresolved disputes are shown, not hidden |
 | **Explain why** | `strongest_objection`, `next_check` and `history` say why each item sits where it does, and what would change it |
 
 ## Sponsor technology
@@ -128,14 +130,17 @@ flowchart TD
 
 ## Results so far
 
-A development evaluation against a reference set of 100 reactions across 5 drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin), run on 24 Oct with each drug once and montelukast twice more. That run used one branch of the code before the 25 Oct merge; the merged code has not been evaluated yet.
-- **Accuracy:** 93% of the Analyst's first-round assessments (26 of 28) and 89% of final assessments (49 of 55) matched the reference label, among the clear reference items the agents assessed. Rules settled 27 of these, all correctly, and the model was right on 22 of 28.
-- **The errors:** of the 6 final errors, 3 are reference rows written from older label versions whose wording today's labels no longer contain, 2 are judgement calls between a broader and a narrower term, and 1 is a model error (a contraindication counted as label coverage).
-- **Coverage is the main gap:** the first round assessed 24 of the 80 clear reference items, and 43 had a final answer.
-- **The Reviewer mostly confirmed:** it kept 26 correct findings and 2 wrong ones, and added 5 or 6 reactions per run that the Analyst had skipped.
-- **Stable and faster:** three montelukast runs agreed on 95% of the reactions they shared, and each run took 8 to 11 minutes.
+A development evaluation on 24 Oct ([eval/reports/eval-20261024T125052Z-gold_v2.md](eval/reports/eval-20261024T125052Z-gold_v2.md)) ran the five reference drugs (montelukast, atorvastatin, metformin, sertraline, isotretinoin) once each, and montelukast twice more, with 2 model calls at a time rather than the default 4. It ran the code before the 25 Oct merge (`9e6d382` on `fix/consolidated-24-oct`), which already had the fixes the merge brought in but not the merge's own additions, such as a 90 s limit on a whole streamed call. The merged code has run live once, without scoring: on 25 Oct one montelukast run through the Docker API took 587 s, with no NVIDIA rate limits and no model call over 90 s. It has not been scored against the reference set yet. Answers were scored against gold v2, a reference set of 100 reactions drafted by an AI assistant from the current label text. No person has reviewed it yet, and its ambiguous rows are left out of the scores.
+- **Agreement with the reference.** Counting each drug once, first-round answers agreed on 59 of 59 clear items and final answers on 58 of 58 (95% interval 94 to 100% for both). Across all 7 runs, rules settled 36 of the 77 final answers and the model the other 41.
+- **What it does not show.** These items are mostly label lookups, such as whether a reaction is on the label or is the treated disease. The review-next list, the main output, is barely scored. Of its 27 entries across the runs, 1 is a clear new signal in the reference, 22 are rows the reference calls ambiguous and 4 are not in it.
+- **Coverage.** The first round answered 59 of the 71 clear reference items.
+- **Repeat runs.** The three montelukast runs assessed the same 20 reactions and gave the same answer on 19. The exception, obstructive airways disorder, was left unresolved in one run.
+- **Run time and what the budget skips.** Runs took 9 to 14 minutes. The 10-minute budget skipped the revision round in 6 of 7 runs and the Skeptic's challenge review in all 7, so reactions the Reviewer named were left pending and 6 Skeptic challenges went unreviewed.
+- **Model calls.** All 237 calls were answered by Nemotron Ultra, with no H-MEM memories and no reasoning scaffold. Nightshift cut 33 calls at its first-byte limit and they were retried, and one item ended not reviewed.
 
-These are **development checks, not clinical validation**. The reference labels were drafted by an AI assistant from the label text and are pending review by a person ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)), and none of us is a pharmacovigilance professional. We have not measured time saved or decision quality against a human baseline. Full report: [eval/reports/eval-20261024T022640Z.md](eval/reports/eval-20261024T022640Z.md).
+These numbers are not comparable with earlier ones. The 22 Oct evaluation and a first one on 24 Oct were scored against gold v1, which was drafted on older labels and the old drug search. Ricky's runs of `fix/eval-logic` the same day, against gold v2 and at 4 calls at a time, gave 30 of 35 in round 1 and 26 of 31 final on sertraline, metformin and montelukast (95% intervals 71 to 94% and 67 to 93%). This build gave 36 of 36 and 35 of 35 on the same drugs (90 to 100%). The two differ in streaming, keeping H-MEM out, the label excerpts and the settings, and runs vary, so we have not shown which change matters.
+
+These are **development checks, not clinical validation**. None of us is a pharmacovigilance professional, and the reference set is AI-drafted ([eval/LABELLING_RULES.md](eval/LABELLING_RULES.md)). We have not measured time saved or decision quality against a human baseline. All reports: [eval/reports/](eval/reports/).
 
 ## Status
 
@@ -222,9 +227,10 @@ Zetaris and Nightshift keep running on the host. Inside the container, `localhos
 - **FAERS** reports are voluntary and unverified, can be duplicated, and show association, not causation. Screen-positive means "worth a look", not new or proven.
 - **We count every report that mentions the drug,** including reports where it was not the suspect drug. This broadens the population; it does not necessarily inflate the PRR.
 - **Coverage limits:**
-  - The baseline holds the 999 most-reported reactions (openFDA's limit without a key).
+  - A reaction is screened only if it is among the 999 most-reported reactions both for all drugs and for this drug (openFDA's limit without a key). On FDA's raw quarterly files these two caps hide 85 to 93% of the five gold drugs' screen-positive reactions, and 36 of EMA's 62 designated medical events (rare, serious terms such as torsade de pointes) are outside the all-drugs list.
+  - A reaction needs at least 3 reports with the drug to pass the screen. Most passes with 3 to 20 reports fail a stricter shrinkage test (EB05 of 2 or more).
   - The Analyst assesses a limited number of candidates per run.
-  - Both limits are shown in the coverage counts.
+  - The coverage counts show how many reactions were screened and assessed. The dossier names only the all-drugs cap so far.
 - **Aggregate data only:** no case-level review and no duplicate removal. Breakdowns such as reporter type give context, not adjustment for confounding.
 - **Co-reported drugs:** the Skeptic adjusts for one co-drug at a time, and only for the top co-drugs of the top findings. Adjusting for all co-drugs together needs case-level data. The most frequent co-drug is often just the usual companion treatment, and a rarer co-drug can be the one that matters. The Omega score flags combinations to review; it does not show a pharmacological interaction, and interactions among three or more drugs are not assessed.
 - **Labels:** the app takes the newest single-ingredient prescription label openFDA has for the generic name (from the 10 newest). Generic labels of the same drug can differ, and the chosen one is named in the dossier.

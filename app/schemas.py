@@ -79,13 +79,14 @@ class Finding:
     def from_dict(cls, d: dict) -> "Finding":
         def pick(name, default):
             # Missing values get the cautious default; unknown values are kept so the Reviewer's checks reject them.
-            return str(d.get(name) or "").strip() or default
+            # Case is ignored, so "Not_found" is not_found.
+            return str(d.get(name) or "").strip().lower() or default
 
         def number(name, cast):
             # "1,234" or "n/a" from a model must not crash the run; a wrong number fails the Reviewer's checks.
             try:
                 return cast(float(str(d.get(name) or 0).replace(",", "")))
-            except ValueError:
+            except (ValueError, OverflowError):  # OverflowError: "inf" or "1e999"
                 return cast(0)
         return cls(
             reaction=str(d.get("reaction", "")).strip(),

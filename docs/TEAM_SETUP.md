@@ -24,7 +24,7 @@ python -m pip install -r requirements.txt
 python -I -m pytest tests -q
 ```
 
-Expect all tests to pass (127 on 25 Oct). Python 3.11 or newer.
+Expect all tests to pass (149 on 25 Oct). Python 3.11 or newer.
 
 ## 2. Running real investigations: your own local stack
 
@@ -91,6 +91,7 @@ A run on branch `fix/eval-logic` (25 Oct) should take about 8 to 13 minutes per 
 4. **Read the progress lines.** Each run prints one line per step. They show where the time goes:
    - `hit NVIDIA's rate limit; all model calls pause N s`: your NVIDIA key's per-minute cap. A few are normal. If there are more than about 15 per run, set `MODEL_PARALLEL=2` (fewer calls at once). If your NVIDIA key is in use elsewhere, for example in another run, stop that first. Code changes do not help here.
    - `model call failed (... provider_deadline ...)`: Nightshift cut a call at 45 s. That happens to unstreamed calls, so streaming is off (`MODEL_STREAM`) or the quality race is still on (step 3).
+   - `model call failed (... ttfb_timeout ...)` means Nightshift's learned first-byte budget (at most 45 s) ran out while NVIDIA was slow. The call is retried, or a batch is split. In Bryan's 24 Oct evaluation 33 of 237 calls hit it, and one item ended not reviewed.
    - `model call failed (... call_time_limit ...)`: a streamed call ran past `MODEL_TIMEOUT_SECONDS` (90). Single-reaction calls took 20 to 40 s on 24 Oct, so a few of these mean a slow lane. If most calls hit it, tell the team before raising the limit: the organisers ask for model calls of 30 to 90 s.
    - `Nightshift setup warning: ...`: Nightshift served another model or added its reasoning scaffold. Fix the lanes or the Quality track as the warning says.
    - `skips the ...: N s left in the run's time budget`: the budget stopped a late step. The run is not broken; the dossier lists what was skipped.

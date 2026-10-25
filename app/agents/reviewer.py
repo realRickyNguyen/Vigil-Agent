@@ -99,10 +99,13 @@ class Reviewer:
         """Check and review findings. `seen` holds every reaction already attempted, so "missing" only
         names reactions nobody has looked at yet."""
         verdicts, checked = [], []
+        if not findings:  # an empty re-check would fetch the drug's whole screen
+            return [], [], ""
         try:
             res, fresh = self.clerk.recheck(ctx["drug"], [f.reaction for f in findings], agent=self.name)
         except ZetarisError as e:
             # Without the re-check the numbers cannot be verified, so no finding is reviewed (no crash).
+            self.llm.tracer.event(self.name, "degraded", step="recheck", error=str(e)[:200], fallback="not reviewed")
             return ([Verdict(f.reaction, "unreviewed", f"{RECHECK_FAILED} ({str(e)[:200]})", {}) for f in findings],
                     [], "")
         for f in findings:
@@ -124,10 +127,11 @@ class Reviewer:
                                  enumerate(batches)))
         llm, missing, summaries = {}, [], []
         for i, out in enumerate(outs):
-            llm.update({norm(v.get("reaction")): v for v in out.get("verdicts", []) if isinstance(v, dict)})
+            # "or []" because a reply with "verdicts": null must not crash the run.
+            llm.update({norm(v.get("reaction")): v for v in out.get("verdicts") or [] if isinstance(v, dict)})
             if i == 0:
-                missing = [m for m in out.get("missing", []) if isinstance(m, dict) and m.get("reaction")]
-            summaries.append(str(out.get("summary", "")))
+                missing = [m for m in out.get("missing") or [] if isinstance(m, dict) and m.get("reaction")]
+            summaries.append(str(out.get("summary") or ""))
 
         for f, checks, _ in checked:
             bad = failed(checks)
@@ -168,9 +172,9 @@ class Reviewer:
                 self.llm.tracer.event(self.name, "degraded", step="review", batch=names, error=str(e)[:200],
                                       fallback="one finding per call")
                 outs = [self._review_batch(ctx, [p], unpicked if i == 0 else None) for i, p in enumerate(batch)]
-                return {"verdicts": [v for o in outs for v in o.get("verdicts", [])],
-                        "missing": outs[0].get("missing", []),
-                        "summary": " ".join(o.get("summary", "") for o in outs)}
+                return {"verdicts": [v for o in outs for v in o.get("verdicts") or []],
+                        "missing": outs[0].get("missing") or [],
+                        "summary": " ".join(str(o.get("summary") or "") for o in outs)}
             self.llm.tracer.event(self.name, "degraded", step="review", batch=names, error=str(e)[:200],
                                   fallback="code checks only")
             return {"verdicts": [{"reaction": r, "decision": "unreviewed", "reason": UNREVIEWED} for r in names]}
