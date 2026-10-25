@@ -2,7 +2,7 @@
 Rule findings go to the Reviewer like any other; if the Reviewer rejects one, the Analyst's model re-classifies it."""
 import re
 
-from app.data.label import SAFETY, find_term
+from app.data.label import SAFETY, STOP, effect_text, find_term, norm, us, word_stems
 from app.schemas import Finding, Signal
 
 # MedDRA terms about the product, its use or the reporting process rather than a clinical event.
@@ -14,7 +14,12 @@ ADMINISTRATIVE = re.compile(
     r"INCORRECT (DOSE|ROUTE)|EXPIRED|NO ADVERSE EVENT|UNEVALUABLE|THERAPY (INTERRUPTED|CESSATION|CHANGE)|"
     r"INTENTIONAL PRODUCT|ACCIDENTAL EXPOSURE|EXPOSURE (VIA|DURING)|DEVICE |TREATMENT NONCOMPLIANCE|PRESCRIBED "
     r"(OVERDOSE|UNDERDOSE)|INSURANCE|DRUG ABUSE|CIRCUMSTANCE OR INFORMATION|"
-    r"TREATMENT FAILURE|THERAPEUTIC RESPONSE|^DRUG INTERACTION$|^ABORTION INDUCED$")
+    r"TREATMENT FAILURE|THERAPEUTIC RESPONSE|^DRUG INTERACTION$|^ABORTION INDUCED$|"
+    # Dosing and handling errors the model had to settle on 24 Oct (tirzepatide EXTRA DOSE ADMINISTERED, ACCIDENTAL
+    # UNDERDOSE), all in openFDA's top 999. OVERDOSE and INTENTIONAL OVERDOSE stay clinical.
+    r"EXTRA DOSE|UNDERDOSE|ACCIDENTAL OVERDOSE|(DRUG|PRODUCT) (ADMINISTRATION|PRESCRIBING|DISPENSING|PREPARATION) "
+    r"ERROR|INCORRECT (DRUG|PRODUCT) ADMINISTRATION|DRUG ADMINISTERED (AT|TO) |^(NEEDLE|SYRINGE) ISSUE$|"
+    r"INTENTIONAL DRUG MISUSE")
 # MedDRA social-circumstance terms: consequences in a person's life, not the clinical event behind them.
 # In the 23 Oct evaluation montelukast LOSS OF PERSONAL INDEPENDENCE IN DAILY ACTIVITIES went to review next twice.
 SOCIAL = re.compile(
@@ -57,6 +62,12 @@ def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
     # and the warnings list anxiety as an effect. Only the model can tell which applies.
     if indication and safety:
         return None
+    # The indications can name a term as the population rather than the condition treated: atorvastatin is for adults
+    # "with type 2 diabetes mellitus", and its adverse reactions list diabetes. When a safety section uses the term's
+    # head word, the model decides (on 24 Oct the rule settled atorvastatin TYPE 2 DIABETES MELLITUS, and the
+    # Reviewer's late objection left it unresolved).
+    if indication and head_word_in_safety(s.reaction, label):
+        return None
     if indication:
         return Finding(**base, label_coverage="not_assessed", context="treated_condition",
                        reasoning=f"Rule: the label's indications section names '{indication[1]}', the condition "
@@ -71,3 +82,18 @@ def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
     return Finding(**base, label_coverage="covered", context="clinical_event", label_section=section,
                    label_term=term, reasoning=f"Rule: the label's {section} section names '{term}'.",
                    next_check="Already labelled; review only if reporting is rising or more severe than described.")
+
+
+# Words that don't name a condition by themselves, so a term's head word is its first word that isn't one of these.
+NOT_HEAD = STOP | {"chronic", "acute", "disease", "mellitus"}
+
+
+def head_word_in_safety(reaction: str, label: dict) -> str | None:
+    """The label word that a safety section uses for the term's head word, such as "diabetes" for TYPE 2 DIABETES
+    MELLITUS, or None."""
+    heads = word_stems(reaction, NOT_HEAD)
+    if not heads:
+        return None
+    text = us(norm(" ".join(effect_text(label, sec) for sec in SAFETY)))
+    m = re.search(rf"\b{re.escape(heads[0])}[a-z]*", text)
+    return m.group(0) if m else None
