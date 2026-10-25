@@ -21,7 +21,7 @@ from app.orchestration.pipeline import NOT_YET_CHECKED, review_queue  # noqa: E4
 from app.schemas import Finding, QueryResult, Signal, Verdict  # noqa: E402
 
 N = 20682701  # recorded, all reports (the serious-flag sum), the same total in every row below
-# Recorded: reaction, a, b, c, d, PRR, chi2.
+# Recorded rows, as reaction, a, b, c, d, PRR, chi2.
 RENAL_PAIN = Signal("RENAL PAIN", a=4, b=540, c=10421, d=20671736, prr=14.59, chi2=38.0)
 MICTURITION_URGENCY = Signal("MICTURITION URGENCY", a=4, b=540, c=11183, d=20670974, prr=13.6, chi2=34.9)
 POLLAKIURIA = Signal("POLLAKIURIA", a=5, b=539, c=41090, d=20641067, prr=4.63, chi2=10.8)
@@ -179,7 +179,7 @@ def test_the_scope_query_takes_one_aggregate_per_list():
 
 
 def test_the_scope_statement_names_both_caps_and_whether_the_drugs_list_is_full():
-    # Recorded 25 Oct: sotagliflozin's own list has 317 reactions down to 1 report, montelukast's is full at 999 down
+    # Recorded 25 Oct. Sotagliflozin's own list has 317 reactions down to 1 report, montelukast's is full at 999 down
     # to 116 reports, and the all-drugs list is full at 999 down to 9,059. The screen kept 83 and 787 rows.
     sota = scope_summary("sotagliflozin", {"drug_terms": "317", "drug_cutoff": "1", "all_terms": "999",
                                            "all_cutoff": "9059"}, 83, "2026-07-30", "q-sc")

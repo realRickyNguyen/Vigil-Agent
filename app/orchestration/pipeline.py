@@ -21,6 +21,7 @@ from app.data.faers import DataClerk, scope_summary, validate_drug
 from app.data.label import search
 from app.data.sources import check as check_report_sources
 from app.engines.world_model import WorldModel
+from app.orchestration.manual_review import manual_review
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
 
@@ -212,7 +213,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
               **{f"skeptic_{k}": v for k, v in skeptic_counts.items()},
               "report_sources_checked": sum("flags" in ev for ev in sources.values()),
               "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values()),
-              "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue)}
+              "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue),
+              "manual_review": sum(q["manual_review"]["needed"] for q in queue)}
 
     queries, degraded, setup_warnings = {}, [], []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
@@ -445,7 +447,8 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     shares are shown, not used for ranking: they describe whole reports, not the reaction. Each item carries the
     code's label search, so a "not found" says what was searched and an expected effect is quoted, and a review-next
     item its report sources (context flags, never used for ranking either). Each item's uncertainty (expected count,
-    PRR interval, IC025, thin evidence) comes from the screen's Zetaris counts and is shown, never used to rank."""
+    PRR interval, IC025, thin evidence) comes from the screen's Zetaris counts and is shown, never used to rank, and
+    so is its manual_review flag (app/orchestration/manual_review.py)."""
     stats = {s.reaction: s for s in passing}
     def extra(r):
         return (({"uncertainty": uncertainty.of(stats[r])} if r in stats else {})
@@ -478,6 +481,8 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
         queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
                       "chi2": s.chi2 if s else None, **extra(r), "workflow_status": "failed", "review_priority": None,
                       "status_note": "the Analyst's model gave no classification for it after every fallback"})
+    for q in queue:  # context only, added after every other field and never part of the sort below
+        q["manual_review"] = manual_review(q, stats[q["reaction"]].a if q["reaction"] in stats else q.get("a"))
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
     return queue

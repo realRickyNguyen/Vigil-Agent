@@ -43,8 +43,8 @@ def information_component(a: int, b: int, c: int, d: int) -> tuple[float, float]
 
 
 def assess(a: int, b: int, c: int, d: int) -> dict:
-    """The numbers for one row, rounded for the prompts and the dossier, and whether it is thin evidence: fewer
-    than 5 reports (EMA's floor for established drugs) or IC025 at or below 0."""
+    """The numbers for one row, rounded for the prompts and the dossier, and whether it is thin evidence, meaning
+    fewer than 5 reports (EMA's floor for established drugs) or IC025 at or below 0."""
     ic, ic025 = information_component(a, b, c, d)
     ci = prr_interval(a, b, c, d)
     reasons = ([f"fewer than {THIN_REPORTS} reports"] if a < THIN_REPORTS else []) + \

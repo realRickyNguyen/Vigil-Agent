@@ -287,6 +287,10 @@ def test_a_whole_run_states_its_scope_and_each_items_uncertainty(tmp_path, monke
     assert all("uncertainty" in q for q in dossier["review_queue"])
     assert dossier["counts"]["thin_evidence"] == 0  # every row here has hundreds of reports
     assert llms[0].reviews and all('"uncertainty"' in p for p in llms[0].reviews)
+    # Every item has the manual review flag; here all were accepted with enough reports, so none needs it.
+    assert all(q["manual_review"] == {"needed": False, "reasons": [], "triggers": []} for q in dossier["review_queue"])
+    assert dossier["counts"]["manual_review"] == 0
+    assert not any("manual_review" in p for p in llms[0].reviews)  # no agent sees it
 
 
 def test_the_thresholds_are_exact_at_their_boundaries():
