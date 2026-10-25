@@ -19,12 +19,14 @@ import re
 import urllib.parse
 
 from app.adapters.zetaris import ZetarisClient, ZetarisError
+from app.data.label import INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, SECTIONS, clinical_pharmacology_parts
 from app.schemas import QueryResult, Signal
 
 OPENFDA = "https://api.fda.gov/drug"
 DRUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 \-]{1,48}$")
-LABEL_FIELDS = ("boxed_warning", "warnings_and_cautions", "warnings", "precautions",
-                "adverse_reactions", "contraindications", "indications_and_usage")
+# The first seven are the sections the app has always read. Since 25 Oct also the patient labelling, the pharmacology
+# and the sections that never count as coverage, so the code search can say where a reaction is named.
+LABEL_FIELDS = tuple(dict.fromkeys(SECTIONS + (INDICATION,) + PATIENT + PHARMACOLOGY + NOT_COVERAGE))
 # Both fields that name a co-drug, so the list matches what drug_search() finds.
 CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
@@ -356,5 +358,7 @@ class DataClerk:
             return res.query_id, {}
         rec, self.label_choice = choose_label([json.loads(row[0]) for row in res.rows])
         out = {f: " ".join(rec[f]) for f in LABEL_FIELDS if rec.get(f)}
+        for k, v in clinical_pharmacology_parts(" ".join(rec.get("clinical_pharmacology") or [])).items():
+            out.setdefault(k, v)  # only where openFDA did not split the section itself
         out.update({k: rec[k] for k in ("effective_time", "set_id") if rec.get(k)})
         return res.query_id, out

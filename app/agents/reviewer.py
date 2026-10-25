@@ -11,7 +11,7 @@ from app.adapters.zetaris import ZetarisError
 from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
 from app.agents.skeptic import compact
 from app.data.faers import DataClerk
-from app.data.label import INDICATION, META, SAFETY, excerpt_block, find_term, label_sentence, norm
+from app.data.label import EFFECT, META, effect_text, excerpt_block, label_sentence, norm, search
 from app.schemas import CONTEXT, COVERAGE, PRIORITY, Finding, Signal, Verdict
 
 UNPICKED_ROWS = 15
@@ -28,7 +28,7 @@ For each finding, decide:
 - "reject": something is wrong and the Analyst can fix it. Examples: the label_quote does not describe the reaction; the label text shown does describe a reaction marked not_found; the reaction is plainly the treated condition; a vague term is marked review_next; the reasoning claims the drug causes the reaction.
 - "unresolved": the evidence available here cannot settle it either way (for example only a narrower label term exists). Say what is missing.
 
-A treated condition that the label says the drug may cause or worsen (for example low blood pressure with a blood-pressure drug) is correctly "covered". A symptom, sign, measure or complication of the treated disease is "treated_condition" even when the label does not mention it; reject it as a clinical_event sent for review just because the label does not list it. A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support.
+A treated condition that the label says the drug may cause or worsen (for example low blood pressure with a blood-pressure drug) is correctly "covered". A symptom, sign, measure or complication of the treated disease is "treated_condition" even when the label does not mention it; reject it as a clinical_event sent for review just because the label does not list it. A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug; reject "covered" when that is the only support. The same holds for a Limitation of Use, drug interactions, pharmacokinetics and pharmacology. A reaction the label names only as an expected effect of the drug (mechanism_of_action or pharmacodynamics) is "unclear", not "covered" or "not_found". Each reaction's "Code search" line says which sections code searched and where it found the name; a "not_found" must agree with it.
 
 Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most often reported alongside this one, computed from database counts. "adjusted_prr" is this drug's PRR after adjusting for that co-drug; below 2 means the pattern may come from the co-drug rather than this drug. "combination_partner" means the co-drug is sold in one product with this drug, so many reports name both by construction; a signal that falls below 2 when adjusted for a combination partner may belong to the partner. Two fields are context only: "shared_with_co_drugs" means the reaction is also disproportionate for most co-drugs, which is common because the co-drugs go to the same patients; "possible_interaction" means reports naming both drugs show more of the reaction than either alone predicts, which sicker patients on several drugs can also cause. "attenuated_by" is context too: co-drugs that lower the PRR by 30% or more without taking it below 2. Decide whether the finding's priority and reasoning still hold given this evidence. If they do not, reject with an objection that names the co-drug and the numbers, or mark it unresolved. This evidence is about reporting patterns, not proof either way.
 
@@ -64,16 +64,23 @@ def code_checks(f: Finding, fresh: Signal | None, label: dict, evidence_ids: set
     cited = [e for e in f.evidence if e in evidence_ids]
     c["cites_evidence"] = (bool(cited), ", ".join(f.evidence) or "none")
     if f.label_coverage == "covered":
-        section = label.get(f.label_section or "") or " ".join(
-            v for k, v in label.items() if k not in META)
-        f.label_quote = label_sentence(section, f.label_term or "")
+        # Coverage rests only on text that says what the drug may cause, never on the contraindications, a
+        # Limitation of Use, the interactions, the pharmacokinetics or the pharmacology, and for a Medication Guide
+        # or patient leaflet only on its side-effect parts. A section the label lacks, or none, means any of them.
+        sec = f.label_section or ""
+        not_effect = sec in label and sec not in META and sec not in EFFECT
+        if not_effect:
+            c["coverage_section"] = (False, f"{sec} never counts as coverage on its own")
+        f.label_quote = None if not_effect else label_sentence(effect_text(label, sec if sec in label else None),
+                                                               f.label_term or "")
         c["term_in_label"] = (f.label_quote is not None, f"term '{f.label_term}' in {f.label_section}")
     if f.label_coverage == "not_found":
         # A name in the contraindications is a condition the drug must not be used in, not an effect,
-        # so "not_found" stays possible for it (metformin DIABETIC KETOACIDOSIS).
-        named = find_term(f.reaction, label, only=(INDICATION,) + SAFETY) is not None
-        c["not_named_in_label"] = (not named, f"label text {'contains' if named else 'does not contain'} "
-                                              f"'{f.reaction.lower()}'")
+        # so "not_found" stays possible for it (metformin DIABETIC KETOACIDOSIS). The code search's "named_in"
+        # holds the parts that make it wrong (label.search).
+        named = search(f.reaction, label)["named_in"]
+        c["not_named_in_label"] = (not named, f"label text {'names' if named else 'does not name'} "
+                                              f"'{f.reaction.lower()}'" + (f" in {', '.join(named)}" if named else ""))
     if f.review_priority == "review_next":
         # Only an unlabelled clinical event can be sent for review, and it must say what to check.
         c["priority_consistent"] = (f.context == "clinical_event" and f.label_coverage in ("not_found", "unclear"),

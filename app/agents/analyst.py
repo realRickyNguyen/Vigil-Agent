@@ -40,9 +40,9 @@ Answer three separate questions for each listed reaction:
    - "treated_condition": the condition the drug treats, a symptom, sign, measure or complication of it, or an outcome the drug is given to prevent.
    - "clinical_event": any other clinical event.
 2. "label_coverage": does the current label describe this reaction as something the drug may cause or worsen?
-   - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label). A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug, so it is not "covered" on that basis.
-   - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term).
-   - "not_found": nothing in the label text shown describes it.
+   - "covered": the label uses the same event, a synonym, or a broader term that clearly contains it. Give "label_section" (the bracketed section name, e.g. boxed_warning) and "label_term" (1 to 4 words, spelled exactly as in the label). Only sections that say what the drug may cause count. A condition named only in the contraindications is one the drug must not be used in, not an effect of the drug, so it is not "covered" on that basis; nor is a Limitation of Use or the drug_interactions, pharmacokinetics or pharmacology sections.
+   - "unclear": the label only has a related or narrower term (for example a specific lab abnormality for a vague lab term), or names it only as an expected effect of the drug in mechanism_of_action or pharmacodynamics. Call that an expected effect of the drug in "reasoning", not an adverse effect the label warns about.
+   - "not_found": nothing in the label text shown describes it, and the code search names it nowhere that counts.
    - "not_assessed": the term is non_clinical, or it is the treated condition and the label does not say the drug may cause or worsen it.
    Decide "context" first, from what the term is, whatever the label says: a symptom, sign, measure or complication of the treated disease stays "treated_condition" even when the label does not mention it. Then, for a treated condition, check whether the label warns that the drug can cause or worsen it (for example low blood pressure with a blood-pressure drug). If it does, coverage is "covered"; if not, "not_assessed". Never mark a treated condition "not_found".
 3. "review_priority":

@@ -2,7 +2,7 @@
 Rule findings go to the Reviewer like any other; if the Reviewer rejects one, the Analyst's model re-classifies it."""
 import re
 
-from app.data.label import INDICATION, SAFETY, find_term
+from app.data.label import SAFETY, find_term
 from app.schemas import Finding, Signal
 
 # MedDRA terms about the product, its use or the reporting process rather than a clinical event.
@@ -47,8 +47,12 @@ def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
                        reasoning="Rule: MedDRA social-circumstance term, a consequence in the person's life rather "
                                  "than a clinical event.",
                        next_check="Look at the clinical events named in the same reports.")
-    indication = find_term(s.reaction, label, only=(INDICATION,))
-    safety = find_term(s.reaction, label, only=SAFETY)
+    # Named means the MedDRA name or a phrase for the same event (label.NAMED_AS). The indications leave out their
+    # Limitation of Use. Only the professional safety sections settle coverage here, because a patient leaflet's "most
+    # important information" also lists risk factors (metformin's "get dehydrated"), so patient text can support
+    # coverage only through the model, whose claim the Reviewer's code checks then test.
+    indication = find_term(s.reaction, label, kinds=("indication",))
+    safety = find_term(s.reaction, label, kinds=("effect",), only=SAFETY)
     # Named in both places, for example sertraline ANXIETY: the indications name social anxiety disorder
     # and the warnings list anxiety as an effect. Only the model can tell which applies.
     if indication and safety:
@@ -59,7 +63,8 @@ def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
                                  f"being treated.",
                        next_check="Compare with reports for other treatments of the same condition.")
     # A name found only in the contraindications is a condition the drug must not be used in, not an effect
-    # the label attributes to it (metformin DIABETIC KETOACIDOSIS), so it goes to the model too.
+    # the label attributes to it (metformin DIABETIC KETOACIDOSIS), so it goes to the model too. So does one found
+    # only in a Limitation of Use, the drug interactions, the pharmacokinetics or the pharmacology.
     if safety is None:
         return None
     section, term = safety

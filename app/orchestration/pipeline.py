@@ -16,6 +16,7 @@ from app.agents.reviewer import failed as failed_checks
 from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
 from app.data.faers import DataClerk, validate_drug
+from app.data.label import search
 from app.engines.world_model import WorldModel
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
 from app.tracing import Tracer
@@ -160,7 +161,7 @@ def investigate(request: dict, settings: Settings, tracer: Tracer | None = None)
     background.shutdown()
     if skeptic_counts["challenged"]:
         rounds.append({"round": "skeptic", **skeptic_counts})
-    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity)
+    queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity, label)
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -371,16 +372,19 @@ STATUS_ORDER = {"unresolved": 0, "reviewed": 1, "not_reviewed": 2, "pending": 3,
 
 
 def review_queue(state: dict, passing: list, pending: list[dict], failed: list[str],
-                 skeptic: dict | None = None, severity: dict | None = None) -> list[dict]:
+                 skeptic: dict | None = None, severity: dict | None = None, label: dict | None = None) -> list[dict]:
     """The analyst's queue: every assessed reaction with its priority, objection and next check, plus
     reactions that were named for review but never reached, ranked review_next first. The serious and death
-    shares are shown, not used for ranking: they describe whole reports, not the reaction."""
+    shares are shown, not used for ranking: they describe whole reports, not the reaction. Each item carries the
+    code's label search, so a "not found" says what was searched and an expected effect is quoted."""
     stats = {s.reaction: s for s in passing}
-    sev = lambda r: {"seriousness": severity[r]} if severity and r in severity else {}
+    def extra(r):
+        return (({"seriousness": severity[r]} if severity and r in severity else {})
+                | ({"label_search": search(r, label)} if label else {}))
     queue = []
     for r, e in state.items():
         f, v = e["finding"], e["verdict"]
-        item = {**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None, **sev(r),
+        item = {**f.to_dict(), "chi2": stats[r].chi2 if r in stats else None, **extra(r),
                 "workflow_status": e["status"], "reviewer": v.reason, "status_note": e.get("note", ""),
                 "strongest_objection": v.objection, "next_check": v.next_check or f.next_check,
                 "history": e["history"],
@@ -395,13 +399,13 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     for m in pending:
         s = stats.get(m["reaction"])
         queue.append({"reaction": m["reaction"], "a": s.a if s else None, "prr": s.prr if s else None,
-                      "chi2": s.chi2 if s else None, **sev(m["reaction"]), "workflow_status": "pending",
+                      "chi2": s.chi2 if s else None, **extra(m["reaction"]), "workflow_status": "pending",
                       "review_priority": None,
                       "status_note": f"named by the Reviewer in the last round, not reached: {m.get('why', '')}"})
     for r in sorted(set(failed) - set(state)):
         s = stats.get(r)
         queue.append({"reaction": r, "a": s.a if s else None, "prr": s.prr if s else None,
-                      "chi2": s.chi2 if s else None, **sev(r), "workflow_status": "failed", "review_priority": None,
+                      "chi2": s.chi2 if s else None, **extra(r), "workflow_status": "failed", "review_priority": None,
                       "status_note": "the Analyst's model gave no classification for it after every fallback"})
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
