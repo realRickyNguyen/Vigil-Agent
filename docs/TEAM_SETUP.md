@@ -66,9 +66,9 @@ Each teammate's NVIDIA key has its own per-minute cap. Run one investigation at 
 
 ## 3. Making runs fast
 
-A run on branch `fix/eval-logic` (25 Oct) should take about 8 to 13 minutes per drug. Most of that time is Nemotron Ultra itself: about 40 tokens/s, and most of each reply is reasoning. If a run takes much longer, check these four things in order.
+A run on `main` (25 Oct) should take about 8 to 13 minutes per drug. Most of that time is Nemotron Ultra itself: about 40 tokens/s, and most of each reply is reasoning. If a run takes much longer, check these four things in order.
 
-1. **Use the current code.** Pull `fix/eval-logic`. It has both sets of speed fixes:
+1. **Use the current code.** Pull `main`. It has both sets of speed fixes:
    - streamed model calls, so Nightshift does not cut them off at 45 s
    - one reaction per model call, with 4 calls in parallel
    - one revision round
