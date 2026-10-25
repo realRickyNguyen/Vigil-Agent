@@ -39,3 +39,12 @@ Two parts, set by `origin`.
 - No person has reviewed it. None of us is a pharmacovigilance professional.
 - The two passes are the same model, so their agreement shows consistency, not correctness.
 - The reference is the label alone. A signal the label doesn't mention can still be well known (NAION with semaglutide, for example). Then the row stays `possible_new_signal`, which is right for this task.
+
+## Freeze record
+
+The file was frozen at 06:34:32 UTC on 25 Oct 2026 (17:34 Sydney), before any after-run, with 217 rows.
+
+- SHA-256 of the file as frozen on Windows (CRLF line endings): `3a7a6808ad352f418a6ef19564be6c387475a2e650a9a45ded1beda601dc1c80`
+- SHA-256 of the same content as git stores it (LF line endings): `63080b3b9df837714918f6435988475c4cb6e8153083aae5094a673c6c086746`
+
+The two differ only in line endings. To check on any machine, hash the file with LF endings and compare with the second value, or convert each LF to CRLF and compare with the first.
