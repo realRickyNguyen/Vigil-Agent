@@ -19,6 +19,7 @@ from app.config import Settings
 from app.data import uncertainty
 from app.data.faers import DataClerk, scope_summary, validate_drug
 from app.data.label import search
+from app.data.safety_net import collect as collect_safety_net
 from app.data.sources import SOURCE_ITEMS
 from app.data.sources import check as check_report_sources
 from app.engines.world_model import WorldModel
@@ -48,7 +49,8 @@ NOT_YET_CHECKED = [
     "Every report naming the drug (generic name or active substance) is counted, whether or not it was the "
     "suspect drug",
     "Only reactions in openFDA's 999 most-reported for all drugs and in the drug's own 999 most-reported are "
-    "screened (sizes and cutoffs in data.scope); rarer reactions are not screened",
+    "screened (sizes and cutoffs in data.scope); rarer reactions are not screened. The safety net lists the serious "
+    "and pregnancy-related ones, and the most-reported hidden ones, for a person to review, not as signals",
 ]
 
 
@@ -91,6 +93,9 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
         (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
             (scope_res, scope_rec) = [j.result() for j in jobs]
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
+    # The serious-term safety net (app/data/safety_net.py) is Zetaris and openFDA only, so it runs in the background
+    # from here. Its terms never go into ctx, so no prompt, review item or ranking sees them.
+    net_job = sources_pool.submit(lambda: clerk.serious_terms(drug))
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
         "label_choice": clerk.label_choice, "combination": combination, "seriousness": severity,
@@ -200,6 +205,9 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     sources = collect_sources(ctx, tracer, min(SOURCE_WAIT, max(0.0, left())))
     queue = review_queue(state, passing, new_missing, ctx.get("unclassified", []), ctx.get("skeptic"), severity, label,
                          sources)
+    # Only now, with every model call done and the queue ranked, is the safety net read.
+    net = collect_safety_net(net_job, min(SOURCE_WAIT, max(0.0, left())), tracer, signals, passing, queue, label)
+    ctx["evidence_ids"] |= set(net["query_ids"])
     # The namespace keeps the project's first name (Black Box) so earlier runs' state still loads.
     world = remember(WorldModel("black-box", settings.world_path), drug, label, queue, tracer.run_id,
                      datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -215,7 +223,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
               "report_sources_checked": sum("flags" in ev for ev in sources.values()),
               "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values()),
               "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue),
-              "manual_review": sum(q["manual_review"]["needed"] for q in queue)}
+              "manual_review": sum(q["manual_review"]["needed"] for q in queue),
+              "safety_net_terms": len(net["terms"])}
 
     queries, degraded, setup_warnings = {}, [], []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
@@ -251,6 +260,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                                         scope_res.query_id if scope_res else None)},
         "counts": counts,
         "review_queue": queue,
+        # Outside the screen and the queue, for a person to review (app/data/safety_net.py).
+        "safety_net": net,
         "degraded_steps": degraded,
         # Nightshift steps our app did not ask for, counted from each call's receipt (see nightshift_steps).
         "model_calls": model_calls,

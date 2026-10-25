@@ -8,7 +8,7 @@ Per drug, created at runtime:
   openfda_rest.faers_d2_<slug>_reactions_raw / openfda.faers_d2_<slug>_reactions
   openfda_rest.faers_d2_<slug>_total_raw     / openfda.faers_d2_<slug>_total
   openfda_rest.label_d2_<slug>_raw          the 10 newest labels for the drug; choose_label() picks one
-For the Skeptic, created at runtime and shared across runs:
+For the Skeptic, report sources and the safety net, created at runtime and shared across runs:
   openfda_rest.faers_q_<hash>               one openFDA count query each (co-reported drugs, pair counts)
 The d2 tables use drug_search() (two fields). The older faers_d_<slug> tables used generic_name alone; they
 stay in Zetaris because REST tables cannot be dropped through SQL, so the new search needed new names.
@@ -20,6 +20,7 @@ import urllib.parse
 
 from app.adapters.zetaris import ZetarisClient, ZetarisError
 from app.data.label import INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, SECTIONS, clinical_pharmacology_parts
+from app.data.safety_net import DESIGNATED_MEDICAL_EVENTS, KIND_NAMES, PREGNANCY_NEWBORN, PREGNANCY_NEWBORN_WORDS
 from app.schemas import QueryResult, Signal
 
 OPENFDA = "https://api.fda.gov/drug"
@@ -30,6 +31,13 @@ LABEL_FIELDS = tuple(dict.fromkeys(SECTIONS + (INDICATION,) + PATIENT + PHARMACO
 # Both fields that name a co-drug, so the list matches what drug_search() finds.
 CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
+# The same reaction names split into words, for the safety net's word search.
+REACTION_WORDS_FIELD = "patient.reaction.reactionmeddrapt"
+# Longest openFDA URL the safety net registers as one REST table; longer term lists are split. On 25 Oct openFDA
+# answered a 5,094-character URL, and Zetaris registered one of 3,887 characters (semaglutide, 45 terms).
+URL_LIMIT = 4000
+# Direct counts of designated medical events in one run, at most, re-counts included.
+DIRECT_COUNTS = 4
 # Report sources (app/data/sources.py). Counting by occurcountry needs .exact (plain fails with HTTP 500, checked
 # 25 Oct); primarysource.qualification is a code, 1 to 5, and comes back as a number.
 SOURCE_FIELDS = {"country": "occurcountry.exact", "reporter": "primarysource.qualification"}
@@ -81,6 +89,59 @@ def phrase(field: str, value: str) -> str:
     """One openFDA search clause, fully URL-encoded, so the endpoint never holds a raw quote or apostrophe.
     Used for reactions; drugs and co-drugs go through drug_search() so they match the per-drug tables."""
     return f"{field}:" + urllib.parse.quote(f'"{value}"', safe="")
+
+
+def any_of(field: str, values: list[str]) -> str:
+    """One openFDA clause matching any of the values in a field, fully URL-encoded like drug_search(), with the field
+    repeated for each value."""
+    return urllib.parse.quote("(" + " OR ".join(f'{field}:"{v}"' for v in values) + ")", safe="")
+
+
+def any_reaction(names: list[str]) -> str:
+    """One openFDA clause matching reports that name any of these reactions. openFDA rejects the ^ that FAERS writes
+    for an apostrophe ("Search not supported") and finds nothing for the apostrophe itself, so such a name is searched
+    as a phrase of its words on REACTION_WORDS_FIELD. Checked 25 Oct with empagliflozin, where FOURNIER S GANGRENE
+    that way, counted by exact reaction, gave FOURNIER^S GANGRENE 1,207 reports, as in the drug's own list."""
+    clauses = [f'{REACTION_FIELD}:"{n}"' if "^" not in n else f'{REACTION_WORDS_FIELD}:"{n.replace("^", " ")}"'
+               for n in names]
+    return urllib.parse.quote("(" + " OR ".join(clauses) + ")", safe="")
+
+
+def count_url(search: str, count: str, limit: int | None = None) -> str:
+    return f"{OPENFDA}/event.json?search={search}&count={count}" + (f"&limit={limit}" if limit else "")
+
+
+def term_chunks(drug: str, names: list[str], limit: int = URL_LIMIT) -> list[list[str]]:
+    """The reaction names in order, split so that each direct count's URL stays within `limit` characters."""
+    out, chunk = [], []
+    for n in names:
+        if chunk and len(count_url(f"{drug_search(drug)}+AND+{any_reaction(chunk + [n])}", REACTION_FIELD,
+                                   COUNT_LIMIT)) > limit:
+            out.append(chunk)
+            chunk = []
+        chunk.append(n)
+    return out + ([chunk] if chunk else [])
+
+
+def safety_net_sql(s: str) -> str:
+    """The drug's own reactions, with the all-drugs count where the all-drugs top 999 has one, that are designated
+    medical events, name a pregnancy or newborn word, or are outside the all-drugs top 999."""
+    dme = ", ".join(sql_str(t) for t in DESIGNATED_MEDICAL_EVENTS)
+    return (f"SELECT o.reaction, o.reports, a.reports AS all_reports\n"
+            f"FROM openfda.faers_d2_{s}_reactions o\n"
+            f"LEFT JOIN openfda.faers_reaction_totals a ON a.reaction = o.reaction\n"
+            f"WHERE a.reaction IS NULL OR o.reaction IN ({dme})\n"
+            f"   OR o.reaction RLIKE {sql_str(PREGNANCY_NEWBORN)}\n"
+            f"ORDER BY o.reports DESC")
+
+
+def list_sizes_sql(s: str) -> str:
+    """Size and smallest count of the drug's own list and the all-drugs list. Each view is read once, as two scalar
+    subqueries over one view fail in Zetaris (MISSING_ATTRIBUTES on its exploded results, 25 Oct)."""
+    return (f"SELECT o.own_terms, o.own_cutoff, a.all_terms, a.all_cutoff\n"
+            f"FROM (SELECT COUNT(*) AS own_terms, MIN(reports) AS own_cutoff FROM openfda.faers_d2_{s}_reactions) o\n"
+            f"CROSS JOIN (SELECT COUNT(*) AS all_terms, MIN(reports) AS all_cutoff "
+            f"FROM openfda.faers_reaction_totals) a")
 
 
 def count_view(view: str, raw: str, term_alias: str) -> str:
@@ -310,13 +371,78 @@ class DataClerk:
                          f"re-check {len(reactions)} reactions for {drug}", agent=agent)
         return res, {s.reaction: s for s in map(to_signal, res.records())}
 
-    def _count_table(self, search: str, count: str, purpose: str, limit: int | None = None) -> str:
+    def _count_table(self, search: str, count: str, purpose: str, limit: int | None = None,
+                     created: list | None = None) -> str:
         """A REST table for one openFDA count query, named by a hash of its URL so that runs and drugs
-        asking the same question share one table (they cannot be deleted through SQL)."""
-        url = f"{OPENFDA}/event.json?search={search}&count={count}" + (f"&limit={limit}" if limit else "")
+        asking the same question share one table (they cannot be deleted through SQL). created, if given, gets the
+        name when the table is registered now, which costs one more openFDA call."""
+        url = count_url(search, count, limit)
         name = "faers_q_" + hashlib.sha1(url.encode()).hexdigest()[:12]
-        self.z.ensure(rest_table(name, url), purpose)
+        if self.z.ensure(rest_table(name, url), purpose) and created is not None:
+            created.append(name)
         return name
+
+    def serious_terms(self, drug: str) -> dict:
+        """Counts for the safety net (app/data/safety_net.py), all from Zetaris SQL. One query reads the drug's own
+        reactions joined to the all-drugs ones (safety_net_sql), and one the size and smallest count of each list. The
+        screen reads both tables too, and they cost no openFDA call while Zetaris holds them in its cache (the drug's
+        own list is cached every run, the all-drugs one by openfda_baseline.sql). A full own list (999 terms) misses
+        terms below its cutoff. Then the designated medical events missing from it are counted directly in openFDA, in
+        chunks that keep each URL short, and the pregnancy and newborn words by an openFDA word search. Each is a REST
+        table read once.
+        A direct count names every reaction on the matching reports, so it can come back full too. The terms it does
+        name have exact counts, as every report naming one of them matches, so only the chunk's absent terms are counted
+        again, in a smaller search (on 25 Oct semaglutide's 45 came back full, smallest count 1), up to DIRECT_COUNTS
+        in all. openFDA answers a search that matches nothing with a 404, which Zetaris reports as "HTTP 400: REST API
+        call failed" (checked 25 Oct on semaglutide's 9 absent terms). So the re-count also searches the chunk's
+        least-reported term it found, an anchor that always matches, and an absent term it still lacks has no reports.
+        A direct count that fails is recorded with its error; a failure of the first two queries raises ZetarisError."""
+        s = slug(drug)
+        own = self.z.run(safety_net_sql(s), f"serious-term safety net for {drug}")
+        sizes = self.z.run(list_sizes_sql(s), f"reaction list sizes and cutoffs for {drug}")
+        out = {"own": own.records(), "sizes": sizes.records()[0], "direct": [],
+               "query_ids": [own.query_id, sizes.query_id]}
+        created: list[str] = []
+        if int(float(out["sizes"]["own_terms"])) >= COUNT_LIMIT:
+            have = {r["reaction"] for r in out["own"]}
+            todo = [(c, None) for c in term_chunks(drug, [t for t in DESIGNATED_MEDICAL_EVENTS if t not in have])]
+            while todo and len(out["direct"]) < DIRECT_COUNTS:
+                chunk, anchor = todo.pop(0)
+                clause = any_reaction(chunk + ([anchor] if anchor else []))
+                d = self._direct_count(drug, "designated_medical_event", clause, chunk, created)
+                if anchor:
+                    d["anchor"] = anchor
+                out["direct"].append(d)
+                rows = d.get("rows", [])
+                named = {r["reaction"]: int(float(r["reports"])) for r in rows if r["reaction"] in chunk}
+                absent = [t for t in chunk if t not in named]
+                if len(rows) >= COUNT_LIMIT and absent and named:
+                    # absent and the anchor are part of one chunk, so the re-count's URL is no longer than its own.
+                    todo.append((absent, min(named, key=lambda t: (named[t], t))))
+            out["not_counted"] = [t for c, _ in todo for t in c]
+            out["direct"].append(self._direct_count(drug, "pregnancy_or_newborn",
+                                                    any_of(REACTION_WORDS_FIELD, list(PREGNANCY_NEWBORN_WORDS)),
+                                                    list(PREGNANCY_NEWBORN_WORDS), created))
+        out["query_ids"] += [d["query_id"] for d in out["direct"] if "query_id" in d]
+        out["registered_now"] = len(created)
+        return out
+
+    def _direct_count(self, drug: str, kind: str, clause: str, values: list[str], created: list) -> dict:
+        """One direct openFDA count for the safety net, every reaction on the drug's reports that match the clause,
+        with the all-drugs count where Zetaris has it. A failure is recorded, not raised."""
+        d, what = {"kind": kind, "values": values}, KIND_NAMES[kind]
+        try:
+            raw = self._count_table(f"{drug_search(drug)}+AND+{clause}", REACTION_FIELD,
+                                    f"register direct counts of {len(values)} {what} for {drug}", COUNT_LIMIT, created)
+            res = self.z.run(f"SELECT d.reaction, d.reports, a.reports AS all_reports FROM (SELECT r.term AS reaction, "
+                             f"r.`count` AS reports FROM openfda_rest.{raw} LATERAL VIEW explode(results) AS r) d "
+                             f"LEFT JOIN openfda.faers_reaction_totals a ON a.reaction = d.reaction",
+                             f"direct counts of {len(values)} {what} for {drug}")
+        except ZetarisError as e:
+            d["error"] = str(e)[:300]
+        else:
+            d.update(query_id=res.query_id, rows=res.records())
+        return d
 
     def combination_products(self, drug: str, drug_reports: int) -> tuple[QueryResult | None, dict | None]:
         """Product names across all of the drug's reports, by both name fields, summarised by

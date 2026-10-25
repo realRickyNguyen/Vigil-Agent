@@ -56,6 +56,9 @@ def progress_line(rec: dict) -> str | None:
         return f"{who} sends the Reviewer's objections back to the Analyst (round {d['round']})"
     if k == "dispute_unresolved":
         return f"{who} closes {d['reaction']} as unresolved: {d['reason']}"
+    if k == "safety_net":
+        return (f"{who} safety net lists {d['terms']} terms for a person to review, {d['not_screened']} of them not "
+                f"screened ({d['openfda_requests']} openFDA requests)")
     if k == "co_drug_check":
         return f"{who} checked {d['reaction']} against its co-reported drugs: {d['outcome']}"
     if k == "budget_stop":
