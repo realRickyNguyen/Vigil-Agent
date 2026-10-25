@@ -93,8 +93,12 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | `app/adapters/zetaris.py` | Zetaris REST client: retries, short query IDs for evidence, every query traced |
 | `app/adapters/meterless.py` | Nightshift client: required headers, retries (including dropped connections), `fail_fast` on the provider deadline for batches, `served_by` and Nightshift receipt logging (H-MEM, scaffold), JSON extraction (handles Ultra's inline `</think>`) |
 | `app/data/faers.py` | The Data Clerk: registers openFDA tables per drug (two-field `drug_search`), signal SQL, label choice (`choose_label`), combination share, the Skeptic's co-drug and pair counts |
-| `app/data/label.py` | Label helpers: per-reaction sentence retrieval, literal term lookup |
-| `app/agents/rules.py` | Code routing for easy cases: administrative terms, treated condition, literal label match |
+| `app/data/label.py` | Label helpers: per-reaction sentence retrieval, the code search of every fetched section (`search`) |
+| `app/agents/rules.py` | Code routing for easy cases: administrative terms, treated condition, a name in the safety sections |
+| `app/data/sources.py` | Report sources for review-next items (country and reporter flags, context only) |
+| `app/data/uncertainty.py` | Expected count, PRR interval, IC025 and the thin-evidence mark for each screened row |
+| `app/data/safety_net.py` | Serious-term safety net outside the screen and the queue, for a person to review |
+| `app/orchestration/manual_review.py` | The "needs manual review" flag, by the rules in `eval/MANUAL_REVIEW_RULES.md` |
 | `app/agents/analyst.py` | Analyst: the top 15 rows by chi2 plus up to 5 of its own picks, then classify in batches of 3 with fallbacks |
 | `app/agents/reviewer.py` | Reviewer: code checks first, then model review in batches; objection and next check per finding |
 | `app/orchestration/pipeline.py` | The loop, dispute settling (`settle`), Skeptic round (`skeptic_round`), review queue and counts, World Model record (`remember`), dossier |
@@ -149,6 +153,8 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **Services** were stopped at the end of 22 Oct. Use the "lets begin" routine in `CLAUDE.md`, then check that the Nightshift lanes are still Ultra-only.
 
 ## Next steps, in order
+
+**25 Oct, Bryan's Task 2 (clinical reliability), branch `feature/label-search-evidence`** (local, not pushed, on `main`). It adds the label search across every fetched section, report sources for review-next items, uncertainty and scope for each row, the manual-review flag, the serious-term safety net and small rule fixes. What changed, the live checks and the decisions left open are in Bryan's note for Ricky, `03_Project_context/Vigil_Task2_Clinical_Reliability.md`, and in the commit messages.
 
 **Agent-system to-do, as of 25 Oct (Ricky's order: finish the agent system, then demo and UX).** Everything below is on `main` since 25 Oct; new work branches from `main`.
 
