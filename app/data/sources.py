@@ -22,8 +22,9 @@ LAWYER_SHARE = Fraction(2, 10)
 HEALTH_PROFESSIONAL_SHARE = Fraction(5, 10)
 MIN_REPORTS = 10
 MIN_KNOWN_REPORTER = Fraction(5, 10)
-# Review-next items checked per run. Each costs two openFDA calls, and each run two more for the drug's usual mix
-# (no-key limit about 1,000 a day). 0 turns the check off.
+# Review-next items checked per run. Each costs two to four openFDA reads (registering a table fetches once, and each
+# read of it fetches again), and the drug's usual mix as much again per run. The no-key limit is about 1,000 a day.
+# 0 turns the check off.
 SOURCE_ITEMS = 10
 # openFDA primarysource.qualification codes.
 QUALIFICATION = {"1": "physician", "2": "pharmacist", "3": "other health professional", "4": "lawyer",

@@ -62,7 +62,7 @@ def route(s: Signal, label: dict, evidence: list[str]) -> Finding | None:
     # and the warnings list anxiety as an effect. Only the model can tell which applies.
     if indication and safety:
         return None
-    # The indications can name a term as the population rather than the condition treated: atorvastatin is for adults
+    # The indications can name a term as the population rather than the condition treated. Atorvastatin is for adults
     # "with type 2 diabetes mellitus", and its adverse reactions list diabetes. When a safety section uses the term's
     # head word, the model decides (on 24 Oct the rule settled atorvastatin TYPE 2 DIABETES MELLITUS, and the
     # Reviewer's late objection left it unresolved).

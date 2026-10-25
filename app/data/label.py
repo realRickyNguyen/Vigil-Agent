@@ -27,8 +27,13 @@ PHARMACOLOGY = ("mechanism_of_action", "pharmacodynamics")
 # Never coverage on their own, since they give a condition the drug must not be used in, what other drugs do, or
 # drug levels.
 NOT_COVERAGE = (CONTRAINDICATIONS, "drug_interactions", "pharmacokinetics")
-ORDER = (INDICATION,) + EFFECT + PHARMACOLOGY + NOT_COVERAGE
-KIND = {INDICATION: "indication", **{s: "effect" for s in EFFECT}, **{s: "expected_effect" for s in PHARMACOLOGY}}
+# Use in pregnancy and breastfeeding. They can say what exposure does to a foetus or an infant, but they mix that with
+# advice and background rates, so a name there is shown for the model to judge and never counts on its own. Fetched
+# so that pregnancy and newborn terms (the safety net's among them) get a real label status.
+POPULATIONS = ("pregnancy", "use_in_specific_populations")
+ORDER = (INDICATION,) + EFFECT + PHARMACOLOGY + POPULATIONS + NOT_COVERAGE
+KIND = {INDICATION: "indication", **{s: "effect" for s in EFFECT}, **{s: "expected_effect" for s in PHARMACOLOGY},
+        **{s: "population" for s in POPULATIONS}}
 
 # MedDRA uses British spelling; US labels do not.
 UK_US = [("oesophag", "esophag"), ("oedem", "edem"), ("haemorrh", "hemorrh"), ("haem", "hem"),
@@ -95,14 +100,16 @@ def stems(reaction: str) -> list[str]:
     return list(dict.fromkeys(word_stems(reaction, STOP) + synonym_stems(reaction)))
 
 
-def word_stems(reaction: str, skip: set[str]) -> list[str]:
+def word_stems(reaction: str, skip: set[str], short: bool = True) -> list[str]:
+    """Word prefixes. Retrieval uses 6 letters; short=False keeps all but the last 2 letters of a long word (at least
+    6), so that a code check never takes CREATINE for CREATININE."""
     out = []
     for w in re.findall(r"[a-z]+", us(norm(reaction))):
         if len(w) < 3 or w in skip:
             continue
         if len(w) > 4 and w.endswith("s"):
             w = w[:-1]
-        out.append(w[:6] if len(w) > 6 else w)
+        out.append(w[:6] if short else w[:max(6, len(w) - 2)])
     return out
 
 
@@ -185,8 +192,11 @@ EFFECT_HEADING = re.compile(r"what is the most important information|what are th
 # or "See".
 CROSS_REFERENCE = re.compile(r"(?:[\"“‘']|\bsee)\s*$", re.I)
 LIMITATION = re.compile(r"limitations? of use", re.I)
-# A numbered subsection heading ("1.2 Glycemic Control"), not a number in the text ("approximately 12.5 L").
-SUBSECTION = re.compile(r"\b1\.\d+\s+[A-Z][a-z]")
+# A numbered subsection heading ("1.2 Glycemic Control", "1.2 HEART FAILURE"), not a number in the text
+# ("approximately 12.5 L").
+SUBSECTION = re.compile(r"\b1\.\d+\s+[A-Z][A-Za-z]")
+# A sentence that still reads as a limitation, so a passage may run on into it: a bullet or a negative.
+STILL_LIMITING = re.compile(r"^\s*•|\b(?:not|no|never|neither|avoid)\b", re.I)
 # The next indication after a Limitation of Use ("WEGOVY is ... indicated in combination ..."); "not indicated" is
 # part of the limitation.
 INDICATED = re.compile(r"(?<!not )\bindicated\b", re.I)
@@ -216,23 +226,31 @@ def leaflet_parts(text: str) -> tuple[str, str]:
 def indication_parts(text: str) -> tuple[str, str]:
     """(indications, Limitation of Use passages). A Limitation of Use names a condition the drug is not for (Invokana's
     diabetic ketoacidosis before its 2015 warning), so it is neither the treated condition nor coverage. A passage
-    runs to the next numbered subsection, or to the sentence naming the next indication, or the end of the section.
-    Text in doubt stays with the indications, where it counts as before."""
+    is its first sentence, then each next sentence that still reads as a limitation (STILL_LIMITING), up to the next
+    numbered subsection or the sentence naming the next indication. A cross-reference ("see Limitations of Use")
+    starts none. Text in doubt stays with the indications, where it counts as before."""
     ind, lim, pos = [], [], 0
     for m in LIMITATION.finditer(text):
-        if m.start() < pos:
+        if m.start() < pos or re.search(r"(?:\bsee|\()\s*$", text[max(0, m.start() - 6):m.start()], re.I):
             continue
-        nxt, again = SUBSECTION.search(text, m.end()), INDICATED.search(text, m.end())
-        stop = nxt.start() if nxt else len(text)
-        if again and again.start() < stop:
-            # Cut where the sentence naming the next indication starts; with no sentence before it, there's no passage.
-            cut = text.rfind(". ", m.end(), again.start())
-            stop = cut + 2 if cut >= 0 else m.end()
+        nxt = SUBSECTION.search(text, m.end())
+        stop = m.start() + limitation_length(text[m.start():nxt.start() if nxt else len(text)])
         ind.append(text[pos:m.start()])
         lim.append(text[m.start():stop])
         pos = stop
     ind.append(text[pos:])
     return " ".join(ind).strip(), " ".join(lim).strip()
+
+
+def limitation_length(passage: str) -> int:
+    """How much of the passage, which starts at "Limitation(s) of Use", is the limitation itself."""
+    end = 0
+    # A sentence ends at a full stop before a space or the end, so "( 5.2 )" does not end one.
+    for i, m in enumerate(re.finditer(r".+?(?:\.(?=\s|$)|$)", passage, re.S)):
+        if i and (INDICATED.search(m.group(0)) or not STILL_LIMITING.search(m.group(0))):
+            break
+        end = m.end()
+    return end
 
 
 def clinical_pharmacology_parts(text: str) -> dict:
@@ -275,9 +293,14 @@ def effect_text(label: dict, section: str | None = None) -> str:
 
 
 def name_in(reaction: str, text: str) -> str | None:
-    """The words text uses to name the reaction, by its MedDRA name (singular or plural) or a NAMED_AS phrase."""
+    """The words text uses to name the reaction, by its MedDRA name (singular or plural), the two words of a two-word
+    name the other way round (MedDRA's ABORTION SPONTANEOUS and VISION BLURRED are a label's "spontaneous abortions"
+    and "blurred vision"), or a NAMED_AS phrase."""
     term, t = us(norm(reaction)), us(norm(text))
-    for phrase in dict.fromkeys([term] + [p for pattern, extra in NAMED_AS if re.search(pattern, term) for p in extra]):
+    words = term.split()
+    flipped = [f"{words[1]} {words[0]}"] if len(words) == 2 else []
+    phrases = [term] + flipped + [p for pattern, extra in NAMED_AS if re.search(pattern, term) for p in extra]
+    for phrase in dict.fromkeys(phrases):
         m = re.search(rf"\b{re.escape(phrase)}(s|es)?\b", t)
         if m:
             return m.group(0)
@@ -289,7 +312,7 @@ def change_in(reaction: str, text: str) -> str | None:
     within WINDOW words of it, every other word of the term, as in "reduces body weight". None for other terms."""
     words = us(norm(reaction)).split()
     ways = next((DIRECTIONS[w] for w in words if w in DIRECTIONS), None)
-    rest = word_stems(reaction, GRAMMAR | set(DIRECTIONS))
+    rest = word_stems(reaction, GRAMMAR | set(DIRECTIONS), short=False)  # long prefixes, so CREATININE is not CREATINE
     if not ways or not rest:
         return None
     for s in re.split(r"(?<=[.;])\s+", text):
@@ -365,14 +388,21 @@ def explain(s: dict, searched: bool = True) -> str:
     if by("expected_effect", "name"):
         out.append(f"Mentioned in the pharmacology ({', '.join(where(h) for h in by('expected_effect', 'name'))}), "
                    f"which describes how the drug works; check whether it says the drug causes it.")
+    if by("population"):
+        out.append(f"Mentioned in the sections on pregnancy and breastfeeding "
+                   f"({', '.join(where(h) for h in by('population'))}), which can describe what exposure does to a "
+                   f"foetus or an infant; check what they say. They never count on their own.")
     if by("not_coverage"):
         out.append(f"{'Also named' if len(by('not_coverage')) < len(s['found']) else 'Named only'} where it never counts "
                    f"as coverage: {', '.join(where(h) for h in by('not_coverage'))}.")
     if not s["found"]:
         # Said plainly because on 25 Oct the Analyst read "not named" as a reason to call montelukast CHEST DISCOMFORT
-        # a clinical event, skipping the treated-condition question it should decide first.
-        out.append("Not named in any section searched. That is about the label only, not whether it is the treated "
-                   "condition.")
+        # a clinical event, skipping the treated-condition question it should decide first. The search finds names,
+        # set synonyms and simple changes only, so a broader term such as "suicidal thoughts and behaviors" for
+        # SUICIDE ATTEMPT is missed, and the line says so.
+        out.append("Not named in any section searched. The search looks for its name and a few set synonyms, so the "
+                   "label may still describe it in other words or by a broader term. It says nothing about whether it "
+                   "is the treated condition.")
     if searched:
         out.append(f"Searched {len(s['searched'])} sections: {', '.join(s['searched'])}.")
     return " ".join(out)
@@ -435,10 +465,11 @@ def excerpt_block(reactions: list[str], label: dict, label_qid: str | None) -> s
         lines.append(f"  Code search: {explain(found, searched=False)}")
         lines += [f"  [{sec}] {s}" for sec, s in hits]
         # explain() already quotes an expected effect. Also quoted here are effect parts the retrieved sentences miss,
-        # and a pharmacology sentence that names the reaction, so the model can see what it says.
-        quoted = [h for h in found["found"] if (h["kind"] == "effect" or h["kind"] == "expected_effect"
+        # and a pharmacology or pregnancy sentence that names the reaction, so the model can see what it says.
+        quoted = [h for h in found["found"] if (h["kind"] in ("effect", "population") or h["kind"] == "expected_effect"
                                                  and h["how"] == "name")
                   and not any(sec == h["section"] and h["match"] and h["match"] in us(norm(s)) for sec, s in hits)][:2]
-        note = lambda h: h["part"] or ("pharmacology, not coverage" if h["kind"] == "expected_effect" else "")  # noqa: E731
+        notes = {"expected_effect": "pharmacology, not coverage", "population": "pregnancy and breastfeeding, not coverage"}
+        note = lambda h: h["part"] or notes.get(h["kind"], "")  # noqa: E731
         lines += [f"  [{h['section']}] " + (f"({note(h)}) " if note(h) else "") + h["quote"] for h in quoted]
     return "\n".join(lines)

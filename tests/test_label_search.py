@@ -121,7 +121,8 @@ def test_only_the_side_effect_parts_of_a_medication_guide_count():
 
 
 def test_a_leaflet_risk_factor_is_not_settled_as_coverage_by_rule():
-    # Metformin ER's leaflet, "What is the most important information": dehydration is a lactic acidosis risk factor.
+    # Metformin ER's leaflet, in "What is the most important information", lists dehydration as a lactic acidosis
+    # risk factor.
     label = {"spl_patient_package_insert": "What is the most important information I should know about metformin "
                                            "hydrochloride extended-release tablets? You have a higher chance of getting "
                                            "lactic acidosis if you: • get dehydrated (lose a large amount of body "
@@ -151,9 +152,10 @@ def test_semaglutide_decreased_appetite_records_every_section_searched():
     s = search("DECREASED APPETITE", OZEMPIC)
     assert s["found"] == [] and s["named_in"] == []
     assert s["searched"] == ["adverse_reactions", "spl_medguide", "pharmacodynamics", "pharmacokinetics"]
-    assert s["summary"] == ("Not named in any section searched. That is about the label only, not whether it is the "
-                            "treated condition. Searched 4 sections: adverse_reactions, spl_medguide, pharmacodynamics, "
-                            "pharmacokinetics.")
+    assert s["summary"] == ("Not named in any section searched. The search looks for its name and a few set synonyms, "
+                            "so the label may still describe it in other words or by a broader term. It says nothing "
+                            "about whether it is the treated condition. Searched 4 sections: adverse_reactions, "
+                            "spl_medguide, pharmacodynamics, pharmacokinetics.")
     ok = code_checks(claim("DECREASED APPETITE", "not_found"), sig("DECREASED APPETITE"), OZEMPIC, {"q-1"})
     assert ok["not_named_in_label"] == (True, "label text does not name 'decreased appetite'")
 
@@ -181,7 +183,7 @@ def test_sertraline_withdrawal_syndrome_is_covered_as_discontinuation_syndrome()
                                                                   "discontinuation syndrome")
     assert check(f, SERTRALINE) == []
     assert any(m.startswith("not_named_in_label") for m in check(claim("WITHDRAWAL SYNDROME", "not_found"), SERTRALINE))
-    # Only the same event: alcohol withdrawal and neonatal withdrawal are not antidepressant discontinuation.
+    # Only the same event counts. Alcohol withdrawal and neonatal withdrawal are not antidepressant discontinuation.
     for other in ("ALCOHOL WITHDRAWAL SYNDROME", "DRUG WITHDRAWAL SYNDROME NEONATAL"):
         assert search(other, SERTRALINE)["found"] == [] and route(sig(other), SERTRALINE, ["q-1"]) is None
 
@@ -297,3 +299,54 @@ def test_a_faers_caret_name_is_searched_and_counted_as_an_apostrophe():
     from app.data.faers import REACTION_FIELD, phrase
     assert phrase(REACTION_FIELD, "FOURNIER^S GANGRENE") == "patient.reaction.reactionmeddrapt:%22FOURNIER%20S%20GANGRENE%22"
     assert phrase(REACTION_FIELD, "PANCREATITIS") == REACTION_FIELD + ":%22PANCREATITIS%22"
+
+
+def test_a_two_word_name_is_found_the_other_way_round():
+    # MedDRA puts the qualifier last; labels do not (isotretinoin's warnings, Ozempic's Medication Guide).
+    s = search("ABORTION SPONTANEOUS", {"warnings_and_cautions": "Spontaneous abortions have been reported."})
+    assert [(h["section"], h["match"]) for h in s["found"]] == [("warnings_and_cautions", "spontaneous abortions")]
+    s = search("VISION BLURRED", {"adverse_reactions": "Blurred vision occurred in 2% of patients."})
+    assert s["named_in"] == ["adverse_reactions"]
+
+
+def test_a_longer_word_is_not_taken_for_a_shorter_one():
+    # Made-up text in the style of a statin label. CREATINE is not CREATININE, so "not found" stays allowed.
+    label = {"adverse_reactions": "Increases in blood creatine phosphokinase were reported."}
+    assert search("BLOOD CREATININE INCREASED", label)["found"] == []
+    assert check(claim("BLOOD CREATININE INCREASED", "not_found"), label) == []
+    assert search("BLOOD CREATINE PHOSPHOKINASE INCREASED", label)["named_in"] == ["adverse_reactions"]
+
+
+def test_a_limitation_of_use_never_swallows_a_later_indication():
+    # An upper-case subsection heading ends the passage, and a cross-reference starts none.
+    ind, lim = indication_parts("1.1 HYPERTENSION Drug X lowers blood pressure. Limitations of Use: not studied in "
+                                "children. 1.2 HEART FAILURE Drug X reduces hospitalisation for heart failure.")
+    assert lim == "Limitations of Use: not studied in children." and "heart failure" in ind
+    ind, lim = indication_parts("Drug X treats hypertension (see Limitations of Use, 1.3). Drug X also reduces "
+                                "hospitalisation for heart failure.")
+    assert lim == "" and "heart failure" in ind
+    # A passage runs on only while it still reads as a limitation.
+    ind, lim = indication_parts("Limitations of Use: not for type 1 diabetes. Drug X reduces heart failure "
+                                "hospitalisation.")
+    assert lim == "Limitations of Use: not for type 1 diabetes." and "heart failure" in ind
+
+
+def test_pregnancy_sections_are_shown_but_never_count():
+    label = {"pregnancy": "Neonates exposed late in the third trimester have developed respiratory distress.",
+             "adverse_reactions": "Nausea was common."}
+    s = search("RESPIRATORY DISTRESS", label)
+    assert [(h["section"], h["kind"]) for h in s["found"]] == [("pregnancy", "population")]
+    assert s["named_in"] == [] and "sections on pregnancy and breastfeeding (pregnancy)" in s["summary"]
+    assert any(m.startswith("coverage_section") for m in
+               check(claim("RESPIRATORY DISTRESS", "covered", "pregnancy", "respiratory distress"), label))
+    assert "pregnancy" in LABEL_FIELDS and "use_in_specific_populations" in LABEL_FIELDS
+    block = excerpt_block(["RESPIRATORY DISTRESS"], label, "q-l")
+    assert "[pregnancy] (pregnancy and breastfeeding, not coverage)" in block
+
+
+def test_a_not_found_line_says_the_search_has_limits():
+    # Sertraline SUICIDE ATTEMPT is covered by a broader term ("suicidal thoughts and behaviors"), which no name
+    # search finds, so the line must not read as proof.
+    s = search("SUICIDE ATTEMPT", {"boxed_warning": "Antidepressants increased the risk of suicidal thoughts and "
+                                                    "behaviors in pediatric and young adult patients."})
+    assert s["found"] == [] and "by a broader term" in s["summary"]

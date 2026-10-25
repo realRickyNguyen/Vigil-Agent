@@ -19,15 +19,17 @@ import re
 import urllib.parse
 
 from app.adapters.zetaris import ZetarisClient, ZetarisError
-from app.data.label import INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, SECTIONS, clinical_pharmacology_parts
+from app.data.label import (INDICATION, NOT_COVERAGE, PATIENT, PHARMACOLOGY, POPULATIONS, SECTIONS,
+                            clinical_pharmacology_parts)
 from app.data.safety_net import DESIGNATED_MEDICAL_EVENTS, KIND_NAMES, PREGNANCY_NEWBORN, PREGNANCY_NEWBORN_WORDS
 from app.schemas import QueryResult, Signal
 
 OPENFDA = "https://api.fda.gov/drug"
 DRUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 \-]{1,48}$")
-# The first seven are the sections the app has always read. Since 25 Oct also the patient labelling, the pharmacology
-# and the sections that never count as coverage, so the code search can say where a reaction is named.
-LABEL_FIELDS = tuple(dict.fromkeys(SECTIONS + (INDICATION,) + PATIENT + PHARMACOLOGY + NOT_COVERAGE))
+# The first seven are the sections the app has always read. Since 25 Oct also the patient labelling, the pharmacology,
+# the pregnancy sections and the sections that never count as coverage, so the code search can say where a reaction
+# is named.
+LABEL_FIELDS = tuple(dict.fromkeys(SECTIONS + (INDICATION,) + PATIENT + PHARMACOLOGY + POPULATIONS + NOT_COVERAGE))
 # Both fields that name a co-drug, so the list matches what drug_search() finds.
 CO_DRUG_FIELDS = ("patient.drug.openfda.generic_name.exact", "patient.drug.activesubstance.activesubstancename.exact")
 REACTION_FIELD = "patient.reaction.reactionmeddrapt.exact"
