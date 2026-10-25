@@ -17,8 +17,8 @@ from app.agents.reviewer import failed as failed_checks
 from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
 from app.data import uncertainty
-from app.data.faers import DataClerk, scope_summary, validate_drug
-from app.data.label import search
+from app.data.faers import DataClerk, DrugNotFound, NoCurrentLabel, scope_summary, validate_drug
+from app.data.label import search, sections
 from app.data.safety_net import collect as collect_safety_net
 from app.data.sources import SOURCE_ITEMS
 from app.data.sources import check as check_report_sources
@@ -87,10 +87,23 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     skeptic = Skeptic(clerk, settings.skeptic_co_drugs)
 
     # Evidence, all through Zetaris.
-    created = clerk.register_drug(drug)
-    tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
-    totals, (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
-        (scope_res, scope_rec) = gather_evidence(clerk, drug)
+    try:
+        created = clerk.register_drug(drug)
+        tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
+        totals, (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
+            (scope_res, scope_rec) = gather_evidence(clerk, drug)
+    except DrugNotFound as e:
+        tracer.event("data_clerk", "drug_not_found", drug=drug, message=str(e))
+        raise
+    # With no label, no reaction can be checked against one, so the run stops here, before any model call.
+    if not sections(label):
+        if clerk.label_error:
+            tracer.event("data_clerk", "degraded", step="label", error=clerk.label_error, fallback="run stopped")
+            raise ZetarisError(f"the label query for '{drug}' failed, so the run stopped before any model call "
+                               f"({clerk.label_error})")
+        message = clerk.no_label_message(drug, int(float(totals["drug_reports"])))
+        tracer.event("data_clerk", "no_current_label", drug=drug, message=message)
+        raise NoCurrentLabel(message)
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     # The serious-term safety net (app/data/safety_net.py) is Zetaris and openFDA only, so it runs in the background
     # from here. Its terms never go into ctx, so no prompt, review item or ranking sees them.

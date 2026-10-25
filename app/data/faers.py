@@ -54,9 +54,35 @@ class DrugNotFound(RuntimeError):
     pass
 
 
+class NoCurrentLabel(DrugNotFound):
+    """openFDA has reports for the drug but no label under that generic name, so no reaction can be checked against
+    one. A DrugNotFound, so the API answers it as one (404) without a change to app/server.py."""
+
+
+# The hint when nothing names the drug. It never names a drug picked from the input: a near spelling would be a guess.
+SPELLING_HINT = "Check the spelling, and give the generic name (for example semaglutide, not Ozempic)."
+
+
+def no_match(e: Exception) -> bool:
+    """openFDA answers a search that matches nothing with a 404, and Zetaris passes its code on in the error text
+    ("HTTP 400: REST API call failed: Server returned HTTP response code: 404"), both when it creates a REST table and
+    when it reads one. A 5xx there is openFDA failing, not a missing drug, so it stays a ZetarisError."""
+    return isinstance(e, ZetarisError) and "response code: 404" in str(e)
+
+
+def brand_hint(drug: str, generics: list[str]) -> str:
+    """What to try instead, from DataClerk.brand_generics(). Vigil never swaps the name itself, so it says so."""
+    if not generics:
+        return SPELLING_HINT
+    names = " or ".join(f"'{g.lower()}'" for g in generics[:3])
+    return (f"openFDA's drug labels give '{drug}' as a brand name of {names}. Vigil searches by generic name and "
+            f"doesn't swap a brand for its generic itself, so run it again as {names}.")
+
+
 def validate_drug(drug: str) -> str:
-    """The drug name ends up in a URL and in table names, so only plain names are allowed."""
-    drug = (drug or "").strip()
+    """The drug name ends up in a URL and in table names, so only plain names are allowed. Runs of spaces inside the
+    name become one, as openFDA reads the words the same way and the table names already did (slug)."""
+    drug = " ".join((drug or "").split())
     if not DRUG_RE.match(drug):
         raise ValueError("drug must be 2-49 letters, digits, spaces or hyphens")
     return drug.lower()
@@ -294,11 +320,16 @@ def combination_summary(rows: list[tuple[str, str, int]], drug: str, drug_report
     rows over the drug's reports. Bryan found this is 1% for atorvastatin but 46% for acetaminophen and 12% for
     metformin; a reaction can then belong to the partner drug (opioid dependence under acetaminophen). One report
     can name several products, and each field counts separately, so this takes the larger field's sum and is
-    approximate."""
+    approximate.
+    A product counts only if it has an ingredient beyond the drug's own. For a single-ingredient drug that is any
+    combination. When the drug itself is a combination (sitagliptin and metformin), its own product isn't one, so its
+    ingredients aren't named to the agents as partner drugs of itself."""
     word = re.compile(rf"\b{re.escape(drug.upper())}\b")
+    own = [re.compile(rf"\b{re.escape(p)}\b") for p in ingredient_parts(drug)] or [word]
+    other = lambda part: not any(w.search(part) for w in own)  # noqa: E731
     by_field: dict[str, dict[str, int]] = {}
     for field, name, reports in rows:
-        if word.search(name.upper()) and not single_ingredient(name):
+        if word.search(name.upper()) and any(other(p) for p in ingredient_parts(name)):
             by_field.setdefault(field, {})[name] = by_field.get(field, {}).get(name, 0) + reports
     if not by_field:
         return {"share": 0.0, "reports": 0, "top_products": [], "partners": []}
@@ -307,7 +338,7 @@ def combination_summary(rows: list[tuple[str, str, int]], drug: str, drug_report
     partners: dict[str, int] = {}
     for name, reports in products.items():
         for part in ingredient_parts(name):
-            if not word.search(part):
+            if other(part):
                 partners[part] = partners.get(part, 0) + reports
     top = sorted(products.items(), key=lambda kv: -kv[1])[:5]
     return {"share": round(min(total / drug_reports, 1.0), 3) if drug_reports else 0.0, "reports": total,
@@ -319,6 +350,9 @@ class DataClerk:
     def __init__(self, zetaris: ZetarisClient):
         self.z = zetaris
         self.label_choice = None
+        # Why label() found nothing. label_missing means openFDA has no label under the name, label_error that the
+        # label query failed for another reason.
+        self.label_missing, self.label_error = False, None
 
     def register_drug(self, drug: str) -> dict:
         """Create the per-drug REST tables and views if they do not exist yet. Each statement is a round trip of
@@ -347,16 +381,73 @@ class DataClerk:
             "total": (count_view(f"faers_d2_{s}_total", f"faers_d2_{s}_total_raw", "serious_flag"),
                       f"flatten report total for {drug}"),
         }
+        def kept(step, *args):
+            """step(*args), with openFDA's "no match" (no_match) returned instead of raised."""
+            try:
+                return step(*args)
+            except ZetarisError as e:
+                if no_match(e):
+                    return e
+                raise
+
+        def cache(raw):
+            return kept(lambda: self.z.run(f"CACHE TABLE openfda_rest.{raw}", f"cache {raw}", ddl=True))
+
         with ThreadPoolExecutor(max_workers=5) as pool:
-            created = dict(zip(raws, pool.map(lambda a: self.z.ensure(*a), raws.values())))
+            created = dict(zip(raws, pool.map(lambda a: kept(self.z.ensure, *a), raws.values())))
+            # No reaction counts or no total means no report names the drug, so stop here with a message, before
+            # the views, the caches and every later query fail on the same missing search.
+            if any(isinstance(created[k], ZetarisError) for k in ("reactions_raw", "total_raw")):
+                raise DrugNotFound(self.not_found_message(drug))
+            self.label_missing = isinstance(created["label_raw"], ZetarisError)
+            if self.label_missing:
+                created["label_raw"] = None  # not created, as no label matched
             view_jobs = [pool.submit(self.z.ensure, *a) for a in views.values()]
             # Cache every run: CACHE TABLE is cheap once cached, and the cache does not survive a Zetaris restart.
-            cache_jobs = [pool.submit(self.z.run, f"CACHE TABLE openfda_rest.{raw}", f"cache {raw}", ddl=True)
-                          for raw in (f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw", f"label_d2_{s}_raw")]
+            to_cache = [f"faers_d2_{s}_reactions_raw", f"faers_d2_{s}_total_raw"]
+            to_cache += [] if self.label_missing else [f"label_d2_{s}_raw"]
+            cache_jobs = {raw: pool.submit(cache, raw) for raw in to_cache}
             created.update(zip(views, [j.result() for j in view_jobs]))
-            for j in cache_jobs:
-                j.result()
+            for raw, j in cache_jobs.items():
+                if isinstance(j.result(), ZetarisError):
+                    if not raw.startswith("label_"):
+                        raise DrugNotFound(self.not_found_message(drug))
+                    self.label_missing = True
         return created
+
+    def brand_generics(self, drug: str) -> list[str]:
+        """The generic names openFDA's drug labels give for a brand name equal to the input (ignoring case), from the
+        labels' own openfda.brand_name and openfda.generic_name fields, most labels first. Only for a message: the run
+        never swaps a brand for its generic itself. Empty when no label has that brand name or the lookup fails. Costs
+        one or two openFDA reads, and only runs when a run is about to stop."""
+        q = urllib.parse.quote(f'"{drug}"')
+        url = f"{OPENFDA}/label.json?search=openfda.brand_name:{q}&limit=100"
+        name = "label_brand_" + hashlib.sha1(url.encode()).hexdigest()[:12]
+        try:
+            self.z.ensure(rest_table(name, url), f"look up '{drug}' as a brand name")
+            res = self.z.run(f"SELECT to_json(r.openfda) AS o FROM openfda_rest.{name} LATERAL VIEW explode(results) "
+                             f"AS r", f"generic names for the brand name '{drug}'")
+        except ZetarisError:
+            return []
+        counts: dict[str, int] = {}
+        for row in res.rows:
+            o = json.loads(row[0] or "{}")
+            if any(" ".join(b.split()).lower() == drug for b in o.get("brand_name") or []):
+                for g in o.get("generic_name") or []:
+                    counts[" ".join(g.split())] = counts.get(" ".join(g.split()), 0) + 1
+        return [g for g, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+    def not_found_message(self, drug: str) -> str:
+        return (f"No FAERS reports in openFDA name '{drug}' as a generic name or active substance, so there is "
+                f"nothing to assess. {brand_hint(drug, self.brand_generics(drug))}")
+
+    def no_label_message(self, drug: str, reports: int) -> str:
+        generics = self.brand_generics(drug)
+        why = brand_hint(drug, generics) if generics else (
+            "openFDA holds no label for some drugs, such as one withdrawn long ago, and a misspelt or brand name can "
+            f"still match a few reports. {SPELLING_HINT}")
+        return (f"openFDA has {reports:,} adverse event reports naming '{drug}' but no drug label under that generic "
+                f"name, so no reaction can be checked against a label. The run stopped before any model call. {why}")
 
     def totals(self, drug: str) -> dict:
         s = slug(drug)
@@ -367,10 +458,12 @@ class DataClerk:
                 f"(SELECT meta.last_updated FROM openfda_rest.faers_total_raw) AS data_last_updated",
                 f"report totals for {drug}")
         except ZetarisError as e:
-            raise DrugNotFound(f"openFDA has no adverse event reports for '{drug}' ({e})") from e
+            if not no_match(e):
+                raise  # openFDA or Zetaris failing, not a missing drug
+            raise DrugNotFound(self.not_found_message(drug)) from e
         rec = res.records()[0]
         if not rec.get("drug_reports"):
-            raise DrugNotFound(f"openFDA has no adverse event reports for '{drug}'")
+            raise DrugNotFound(self.not_found_message(drug))
         return {**rec, "query_id": res.query_id}
 
     def signals(self, drug: str) -> tuple[QueryResult, list[Signal]]:
@@ -578,12 +671,19 @@ class DataClerk:
         Which label was chosen, and why, is kept in self.label_choice for the trace and the dossier."""
         raw = f"openfda_rest.label_d2_{slug(drug)}_raw"
         self.label_choice = None
+        if self.label_missing:  # register_drug() found no label under the name
+            return None, {}
         try:
             res = self.z.run(f"SELECT to_json(r) AS label FROM {raw} LATERAL VIEW explode(results) AS r",
                              f"label text for {drug}")
-        except ZetarisError:
+        except ZetarisError as e:
+            if no_match(e):
+                self.label_missing = True
+            else:
+                self.label_error = str(e)[:300]
             return None, {}
         if not res.rows:
+            self.label_missing = True
             return res.query_id, {}
         rec, self.label_choice = choose_label([json.loads(row[0]) for row in res.rows])
         out = {f: " ".join(rec[f]) for f in LABEL_FIELDS if rec.get(f)}
