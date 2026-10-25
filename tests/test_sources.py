@@ -214,6 +214,10 @@ class RunClerk:
     def seriousness(self, drug):
         return None, {}
 
+    def scope(self, drug):
+        return QueryResult("q-sc", "", [], []), {"drug_terms": 999, "drug_cutoff": 116, "all_terms": 999,
+                                                 "all_cutoff": 9059}
+
     def recheck(self, drug, reactions, agent="reviewer"):
         return QueryResult("q-r", "", [], []), {s.reaction: s for s in self.rows if s.reaction in reactions}
 
@@ -241,7 +245,8 @@ class RunLLM:
             return {"verdicts": [{"reaction": r, "decision": "accept", "reason": "ok"} for r in names], "missing": []}
         if "picked" in messages[0]["content"]:
             return {"picked": []}
-        rows = [l.split(" | ") for l in user.splitlines() if l.count(" | ") == 3 and not l.startswith("reaction")]
+        # A classify table row: reaction | a | PRR | chi2 | expected a | PRR 95% CI | IC025 | thin evidence
+        rows = [l.split(" | ") for l in user.splitlines() if l.count(" | ") == 7 and not l.startswith("reaction")]
         return {"findings": [{"reaction": r[0], "a": int(r[1]), "prr": float(r[2]), "context": "clinical_event",
                               "label_coverage": "not_found", "review_priority": "review_next", "reasoning": "x",
                               "next_check": "y", "evidence": ["q-s"]} for r in rows], "summary": ""}
@@ -267,6 +272,21 @@ def test_a_whole_run_checks_report_sources_for_review_next_items_only(tmp_path, 
     assert dossier["counts"]["report_sources_checked"] == 1 and dossier["counts"]["report_sources_flagged"] == 1
     assert "come from CA" in next(p for p in llms[0].reviews if "FULL BLOOD COUNT ABNORMAL" in p)
     assert fbc["label_search"]["summary"].startswith("Not named in any section searched.")
+
+
+def test_a_whole_run_states_its_scope_and_each_items_uncertainty(tmp_path, monkeypatch):
+    from app.orchestration import pipeline
+    llms = []
+    monkeypatch.setattr(pipeline, "ZetarisClient", lambda settings, tracer: None)
+    monkeypatch.setattr(pipeline, "DataClerk", lambda z: RunClerk())
+    monkeypatch.setattr(pipeline, "NightshiftClient", lambda settings, tracer: llms.append(RunLLM(tracer)) or llms[-1])
+    dossier = pipeline.investigate({"drug": "montelukast"}, run_settings(tmp_path), pipeline.Tracer(tmp_path, echo=False))
+    scope = dossier["data"]["scope"]
+    assert scope["drug_list"]["full"] is True and scope["query_id"] == "q-sc" and scope["screened"] == 3
+    assert "The montelukast list is full (999 reactions, the smallest with 116 reports)" in scope["statement"]
+    assert all("uncertainty" in q for q in dossier["review_queue"])
+    assert dossier["counts"]["thin_evidence"] == 0  # every row here has hundreds of reports
+    assert llms[0].reviews and all('"uncertainty"' in p for p in llms[0].reviews)
 
 
 def test_the_thresholds_are_exact_at_their_boundaries():

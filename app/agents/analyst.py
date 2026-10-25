@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, NightshiftClient
 from app.agents.rules import route
 from app.agents.skeptic import compact
+from app.data import uncertainty
 from app.data.label import excerpt_block, norm
 from app.schemas import Finding, Signal
 
@@ -23,6 +24,8 @@ TOP_ALWAYS = 15
 EXTRA_PICKS = 5
 BATCH = 1  # reactions per model call: on 23 Oct, 3-reaction calls often passed Nightshift's ~50 s deadline
 COMBINATION_NOTE_AT = 0.05  # combination share above which the agents are told about partner drugs
+THIN_NOTE = (f"Expected a is the count if drug and reaction were independent. Thin evidence means fewer than "
+             f"{uncertainty.THIN_REPORTS} reports, or IC025 at or below 0, worked out in code from the same counts.")
 
 PICK_SYSTEM = """You are the Analyst in a drug-safety review team. You read a screen of FDA Adverse Event Reporting System (FAERS) statistics for one drug.
 
@@ -54,6 +57,8 @@ Also give "reasoning" (one sentence: why this priority) and "next_check" (one co
 
 FAERS counts have no denominator. Never compare a PRR or a report count with an incidence or a clinical-trial frequency, and never propose that comparison as a next_check unless the check names another data source that has a denominator.
 
+Each row also shows, worked out in code, the expected count, the PRR's 95% interval, IC025 and whether it is thin evidence. For a row marked thin, say in "reasoning" that it is thin evidence. Never call a thin row statistically significant, strong or robust, and never cite its chi2 as strength.
+
 Rules: use only the data in the message; never invent numbers, reactions or label text; copy "reaction", "a" and "prr" exactly from the table; "evidence" lists the query IDs you relied on; "summary" is at most two sentences.
 
 Reply with only a JSON object:
@@ -61,17 +66,27 @@ Reply with only a JSON object:
 
 
 def screen_table(signals: list[Signal], limit: int, severity: dict | None = None) -> str:
-    """The screen rows; with severity, also the share of each row's reports flagged serious or reporting a death.
-    Severity is shown only where the model chooses which rows to look at (the pick step), never where it
-    classifies them (see _classify_batch)."""
-    if not severity:
-        lines = ["reaction | a (reports with drug) | PRR | chi2"]
-        return "\n".join(lines + [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2}" for s in signals[:limit]])
-    pct = lambda v: "n/a" if v is None else f"{v:.0%}"
-    lines = ["reaction | a (reports with drug) | PRR | chi2 | serious | death  (share of the a reports flagged "
-             "serious / reporting a death; the flag is for the whole report, not this reaction)"]
-    lines += [f"{s.reaction} | {s.a} | {s.prr} | {s.chi2} | {pct(severity.get(s.reaction, {}).get('serious_share'))} "
-              f"| {pct(severity.get(s.reaction, {}).get('death_share'))}" for s in signals[:limit]]
+    """The screen rows, each with its expected count, PRR interval, IC025 and thin-evidence mark worked out in code
+    from the same counts (app/data/uncertainty.py), so a row with few reports does not look more certain than it
+    is. With severity, also the share of each row's reports flagged serious or reporting a death. Severity is shown
+    only where the model chooses which rows to look at (the pick step), never where it classifies them (see
+    _classify_batch)."""
+    pct = lambda v: "n/a" if v is None else f"{v:.0%}"  # noqa: E731
+    head = "reaction | a (reports with drug) | PRR | chi2" + (" | serious | death" if severity else "")
+    head += " | expected a | PRR 95% CI | IC025 | thin evidence"
+    if severity:
+        head += ("  (serious / death: share of the a reports flagged serious / reporting a death; the flag is for "
+                 "the whole report, not this reaction)")
+    lines = [head]
+    for s in signals[:limit]:
+        u = uncertainty.of(s)
+        cells = [s.reaction, s.a, s.prr, s.chi2]
+        if severity:
+            cells += [pct(severity.get(s.reaction, {}).get(f"{k}_share")) for k in ("serious", "death")]
+        cells += [u["expected"], "n/a" if u["prr_ci95"] is None else f"{u['prr_ci95'][0]} to {u['prr_ci95'][1]}",
+                  u["ic025"], "yes" if u["thin_evidence"] else "no"]
+        lines.append(" | ".join(map(str, cells)))
+    lines.append(THIN_NOTE)
     return "\n".join(lines)
 
 

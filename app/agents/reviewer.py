@@ -13,6 +13,7 @@ from app.adapters.meterless import MeterlessError, MeterlessUnauthorized, Nights
 from app.adapters.zetaris import ZetarisError
 from app.agents.analyst import BATCH, MAX_TOKENS, context_notes, screen_table
 from app.agents.skeptic import compact
+from app.data import uncertainty
 from app.data.faers import DataClerk
 from app.data.label import EFFECT, META, effect_text, excerpt_block, label_sentence, norm, search
 from app.data.sources import compact as sources_compact
@@ -39,6 +40,8 @@ Some findings carry "co_reported_drugs": the Skeptic's check of the drugs most o
 Some review_next findings carry "report_sources", where their reports come from, computed from database counts. "one_country" means one country holds most reports with a known country, well above the drug's usual share, which often means copies of one case re-filed by many companies. "lawyer_reports" means lawyers filed 20% or more of the reports that say who reported, as in litigation. "few_health_professionals" means under half of them came from health professionals. "unknown" means too few reports say. These describe evidence quality, not whether the pattern is real. Name a raised flag in your objection or next_check, but never reject a finding for a flag alone. "unknown" can also mean the counts could not be fetched, and a "status" in place of flags means the check had not finished or failed.
 
 FAERS counts have no denominator: reject reasoning or a next_check that compares a PRR or report count with an incidence or clinical-trial frequency, unless the check names another data source with a denominator. Do not make that comparison in your own objection or next_check either.
+
+Each finding's "uncertainty" is worked out in code from the database counts. When "thin_evidence" is true, the reasoning must describe it as thin evidence. Reject reasoning that calls it statistically significant, strong or robust, or cites its chi2 as strength. Thin evidence alone is not a reason to reject; the wording is.
 
 For every finding give "objection": the strongest objection to it as it stands (an alternative explanation, a data limitation, or a wording gap), even when you accept it. Give "next_check": the single most useful check an analyst could run next.
 
@@ -128,8 +131,10 @@ class Reviewer:
             checked.append((f, checks, res.query_id))
 
         skeptic = ctx.get("skeptic", {})
+        # "uncertainty" from the re-checked counts, so the Reviewer can hold a thin row's wording to account.
         payload = [{**f.to_dict(), "checks": {k: {"passed": ok, "detail": d} for k, (ok, d) in ch.items()},
                     "recheck_query": qid,
+                    **({"uncertainty": uncertainty.of(fresh[f.reaction])} if f.reaction in fresh else {}),
                     **({"co_reported_drugs": compact(skeptic[f.reaction])} if f.reaction in skeptic else {})}
                    for f, ch, qid in checked]
         done = {norm(r) for r in seen} | {norm(f.reaction) for f in findings}

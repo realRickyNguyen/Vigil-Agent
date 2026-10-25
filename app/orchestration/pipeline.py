@@ -16,7 +16,8 @@ from app.agents.reviewer import Reviewer
 from app.agents.reviewer import failed as failed_checks
 from app.agents.skeptic import Skeptic, compact
 from app.config import Settings
-from app.data.faers import DataClerk, validate_drug
+from app.data import uncertainty
+from app.data.faers import DataClerk, scope_summary, validate_drug
 from app.data.label import search
 from app.data.sources import check as check_report_sources
 from app.engines.world_model import WorldModel
@@ -44,7 +45,8 @@ NOT_YET_CHECKED = [
     "Recalls and contaminated batches",
     "Every report naming the drug (generic name or active substance) is counted, whether or not it was the "
     "suspect drug",
-    "The baseline holds the 999 most-reported reactions; rarer reactions are not screened",
+    "Only reactions in openFDA's 999 most-reported for all drugs and in the drug's own 999 most-reported are "
+    "screened (sizes and cutoffs in data.scope); rarer reactions are not screened",
 ]
 
 
@@ -80,12 +82,12 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
     tracer.event("data_clerk", "sources_ready", drug=drug, created_now=created)
     totals = clerk.totals(drug)
     # Independent Zetaris queries side by side; the Zetaris client keeps no state between calls.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         jobs = [pool.submit(clerk.signals, drug), pool.submit(clerk.label, drug),
                 pool.submit(clerk.combination_products, drug, totals["drug_reports"]),
-                pool.submit(clerk.seriousness, drug)]
-        (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity) = \
-            [j.result() for j in jobs]
+                pool.submit(clerk.seriousness, drug), pool.submit(clerk.scope, drug)]
+        (screen_res, signals), (label_qid, label), (combo_res, combination), (severity_res, severity), \
+            (scope_res, scope_rec) = [j.result() for j in jobs]
     passing = sorted((s for s in signals if s.prr >= 2 and s.chi2 >= 4), key=lambda s: -s.chi2)
     ctx = {
         "drug": drug, "totals": totals, "label": label, "label_qid": label_qid, "passing": passing,
@@ -95,10 +97,13 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
         "screen_table": screen_table(passing, SCREEN_ROWS),
         "evidence_ids": {totals["query_id"], screen_res.query_id} | ({label_qid} if label_qid else set())
                         | ({combo_res.query_id} if combo_res else set())
-                        | ({severity_res.query_id} if severity_res else set()),
+                        | ({severity_res.query_id} if severity_res else set())
+                        | ({scope_res.query_id} if scope_res else set()),
     }
     if severity_res is None:
         tracer.event("data_clerk", "degraded", step="seriousness", fallback="no serious or death shares this run")
+    if scope_res is None:
+        tracer.event("data_clerk", "degraded", step="scope", fallback="the scope statement gives no list sizes")
     tracer.event("data_clerk", "evidence_ready", screened=len(signals), passing=len(passing),
                  label_sections=[k for k in label if k not in ("effective_time", "set_id")],
                  label_effective=label.get("effective_time"), label_choice=clerk.label_choice,
@@ -206,7 +211,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                                  for q in queue),
               **{f"skeptic_{k}": v for k, v in skeptic_counts.items()},
               "report_sources_checked": sum("flags" in ev for ev in sources.values()),
-              "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values())}
+              "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values()),
+              "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue)}
 
     queries, degraded, setup_warnings = {}, [], []
     model_calls = {"total": 0, "with_memory_injected": 0, "with_reasoning_scaffold": 0, "without_receipt": 0,
@@ -237,7 +243,9 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None,
                  "label_choice": clerk.label_choice, "combination_products": combination,
                  "seriousness_query": severity_res.query_id if severity_res else None,
                  "seriousness_note": "serious and death shares are of each reaction's reports; the flags describe "
-                                     "the whole report, which may list other reactions"},
+                                     "the whole report, which may list other reactions",
+                 "scope": scope_summary(drug, scope_rec, len(signals), totals["data_last_updated"],
+                                        scope_res.query_id if scope_res else None)},
         "counts": counts,
         "review_queue": queue,
         "degraded_steps": degraded,
@@ -436,10 +444,12 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
     reactions that were named for review but never reached, ranked review_next first. The serious and death
     shares are shown, not used for ranking: they describe whole reports, not the reaction. Each item carries the
     code's label search, so a "not found" says what was searched and an expected effect is quoted, and a review-next
-    item its report sources (context flags, never used for ranking either)."""
+    item its report sources (context flags, never used for ranking either). Each item's uncertainty (expected count,
+    PRR interval, IC025, thin evidence) comes from the screen's Zetaris counts and is shown, never used to rank."""
     stats = {s.reaction: s for s in passing}
     def extra(r):
-        return (({"seriousness": severity[r]} if severity and r in severity else {})
+        return (({"uncertainty": uncertainty.of(stats[r])} if r in stats else {})
+                | ({"seriousness": severity[r]} if severity and r in severity else {})
                 | ({"label_search": search(r, label)} if label else {})
                 | ({"report_sources": sources[r]} if sources and r in sources else {}))
     queue = []

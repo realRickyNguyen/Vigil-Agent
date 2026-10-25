@@ -114,6 +114,47 @@ WHERE c > 0
 ORDER BY prr DESC"""
 
 
+def scope_sql(s: str) -> str:
+    """How many reactions each count list behind the screen holds, and the smallest count in it. One aggregate per
+    view, because Spark rejects two scalar subqueries over the same exploded REST table (checked 25 Oct)."""
+    return (f"SELECT d.terms AS drug_terms, d.cutoff AS drug_cutoff, t.terms AS all_terms, t.cutoff AS all_cutoff\n"
+            f"FROM (SELECT COUNT(*) AS terms, MIN(reports) AS cutoff FROM openfda.faers_d2_{s}_reactions) d\n"
+            f"CROSS JOIN (SELECT COUNT(*) AS terms, MIN(reports) AS cutoff FROM openfda.faers_reaction_totals) t")
+
+
+def scope_summary(drug: str, rec: dict | None, screened: int, data_date, query_id: str | None = None,
+                  min_a: int = 3) -> dict:
+    """What the screen could see, for the dossier. A reaction is screened only if it is in openFDA's top 999 for all
+    drugs and in the drug's own top 999, with at least min_a reports. A list shorter than 999 holds every reaction
+    openFDA has for it; a full one leaves out everything below its cutoff. rec comes from scope_sql(), or None if
+    that query failed."""
+    def n(v):
+        return None if v is None else int(float(v))
+    lists = {k: ({"reactions": n(rec.get(f"{k}_terms")), "smallest_count": n(rec.get(f"{k}_cutoff"))} if rec else
+                 {"reactions": None, "smallest_count": None}) for k in ("all", "drug")}
+    for v in lists.values():
+        v["full"] = None if v["reactions"] is None else v["reactions"] >= COUNT_LIMIT
+    out = [f"A reaction is screened only if it is among openFDA's {COUNT_LIMIT} most-reported reactions for all "
+           f"drugs and among the {COUNT_LIMIT} most-reported with {drug}, with at least {min_a} reports with {drug}."]
+    for k, who, where in (("all", "The all-drugs list", "across all drugs"), ("drug", f"The {drug} list", f"with {drug}")):
+        v = lists[k]
+        if v["reactions"] is None:
+            out.append(f"{who} could not be counted this run.")
+            continue
+        size = (f"{v['reactions']:,} reactions, the smallest with {v['smallest_count']:,} "
+                f"report{'' if v['smallest_count'] == 1 else 's'}")
+        out.append(f"{who} is full ({size}), so reactions reported fewer times {where} are not screened." if v["full"]
+                   else f"{who} is not full ({size}), so it holds every reaction reported {where}.")
+    out.append(f"{screened:,} reactions met all three conditions and were screened.")
+    out.append(f"Reports are counted whenever they name {drug} (generic name or active substance), whether or not "
+               f"it was the suspect drug.")
+    out.append(f"openFDA data last updated {data_date}.")
+    return {"statement": " ".join(out), "cap": COUNT_LIMIT, "min_reports": min_a,
+            "all_drugs_list": lists["all"], "drug_list": lists["drug"], "screened": screened,
+            "drug_role": "any (suspect, concomitant or interacting)", "data_last_updated": data_date,
+            "query_id": query_id}
+
+
 def to_signal(rec: dict) -> Signal:
     return Signal(reaction=rec["reaction"], a=int(float(rec["a"])), b=int(float(rec["b"])),
                   c=int(float(rec["c"])), d=int(float(rec["d"])),
@@ -315,6 +356,16 @@ class DataClerk:
         except ZetarisError:
             return None, {}
         return res, seriousness_summary(res.records())
+
+    def scope(self, drug: str) -> tuple[QueryResult | None, dict | None]:
+        """Size and cutoff of the two count lists the screen joins (scope_sql), for scope_summary(). None if the
+        query fails; the run goes on without it."""
+        try:
+            res = self.z.run(scope_sql(slug(drug)), f"size of the reaction count lists for {drug}")
+        except ZetarisError:
+            return None, None
+        recs = res.records()
+        return res, (recs[0] if recs else None)
 
     def co_drugs(self, drug: str, reaction: str, limit: int = 100) -> tuple[QueryResult, list[tuple[str, int]]]:
         """Drugs named on the reports of this drug and reaction, by exact generic name and by active substance.

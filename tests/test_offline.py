@@ -181,7 +181,8 @@ class FakeLLM:
         user = messages[-1]["content"]
         if self.fail_all or any(r in user for r in self.fail_on):
             raise MeterlessError("empty_response")
-        rows = [l.split(" | ") for l in user.splitlines() if l.count(" | ") == 3 and not l.startswith("reaction")]
+        # A classify table row: reaction | a | PRR | chi2 | expected a | PRR 95% CI | IC025 | thin evidence
+        rows = [l.split(" | ") for l in user.splitlines() if l.count(" | ") == 7 and not l.startswith("reaction")]
         return {"findings": [{"reaction": r[0], "a": int(r[1]), "prr": float(r[2]), "context": "clinical_event",
                               "label_coverage": "not_found", "review_priority": "review_next", "reasoning": "x",
                               "next_check": "y", "evidence": ["q-s"]}
