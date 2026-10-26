@@ -605,7 +605,7 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
 @media (prefers-reduced-motion: reduce) { .sq.live { animation: none; } .toast, .queue .tw svg, .bar > div, .decide textarea { transition: none; } }
 </style>
 </head>
-<body>
+<body class="landing">
 <header class="topbar">
   <a class="brand" href="#" id="home" aria-label="Vigil home">
     <svg width="28" height="28" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="26" fill="#14366b"/><g transform="translate(16.1 16.1) scale(0.72)"><circle cx="50" cy="50" r="34" fill="none" stroke="#fff" stroke-width="10"/><line x1="75" y1="75" x2="104" y2="104" stroke="#fff" stroke-width="14" stroke-linecap="round"/><g transform="rotate(-45 50 50)"><path d="M48 38 H39 A12 12 0 0 0 39 62 H48 Z" fill="#fff"/><path d="M52 38 H61 A12 12 0 0 1 61 62 H52 Z" fill="#f08a5d"/></g></g></svg>
@@ -616,7 +616,9 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
   <div class="status" id="status" aria-live="polite"></div>
 </header>
 
-<div class="layout">
+<!-- The page starts in landing mode (sidebar hidden), so a refresh never shows the run list before the landing page;
+     the script switches straight to the investigation layout when the address names a run. -->
+<div class="layout landing-mode">
   <aside class="sidebar" id="sidebar" aria-label="Investigations">
     <div class="side-head"><h2>Investigations</h2>
       <button type="button" class="side-close" id="side-close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>Close</button></div>
@@ -1646,6 +1648,7 @@ window.addEventListener("beforeunload", (e) => { if (Object.keys(drafts).length)
 window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== current) openRun(id); else if (!id && current) goHome(); });
 
 (async () => {
+  if (location.hash.length > 1) setLanding(false);  // before any request, so the layout never changes under the visitor
   await Promise.all([loadHealth(), loadRuns()]);
   const id = location.hash.slice(1);
   if (id) openRun(id);
