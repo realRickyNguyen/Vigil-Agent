@@ -159,8 +159,8 @@ These are **development checks, not clinical validation**. None of us is a pharm
 
 | Built | Next |
 |---|---|
-| Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | A held-out evaluation, and a person's review of the reference sets |
-| Analyst and Reviewer loop with code checks, objections, unresolved disputes and fallbacks | A live run that shows a label change reopening earlier verdicts (shown offline so far) |
+| Zetaris data layer for any drug; SQL statistics, verified against an independent calculation | A held-out evaluation, and a professional's review of the reference sets |
+| Analyst and Reviewer loop with code checks, objections, unresolved disputes and fallbacks | A live run where an FDA label revision reopens earlier verdicts (so far seen live only when Vigil's own label choice changed) |
 | Meterless World Model engine: label versions and verdicts kept across runs, with conformance tests | |
 | Ranked review queue with coverage counts; JSONL traces | Report sources as a Skeptic check (today they are context for the Reviewer) |
 | Label search across every fetched section, report sources, uncertainty marks, the manual-review flag and the serious-term safety net (25 Oct) | A broader-term match for the label search |
@@ -310,3 +310,7 @@ Named **Black Box** until 23 Oct 2026, with agents called Clerk, Hunter and Judg
 - [AGENTS.md](AGENTS.md): rules for coding agents
 - [eval/](eval/): gold set, labelling rules, scorer, reports
 - [docs/PREEXISTING.md](docs/PREEXISTING.md): pre-existing work declaration
+
+## Licence
+
+Apache License 2.0 ([LICENSE](LICENSE)). The World Model engine is a port of the Meterless reference engine, also Apache-2.0; see [NOTICE](NOTICE).

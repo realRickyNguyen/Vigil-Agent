@@ -1,6 +1,6 @@
 # Handoff: Vigil: Drug Reaction Review, state as of Mon 26 Oct 2026, afternoon Sydney
 
-Start here if you are picking up the work, whether you are a teammate or a new Claude session. The design and its reasoning are in [ideas/VIGIL.md](ideas/VIGIL.md). Event rules are in [HACKATHON_KNOWLEDGE.md](HACKATHON_KNOWLEDGE.md).
+Start here if you are picking up the work, whether you are a teammate or a new Claude session. The design and its reasoning are in [ideas/VIGIL.md](ideas/VIGIL.md). Event rules are in the organisers' documents on HackOS (Resource Center); Ricky keeps copies in `docs/reference/` and his notes in `docs/HACKATHON_KNOWLEDGE.md`, both on his laptop, not in the repo.
 
 Named **Black Box** until 23 Oct 2026, with agents called Clerk, Hunter and Judge (now Data Clerk, Analyst and Reviewer). Traces and evaluation reports from before the rename keep the old names.
 
@@ -31,7 +31,7 @@ Input is a drug name. The app:
 | Investigation page (UI) | Not started |
 | README | **Done** (22 Oct): user story, problem, inputs and outputs, why agents, Track 02 mapping, sponsors, results, limitations. Sourced statistics: 23% (Doernberg et al., JAMA Intern Med 2026, checked), about 27,000 alerts and 99.9% closed (GSK, Drug Safety 2026, checked), and FDA's "more than 2 million" reports a year. The exact 2,048,059 from the 2025 OSE report is **not verified**, so it isn't used |
 | Team briefing deck | **Done** (23 Oct), internal only: `C:\Users\Ricky\projects\black-box-deck\` on Ricky's laptop, **outside the repo** because it contains licensed BioRender assets and sponsor logos. Contents: `black_box_team_briefing.pptx` and `.pdf`, `speaker_notes.md` (plain-language notes, the source), `build_deck.ps1` (rebuild with the research-deck skill). 13 slides: track, why it matters, user, proposal, why agents, workflow diagram, sponsor tools, progress checklist, submission, video plan, summary |
-| Submission deck, video, `metadata.json` | Not started. Build the submission deck from the team briefing; the required contents are in `HACKATHON_KNOWLEDGE.md` |
+| Submission deck, video, `metadata.json` | Not started. Build the submission deck from the team briefing; the required contents are in the organisers' submission requirements (sections 2 and 3.2) |
 
 Git: branch `main`. Key commits: `bf4f2c1` (first working loop, 22 Oct 15:50 Sydney) and `d3d9394` (contract v2, evaluation harness, docs). On 23 Oct Bryan's `feature/world-model` and `fix/nightshift-connection-reset` branches were merged into `main` and pushed. Later on 23 Oct, also pushed: the combined drug search from Bryan's issue (`fix/combined-drug-search`, merged), full prompts and replies in the trace (`feature/full-trace`, merged), Nightshift memory and scaffold recorded per call (`44c9bb4`), and the rename to Vigil (`e7ead70`; 55 offline tests pass). **After pulling:** `hunter.py` is now `analyst.py` and `judge.py` is `reviewer.py`; rebase any open branch, and expect conflicts in agent files. An older `.env` with `HUNTER_MODEL`, `JUDGE_MODEL` or `JUDGE_ROUNDS` still works. On 24 Oct (Sydney) `product/fixes` was merged into `main` locally: the Skeptic, splitting batches at Nightshift's deadline, label choice, combination share, the selection rule, gold set v2 and the 23 Oct evaluation (74 offline tests pass); `main` was pushed on the evening of 24 Oct. **25 Oct (Sydney): everything is on `main`** (`536c2fb`, pushed): 24 Oct's agent work (`fix/eval-logic`), Bryan's PR #10 and PR #11 follow-ups, and the API and Dockerfile (`feature/api-docker`); 157 offline tests pass. **Pull `main` and start every new branch from it**; `fix/eval-logic`, `feature/api-docker` and Bryan's 23 to 25 Oct branches are done and need no further work. Since 24 Oct the `.env` defaults are: `MAX_RETRIES=1`, `MODEL_PARALLEL=4`, `MODEL_TIMEOUT_SECONDS=90`, `REVIEWER_ROUNDS=1`, `RUN_BUDGET_SECONDS=600` (see `.env.example`). Private GitHub repo for the team since 22 Oct: https://github.com/realRickyNguyen/genai_hackathon (`origin`). Teammate setup is in [TEAM_SETUP.md](TEAM_SETUP.md). Run traces and dossiers in `logs/` are gitignored; final ones go into `output_examples/` for submission (next step 8).
 
@@ -159,7 +159,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
   - Nightshift's local Llama models went to the Recycle Bin.
   - Five unused Docker images and the build cache were removed.
 
-  Space returns only after `scripts/compact-wsl-disks.ps1` runs as administrator with Docker quit, and after the Recycle Bin is emptied. Check C: free space before large runs.
+  Space returns only after `scripts/compact-wsl-disks.ps1` (on Ricky's laptop, not in the repo) runs as administrator with Docker quit, and after the Recycle Bin is emptied. Check C: free space before large runs.
 - **Services** were stopped at the end of 22 Oct. Use the "lets begin" routine in `CLAUDE.md`, then check that the Nightshift lanes are still Ultra-only.
 
 ## Next steps, in order
@@ -177,7 +177,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
    The first and third commands are the final version (RF, `8ae141c`), the second and fourth its `main` control (R2'). Every other phase used the same form, with its run IDs from `scores[].run_id` in its `eval/reports/reeval-*.json` and that file's `gold` swapped for its `_reviewed` version. Each command's report has the same content as the committed `eval/reports/reeval-*-reviewed.md` and `.json`. The README's "Results so far" now has the re-scored figures, and the sentence saying they predate the review is removed. The newer-drug set is reviewed only for its 15 hidden serious terms, so its figures stay "against an AI-drafted reference". No comparison's conclusion changed ([eval/reports/reeval-26oct-rescore-reviewed-gold.md](../eval/reports/reeval-26oct-rescore-reviewed-gold.md)).
 2. **Finish the agent system** with bug fixes only (Ricky's freeze, 26 Oct). After any change to agent behaviour, re-record the three samples with Zetaris and Nightshift running (`python -I run.py --drug <drug> --record`, montelukast, isotretinoin and metformin, about 6 minutes each). Then check `python -I -m pytest tests`: `tests/test_sample_mode.py` replays montelukast against `output_examples/montelukast/`.
 
-**Ricky (packaging):** the investigation page; a secret scan, then making the repo public; the deck, video and sponsor explanation; the HackOS submission.
+**Ricky (packaging):** the investigation page; making the repo public (secret scan of every file in all history, PR branches and the compressed samples done 26 Oct, clean; Apache-2.0 LICENSE and NOTICE added; organisers' guides and laptop notes taken out of the repo, so pull them from HackOS if you need them); the deck, video and sponsor explanation; the HackOS submission.
 
 
 **25 Oct, the re-evaluation at Ricky's code defaults.** Every version re-run with no `.env` settings beyond the connection keys, scored on gold v2 by one scorer, and re-scored on 26 Oct against the reviewed gold sets ([eval/reports/reeval-26oct-rescore-reviewed-gold.md](../eval/reports/reeval-26oct-rescore-reviewed-gold.md)). Results, method and what one run per drug can't show are in [eval/reports/reeval-25oct-summary.md](../eval/reports/reeval-25oct-summary.md) and the README's Results section.
@@ -229,15 +229,15 @@ How to run the evaluation: `python -I eval/run_eval.py --drugs sertraline metfor
 After that: demo and UX (investigation page, `SAMPLE_MODE`, samples, deck, video). `POST /run` and the Dockerfile are built (on `main`, 25 Oct).
 
 1. **Organiser questions** (below). The Track 02 challenge statement on HackOS is the generic track text (confirmed 24 Oct); nothing more to read.
-2. **Evaluation:** see the status table. A person still needs to review gold v1 and v2 before any number is quoted publicly.
+2. **Evaluation:** see the status table. Gold v2's clear rows were reviewed by a team member with AI assistance on 26 Oct and the runs re-scored ([eval/GOLD_REVIEW.md](../eval/GOLD_REVIEW.md)); gold v1 was not reviewed and is superseded.
 3. **World Model engine:** merged into `main` on 23 Oct, with offline tests; reopening shown live on 23 Oct (see the status table). This counts for the Build rule: the 19 Oct setup guide (section 3.2 and "Verify your Build setup") asks for the engine to be implemented in your own application, in any language, with "the engine's relevant conformance suite, evaluation, or a reproducible feature test" passing. For the submission: name the engine, say what it does here, and show the feature and the test result.
 6. **One investigation page:** ranked queue, coverage counts, evidence expansion.
-7. **Submission package** (checklists in `docs/reference/submission-requirements.md` section 8 and `technical-execution-requirements.md` section 13): README, Dockerfile, `POST /run`, samples, video, deck (eight required points), sponsor technology explanation, and a fresh-clone test.
+7. **Submission package** (checklists in the organisers' submission requirements, section 8, and technical execution requirements, section 13, on HackOS): README, Dockerfile, `POST /run`, samples, video, deck (eight required points), sponsor technology explanation, and a fresh-clone test.
 8. **Evidence for judges:** `logs/` is gitignored, so judges see no traces unless we publish them. Once the system is final, run each sample drug on it, then copy the chosen `trace-<run>.jsonl` and `dossier-<run>.json` **unedited** into `output_examples/` and point to them from the README. The app never reads `output_examples/`. Since 23 Oct every `llm_call` event holds the full prompt messages and the raw reply (including Ultra's inline reasoning), so a reader can see exactly what each agent was shown and answered. Traces made before that hold only sizes and a prompt hash, so publish only traces from the final system.
 
 ## Open questions for the organisers
 
-All answered by the organisers' documents (copied into `docs/reference/` on 24 Oct):
+All answered by the organisers' documents (on HackOS; copied to Ricky's laptop on 24 Oct, not in the repo):
 1. **Sample mode:** recommended, not a rule, but the organisers' readiness test runs `SAMPLE_MODE=true` with Zetaris and Nightshift stopped and no network (`technical-execution-requirements.md` sections 5 and 11). So it needs recorded openFDA results and recorded model replies, clearly labelled as a replay.
 2. **Cursor:** optional; the sponsor explanation mentions it only "if you built with Cursor". We did not.
 3. **Python engine:** accepted. The 19 Oct setup guide (section 3.2) asks for the engine in your own application, verified by its conformance suite or a reproducible feature test.

@@ -3,8 +3,8 @@
 Anything committed before 22 Oct 2026 00:00 UTC (11:00 Sydney) must be declared.
 
 **Created before the build window (20 to 21 Oct 2026):**
-- setup tooling only: the folder scaffold, `.gitignore`, `.env.example`, `scripts/smoke_test.py`, `scripts/compact-wsl-disks.ps1`
-- the docs in `docs/` (setup checklist, hackathon reference material)
+- setup tooling only: the folder scaffold, `.gitignore`, `.env.example`, `scripts/smoke_test.py`, `scripts/compact-wsl-disks.ps1` (taken out of the repo on 26 Oct; still in its history)
+- the docs in `docs/` (setup checklist, hackathon reference material; taken out of the repo on 26 Oct, still in its history)
 
 None of it is product code or prepared data.
 

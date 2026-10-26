@@ -30,7 +30,7 @@ Expect all tests to pass (311 on 26 Oct). Python 3.11 or newer.
 
 The hackathon requires Zetaris and Meterless to run on your own machine, so each teammate who runs agents needs:
 
-1. **Zetaris.** Follow section 1 of the organisers' setup guide (`docs/reference/Participant_Setup_Guide_updated_19Oct.md`):
+1. **Zetaris.** Follow section 1 of the organisers' Participant Setup Guide (Resource Center on HackOS):
    - Docker Desktop, plus WSL 2 on Windows
    - the platform bundle and registry login from your own Zetaris registration
    - `docker compose up -d`
