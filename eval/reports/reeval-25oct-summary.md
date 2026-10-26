@@ -4,6 +4,24 @@ Every live run from 22 to 25 Oct loaded a local `.env` that overrode the code de
 
 38 live runs, one at a time. 23 ran on 25 Oct (18:27 to 22:37 Sydney) and 15 overnight on 26 Oct (00:18 to 04:50). Scored with `main`'s `eval/score.py` (`53d100d`) against `eval/gold_v2.jsonl`, and for the newer drugs with task 3's scorer against `gold_newdrugs_v1.jsonl` (SHA-256 `3a7a6808...c1dc1c80`). Ambiguous gold rows are left out of accuracy. Intervals are Wilson 95%. Paired comparisons use an exact two-sided McNemar test on clear items both runs answered. A separate agent re-derived every headline number from the raw dossiers and traces with its own code. Per-version scorer reports are next to this file (`reeval-25oct-*` and `reeval-26oct-*`, `.md` and `.json`).
 
+**Re-scored against the reviewed gold, 26 Oct.** The figures in the rest of this file were scored against the original gold sets. On 26 Oct all 38 runs were re-scored against the reviewed sets (`eval/gold_v2_reviewed.jsonl` and `eval/gold_newdrugs_v1_reviewed.jsonl`, see [eval/GOLD_REVIEW.md](../GOLD_REVIEW.md)), with the commands in `docs/HANDOFF.md`. No comparison's conclusion changed. The README quotes the re-scored figures. The full before and after, every changed outcome and the checks are in [reeval-26oct-rescore-reviewed-gold.md](reeval-26oct-rescore-reviewed-gold.md), and each version's re-scored report sits next to its original, with `-reviewed` added to the name.
+
+| Phase | Version | Round 1, original to reviewed | Final, original to reviewed |
+|---|---|---|---|
+| A | R0 | 55 of 58 to 53 of 55 | 49 of 51 to 48 of 49 |
+| A, B | R2 | 57 of 58 to 55 of 55 | 59 of 60 to 57 of 57 |
+| B | R3 | 56 of 57 to 54 of 54 | 56 of 57 to 54 of 54 |
+| C (2 drugs) | R3 | 23 of 23 to 20 of 20 | 23 of 23 to 20 of 20 |
+| C (2 drugs) | R5 | 22 of 23 to 19 of 20 | 24 of 24 to 21 of 21 |
+| D | R2 | 36 of 42 both times | 39 of 43 both times |
+| D | R3 | 39 of 42 both times | 40 of 42 both times |
+| E | R5 (atorvastatin) | 9 of 9 both times | 9 of 9 both times |
+| E | R6 (2 drugs) | 19 of 19 to 17 of 17 | 20 of 20 to 18 of 18 |
+| F, six drugs | R2' | 74 of 79 to 73 of 78 | 74 of 77 to 73 of 76 |
+| F, six drugs | RF | 77 of 81 to 77 of 80 | 78 of 80 to 77 of 79 |
+
+Each figure is the clear items a version answered and how many agreed with the reference. Phase D and the atorvastatin control score the same both times because the review changed no item those runs answered.
+
 ## Versions
 
 | Label | Commit | What it is |
@@ -152,7 +170,7 @@ All 12 runs kept calls in flight within 4 after round 1. All calls were Ultra, w
 - **Speed-ups on two drugs only,** once each. NVIDIA's speed varies by the hour (42 to 69 tokens/s per run on 25 Oct, 33 to 48 overnight). So time outside model calls is the fairer measure, and two runs can't show a general speed-up.
 - **Phase F ran in a slow hour.** At half NVIDIA speed, both versions lost items to first-byte cuts and call time limits. The comparison is fair within pairs, but absolute coverage and run times are worse than in a normal hour.
 - **Three newer drugs checked offline only.** Semaglutide, tirzepatide and fezolinetant had no live run.
-- **AI-labelled gold.** Both gold sets were drafted by an AI assistant and haven't been reviewed by a person.
+- **AI-drafted gold.** Both gold sets were drafted by an AI assistant. On 26 Oct a team member reviewed gold v2's clear rows and the newer-drug set's 15 hidden serious terms with AI assistance, not a professional. The newer-drug set's other 202 rows are unreviewed.
 - **The budget runs over.** The Skeptic step's budget check comes after the deadline, so 8 of the 15 runs in Phases A and B ended 13 to 74 s past the 600 s budget. That's existing behaviour on `main`. In Phase F, 3 of 6 `main` runs and 2 of 6 RF runs went past 600 s, by up to 157 s. That happened when a revision round started near the 120 s threshold at the slow speed.
 
 ## Earlier numbers that need relabelling

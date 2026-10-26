@@ -1,0 +1,225 @@
+{
+ "gold": "gold_v2_reviewed.jsonl",
+ "scores": [
+  {
+   "run_id": "20261025T161311Z-fe8e30",
+   "drug": "metformin",
+   "gold_rows": 20,
+   "gold_clear": 15,
+   "round1": {
+    "scored": 12,
+    "correct": 11,
+    "accuracy": 0.917
+   },
+   "final": {
+    "scored": 12,
+    "correct": 11,
+    "accuracy": 0.917
+   },
+   "reviewer_effect": {
+    "kept_wrong": 1,
+    "kept_correct": 11
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "rule": {
+     "correct": 3
+    },
+    "analyst": {
+     "correct": 8,
+     "wrong": 1
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "possible_new_signal (ambiguous)": 4
+    }
+   },
+   "unresolved": [
+    "CHRONIC KIDNEY DISEASE"
+   ],
+   "ambiguous_classified": 5,
+   "not_in_gold": [
+    "CHRONIC KIDNEY DISEASE",
+    "SHOCK"
+   ],
+   "open_items": {
+    "pending": 3,
+    "failed": 1
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 7,
+    "on_label -> on_label": 4,
+    "possible_new_signal -> likely_indication_or_disease": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 19,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T163715Z-2903a9",
+   "drug": "sertraline",
+   "gold_rows": 20,
+   "gold_clear": 13,
+   "round1": {
+    "scored": 11,
+    "correct": 11,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 8,
+    "correct": 8,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 8,
+    "not_reviewed": 3
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 2
+    },
+    "rule": {
+     "correct": 6
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 0,
+    "gold_new": 0
+   },
+   "review_next": {
+    "count": 1,
+    "gold": {
+     "not in gold": 1
+    }
+   },
+   "unresolved": [
+    "DEPRESSION"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "AKATHISIA",
+    "HALLUCINATION",
+    "HYPONATRAEMIA",
+    "WITHDRAWAL SYNDROME"
+   ],
+   "open_items": {
+    "failed": 1
+   },
+   "confusion_final": {
+    "on_label -> on_label": 8
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 19,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T171203Z-6183bf",
+   "drug": "isotretinoin",
+   "gold_rows": 20,
+   "gold_clear": 16,
+   "round1": {
+    "scored": 14,
+    "correct": 14,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 14,
+    "correct": 14,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 14
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 6
+    },
+    "rule": {
+     "correct": 8
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 2,
+    "gold": {
+     "possible_new_signal": 1,
+     "possible_new_signal (ambiguous)": 1
+    }
+   },
+   "unresolved": [
+    "ABORTION INDUCED"
+   ],
+   "ambiguous_classified": 3,
+   "not_in_gold": [
+    "BLOOD CHOLESTEROL INCREASED",
+    "COLITIS",
+    "DEPRESSED MOOD",
+    "DRY EYE",
+    "SUICIDE ATTEMPT"
+   ],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "not_meaningful -> not_meaningful": 3,
+    "on_label -> on_label": 10,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 2,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 5,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}

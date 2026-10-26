@@ -1,0 +1,230 @@
+{
+ "gold": "gold_newdrugs_v1_reviewed.jsonl",
+ "scores": [
+  {
+   "run_id": "20261025T155031Z-10a84a",
+   "drug": "zuranolone",
+   "gold_rows": 35,
+   "gold_clear": 28,
+   "round1": {
+    "scored": 18,
+    "correct": 17,
+    "accuracy": 0.944
+   },
+   "final": {
+    "scored": 19,
+    "correct": 19,
+    "accuracy": 1.0
+   },
+   "reviewer_effect": {
+    "kept_correct": 17,
+    "not_reviewed": 1
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 2,
+    "correct": 2,
+    "accuracy": 1.0
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 6
+    },
+    "rule": {
+     "correct": 13
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 1,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "possible_new_signal (ambiguous)": 3,
+     "possible_new_signal": 1
+    }
+   },
+   "unresolved": [],
+   "ambiguous_classified": 3,
+   "not_in_gold": [],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 1,
+    "not_meaningful -> not_meaningful": 2,
+    "on_label -> on_label": 15,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 0,
+     "unresolved": 0,
+     "missing": 3
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T170120Z-bf10e5",
+   "drug": "sotagliflozin",
+   "gold_rows": 20,
+   "gold_clear": 12,
+   "round1": {
+    "scored": 10,
+    "correct": 10,
+    "accuracy": 1.0
+   },
+   "final": {
+    "scored": 12,
+    "correct": 11,
+    "accuracy": 0.917
+   },
+   "reviewer_effect": {
+    "kept_correct": 10
+   },
+   "added_after_missing": {
+    "count": 3,
+    "scored": 2,
+    "correct": 1,
+    "accuracy": 0.5
+   },
+   "by_decider": {
+    "analyst": {
+     "correct": 3,
+     "wrong": 1
+    },
+    "rule": {
+     "correct": 8
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 2,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 2,
+    "gold": {
+     "possible_new_signal (ambiguous)": 2
+    }
+   },
+   "unresolved": [
+    "ILLNESS"
+   ],
+   "ambiguous_classified": 7,
+   "not_in_gold": [],
+   "open_items": {},
+   "confusion_final": {
+    "not_meaningful -> not_meaningful": 4,
+    "on_label -> on_label": 6,
+    "on_label -> possible_new_signal": 1,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 17,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": 2,
+     "reviewed": 4,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 0
+    }
+   ]
+  },
+  {
+   "run_id": "20261025T174149Z-313ee3",
+   "drug": "empagliflozin",
+   "gold_rows": 40,
+   "gold_clear": 27,
+   "round1": {
+    "scored": 14,
+    "correct": 12,
+    "accuracy": 0.857
+   },
+   "final": {
+    "scored": 13,
+    "correct": 12,
+    "accuracy": 0.923
+   },
+   "reviewer_effect": {
+    "kept_correct": 12,
+    "kept_wrong": 1,
+    "unresolved_was_wrong": 1
+   },
+   "added_after_missing": {
+    "count": 0,
+    "scored": 0,
+    "correct": 0,
+    "accuracy": null
+   },
+   "by_decider": {
+    "analyst": {
+     "wrong": 1,
+     "correct": 5
+    },
+    "rule": {
+     "correct": 7
+    }
+   },
+   "new_signal_precision": {
+    "claimed": 2,
+    "gold_new": 1
+   },
+   "review_next": {
+    "count": 4,
+    "gold": {
+     "likely_indication_or_disease": 1,
+     "on_label (ambiguous)": 1,
+     "possible_new_signal": 1,
+     "likely_indication_or_disease (ambiguous)": 1
+    }
+   },
+   "unresolved": [
+    "PANCREATITIS"
+   ],
+   "ambiguous_classified": 6,
+   "not_in_gold": [],
+   "open_items": {
+    "pending": 3
+   },
+   "confusion_final": {
+    "likely_indication_or_disease -> likely_indication_or_disease": 3,
+    "likely_indication_or_disease -> possible_new_signal": 1,
+    "on_label -> on_label": 8,
+    "possible_new_signal -> possible_new_signal": 1
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "reviewed": 20,
+     "rejected": 1,
+     "unresolved": 0,
+     "missing": 3
+    },
+    {
+     "round": "skeptic",
+     "checked": 3,
+     "challenged": 1,
+     "challenge_not_reviewed": 0,
+     "priority_changed": 0
+    }
+   ]
+  }
+ ],
+ "agreement": []
+}
