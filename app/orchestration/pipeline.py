@@ -26,6 +26,7 @@ from app.data.safety_net import collect as collect_safety_net
 from app.data.sources import SOURCE_ITEMS
 from app.data.sources import check as check_report_sources
 from app.data.sources import cluster_check
+from app import sample_mode
 from app.engines.world_model import WorldModel
 from app.orchestration.manual_review import manual_review
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
@@ -94,11 +95,19 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None, 
     left = lambda: settings.run_budget - (time.monotonic() - started)  # noqa: E731
     skipped = []  # steps the run budget did not leave time for
     drug = validate_drug(request.get("drug", ""))
+    if settings.sample_mode:
+        settings = sample_mode.with_recorded_settings(settings, drug)  # the replay runs as the recording did
+        tracer.stamp = {"sample_mode": True}  # every event of a replay is labelled, run_start included
     tracer.event("orchestrator", "run_start", request=request, analyst_model=settings.analyst_model,
                  reviewer_model=settings.reviewer_model)
 
-    zetaris = ZetarisClient(settings, tracer)
-    llm = NightshiftClient(settings, tracer)
+    replay = None
+    if settings.sample_mode or sample_mode.recording_active():
+        # Replay a recorded run, or record this one (app/sample_mode.py); otherwise the live clients.
+        zetaris, llm, replay = sample_mode.clients(settings, tracer, drug)
+    else:
+        zetaris = ZetarisClient(settings, tracer)
+        llm = NightshiftClient(settings, tracer)
     clerk = DataClerk(zetaris)
     analyst = Analyst(llm, settings.analyst_model, settings.parallel, settings.analyst_top, settings.analyst_extra)
     reviewer = Reviewer(llm, settings.reviewer_model, clerk, settings.parallel)
@@ -312,6 +321,8 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None, 
 
     dossier = {
         "run_id": tracer.run_id,
+        # Present only when the run replayed a recording: where it comes from (app/sample_mode.py).
+        **({"sample_mode": replay} if replay else {}),
         "drug": drug,
         "data": {"source": "openFDA FAERS and drug label via Zetaris", **{k: totals[k] for k in
                  ("drug_reports", "all_reports", "data_last_updated")},

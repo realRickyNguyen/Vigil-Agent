@@ -2,7 +2,7 @@
 Secrets are read here and passed to adapters; nothing in this module prints them."""
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +58,14 @@ class Settings:
     analyst_extra: int = 5
     skeptic_items: int = 3
     skeptic_co_drugs: int = 3
+    # Recorded live runs that SAMPLE_MODE replays (app/sample_mode.py), one samples/<drug>.json.gz per drug.
+    samples_dir: Path = ROOT / "samples"
+
+
+def for_sample_mode(settings: "Settings") -> "Settings":
+    """The settings of a replay: sample mode on, and a World Model of its own in logs/, so replays never touch the
+    state that live runs build up (and a second replay of a drug shows its verdicts as unchanged)."""
+    return replace(settings, sample_mode=True, world_path=settings.logs_dir / "sample-world-model.json")
 
 
 def env_value(value: str | None) -> str | None:
@@ -74,7 +82,7 @@ def env_value(value: str | None) -> str | None:
 def get_settings() -> Settings:
     load_dotenv()
     e = lambda key, default=None: env_value(os.environ.get(key, default))  # noqa: E731
-    return Settings(
+    settings = Settings(
         zetaris_url=host_url(e("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0").rstrip("/")),
         zetaris_key=e("ZETARIS_API_KEY", ""),
         zetaris_org=e("ZETARIS_ORG_ID", "1"),
@@ -119,3 +127,4 @@ def get_settings() -> Settings:
         skeptic_items=max(0, int(e("SKEPTIC_ITEMS", "3"))),
         skeptic_co_drugs=max(1, int(e("SKEPTIC_CO_DRUGS", "3"))),
     )
+    return for_sample_mode(settings) if settings.sample_mode else settings

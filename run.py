@@ -3,20 +3,26 @@
   python -I run.py                                      # API on PORT (default 8000): POST /run, GET /health
   python -I run.py --input input_examples/example_1.json
   python -I run.py --drug montelukast
+  python -I run.py --drug montelukast --sample           # replay the recorded run (also SAMPLE_MODE=true)
+  python -I run.py --drug montelukast --record           # live run, recorded for sample mode
 
-Needs Zetaris (with scripts/zetaris/openfda_baseline.sql Part A loaded) and Meterless Nightshift running.
-Writes logs/trace-<run_id>.jsonl and logs/dossier-<run_id>.json."""
+Needs Zetaris (with scripts/zetaris/openfda_baseline.sql Part A loaded) and Meterless Nightshift running, except in
+sample mode, which replays samples/<drug>.json.gz with no service and no network (app/sample_mode.py).
+Writes logs/trace-<run_id>.jsonl and logs/dossier-<run_id>.json. --record also writes samples/<drug>.json.gz and
+copies the run's dossier, trace and API response, unedited, to output_examples/<drug>/."""
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.config import get_settings  # noqa: E402
+from app import sample_mode  # noqa: E402
+from app.config import ROOT, for_sample_mode, get_settings  # noqa: E402
 from app.orchestration.pipeline import investigate  # noqa: E402
-from app.server import serve, summary  # noqa: E402
+from app.server import serve, success_body, summary  # noqa: E402
 
 
 def main() -> int:
@@ -26,17 +32,37 @@ def main() -> int:
     src.add_argument("--drug")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")),
                     help="API port when no --input or --drug is given")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--sample", action="store_true", help="replay the drug's recorded run (sample mode)")
+    mode.add_argument("--record", action="store_true", help="record this live run for sample mode")
     args = ap.parse_args()
 
     settings = get_settings()
+    if args.sample:
+        settings = for_sample_mode(settings)
     if not (args.input or args.drug):
         serve(args.port, settings)
         return 0
-    if settings.sample_mode:
-        print("SAMPLE_MODE is not implemented yet; set SAMPLE_MODE=false.", file=sys.stderr)
-        return 2
     request = json.loads(Path(args.input).read_text()) if args.input else {"drug": args.drug}
-    d = investigate(request, settings)
+    if args.record:
+        if settings.sample_mode:
+            print("--record needs a live run; unset SAMPLE_MODE.", file=sys.stderr)
+            return 2
+        with sample_mode.recording(settings, request["drug"]) as rec:
+            d = investigate(request, settings)
+        out = ROOT / "output_examples" / sample_mode.slug(request["drug"])
+        out.mkdir(parents=True, exist_ok=True)
+        for name in (f"dossier-{d['run_id']}.json", d["trace"]):  # copies, never edited
+            shutil.copy2(settings.logs_dir / name, out / name)
+        (out / "response.json").write_text(json.dumps(success_body(d, settings, d["run_time"]["seconds"]), indent=2,
+                                                      ensure_ascii=False), encoding="utf-8")
+        print(f"Recorded {rec.summary['queries']} queries and {rec.summary['model_calls']} model calls to "
+              f"{rec.summary['path']}; outputs in {out}")
+        if d["run_time"]["skipped_for_time"]:
+            print(f"Note: this run skipped {d['run_time']['skipped_for_time']} for time, so a replay may reach steps "
+                  f"the recording does not have. Record again for a complete sample.")
+    else:
+        d = investigate(request, settings)
 
     print("\n" + summary(d))
     for q in d["review_queue"]:

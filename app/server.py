@@ -17,7 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.adapters.meterless import MeterlessError, MeterlessUnauthorized
 from app.adapters.zetaris import ZetarisError
-from app.config import Settings, get_settings
+from app import sample_mode
+from app.config import Settings, for_sample_mode, get_settings
 from app.data.faers import DrugNotFound, validate_drug
 from app.orchestration.pipeline import investigate
 from app.tracing import Tracer
@@ -65,6 +66,8 @@ def classify_error(e: Exception) -> tuple[str, int, bool]:
     """(error type, HTTP status, recoverable) for an exception from a run."""
     if isinstance(e, BadRequest):
         return "InvalidInput", 400, False
+    if isinstance(e, sample_mode.NoSampleRecording):
+        return "NoSampleRecording", 404, False
     if isinstance(e, DrugNotFound):
         return "DrugNotFound", 404, False
     if isinstance(e, MeterlessUnauthorized):
@@ -119,6 +122,8 @@ def success_body(d: dict, settings: Settings, seconds: float) -> dict:
             # The World Model's comparison with earlier runs of this drug (each item also has since_last_run).
             "since_last_run": (d.get("world_model") or {}).get("since_last_run"),
             "nightshift_warnings": d.get("nightshift_warnings") or [],
+            # Set only when this was a replay of a recorded run (SAMPLE_MODE): which run, recorded when.
+            **({"sample_mode": d["sample_mode"]} if d.get("sample_mode") else {}),
             "artifacts": [f"logs/dossier-{d['run_id']}.json", f"logs/{d['trace']}"],
             "dossier": d,
         },
@@ -153,11 +158,11 @@ class Runner:
                                    "InvalidInput", str(e), False), None
         settings = self.settings
         if "sample_mode" in options:
-            settings = replace(settings, sample_mode=bool(options["sample_mode"]))
-        if settings.sample_mode:
-            return 501, error_body(run_id, "SampleModeNotImplemented",
-                                   "SAMPLE_MODE is not implemented yet; run with Zetaris and Nightshift, "
-                                   "or set sample_mode to false", False), None
+            settings = for_sample_mode(settings) if options["sample_mode"] else replace(settings, sample_mode=False)
+        if settings.sample_mode and not sample_mode.recording_path(settings, request["drug"]).exists():
+            return 404, error_body(run_id, "NoSampleRecording",
+                                   f"sample mode has no recording for '{request['drug']}'; it can replay: "
+                                   f"{', '.join(sample_mode.available(settings)) or 'none'}", False), None
         if run_id and (settings.logs_dir / f"trace-{run_id}.jsonl").exists():
             return 409, error_body(run_id, "RunIdInUse", f"run_id {run_id} was already used; pick another or "
                                    "leave it out", False), None
@@ -224,7 +229,8 @@ class Runner:
     def health(self) -> dict:
         s = self.settings
         return {"status": "ok", "busy": self.current is not None, "current_run": self.current,
-                "sample_mode": s.sample_mode, "analyst_model": s.analyst_model, "reviewer_model": s.reviewer_model,
+                "sample_mode": s.sample_mode, "samples": sample_mode.available(s),
+                "analyst_model": s.analyst_model, "reviewer_model": s.reviewer_model,
                 # Addresses only, no keys: shows whether a container reaches the host's services.
                 "zetaris_url": s.zetaris_url, "nightshift_url": s.meterless_url,
                 "zetaris_key_set": bool(s.zetaris_key), "nightshift_token_set": bool(s.meterless_token)}

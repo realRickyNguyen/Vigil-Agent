@@ -120,9 +120,9 @@ def test_one_run_at_a_time_and_polling(tmp_path):
 
 
 def test_sample_mode_and_a_reused_run_id_are_refused_clearly(tmp_path):
-    runner = Runner(settings(tmp_path), fake_investigate)
+    runner = Runner(settings(tmp_path, samples_dir=tmp_path / "no-samples"), fake_investigate)
     status, out = runner.run({"drug": "montelukast", "options": {"sample_mode": True}})
-    assert status == 501 and out["error"]["type"] == "SampleModeNotImplemented"
+    assert status == 404 and out["error"]["type"] == "NoSampleRecording" and "can replay: none" in out["error"]["message"]
     assert runner.run({"run_id": "same", "input": {"drug": "montelukast"}})[0] == 200
     status, out = runner.run({"run_id": "same", "input": {"drug": "montelukast"}})
     assert status == 409 and out["error"]["type"] == "RunIdInUse"

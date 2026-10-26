@@ -73,6 +73,13 @@ def progress_line(rec: dict) -> str | None:
         return (f"{who} recorded {d['decisions_recorded']} verdicts against label version "
                 f"{(d.get('label_version') or {}).get('effective_time')}; {len(d.get('reopened') or [])} reopened"
                 + (compared if s else ""))
+    if k == "sample_mode":
+        return (f"Sample mode: replaying recorded run {d['replayed_from_run']} ({d['recorded_at']}); no service is "
+                f"called")
+    if k == "replay_nearest":
+        return f"Sample mode: no exact recorded prompt, used the closest one (similarity {d['similarity']})"
+    if k == "replay_miss":
+        return f"Sample mode: not in the recording ({d['source']}{': ' + d['purpose'] if d.get('purpose') else ''})"
     if k == "run_end":
         return f"Completed in {d.get('seconds')} s; dossier logs/{d['dossier']}"
     return None
@@ -85,13 +92,14 @@ class Tracer:
         self.path = logs_dir / f"trace-{self.run_id}.jsonl"
         self.seq = 0
         self.echo = echo  # readable progress lines on stdout, next to the JSONL trace
+        self.stamp: dict = {}  # added to every event, e.g. {"sample_mode": True} when a recording is replayed
         self._lock = threading.Lock()  # agents make model calls from worker threads
 
     def event(self, agent: str, kind: str, **data) -> dict:
         with self._lock:
             self.seq += 1
             rec = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "run_id": self.run_id,
-                   "seq": self.seq, "agent": agent, "event": kind, **data}
+                   "seq": self.seq, "agent": agent, "event": kind, **self.stamp, **data}
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, default=str, ensure_ascii=False) + "\n")
             if self.echo:
@@ -107,7 +115,8 @@ class Tracer:
             line = f"{rec['agent']} {rec['event']}"
         if not line:
             return
-        text = f"[INFO] {rec['ts'][11:19]} run_id={self.run_id} {line}"
+        text = (f"[{'SAMPLE' if rec.get('sample_mode') else 'INFO'}] {rec['ts'][11:19]} run_id={self.run_id} "
+                f"{line}")
         try:
             print(text, flush=True)
         except UnicodeEncodeError:

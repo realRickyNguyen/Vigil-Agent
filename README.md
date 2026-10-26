@@ -165,7 +165,8 @@ These are **development checks, not clinical validation**. None of us is a pharm
 | Ranked review queue with coverage counts; JSONL traces | Report sources as a Skeptic check (today they are context for the Reviewer) |
 | Label search across every fetched section, report sources, uncertainty marks, the manual-review flag and the serious-term safety net (25 Oct) | A broader-term match for the label search |
 | Skeptic: co-reported drug check (adjusted PRR, co-drug PRR, Omega interaction) for the top findings | |
-| Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view, sample mode |
+| Evaluation harness (gold set, scorer, repeat-run agreement) | One-page investigation view |
+| Sample mode: three recorded live runs replayed with no service or network; sample inputs and outputs | |
 | `POST /run` API with structured errors; Dockerfile | |
 | Plain early stops for unknown, misspelt, brand-only and label-less drug names, before any model call (26 Oct) | |
 
@@ -240,7 +241,7 @@ curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @i
 
 - `POST /run` takes `{"drug": "montelukast"}` or `{"run_id": "demo-001", "input": {"drug": "montelukast"}, "options": {"wait": true}}`. It answers when the run ends with `status`, `output` (summary, accepted review-next items, unresolved items, the full dossier), the agents, the models, `trace_id`, `log_file` and `execution_time_seconds`.
 - With `"options": {"wait": false}` it answers `202` at once; `GET /runs/<run_id>` then reports `running` or the finished result.
-- Failures come back as `{"status": "error", "error": {"type", "message", "recoverable"}}`: `InvalidInput` (400), `DrugNotFound` (404), `Busy` or `RunIdInUse` (409), `ZetarisUnavailable`, `NightshiftUnavailable` or `NightshiftUnauthorized` (502), `SampleModeNotImplemented` (501). The trace records the error too.
+- Failures come back as `{"status": "error", "error": {"type", "message", "recoverable"}}`: `InvalidInput` (400), `DrugNotFound` (404), `Busy` or `RunIdInUse` (409), `ZetarisUnavailable`, `NightshiftUnavailable` or `NightshiftUnauthorized` (502), `NoSampleRecording` (404, in sample mode for a drug with no recording). The trace records the error too.
 - `GET /health` shows the configured models and service addresses (never keys) and whether a run is in progress.
 
 ### With Docker
@@ -254,6 +255,27 @@ docker run --rm -p 8000:8000 --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pw
 ```
 
 Zetaris and Nightshift keep running on the host. Inside the container, `localhost` and `127.0.0.1` in the settings become `host.docker.internal` (set `DOCKER_HOST_REWRITE=false` to turn that off), so the same `.env` works. The `logs/` mount keeps traces and dossiers; the `state/` mount keeps the World Model between runs. Progress lines appear in `docker logs`. The image holds no secrets: `.env` is excluded at build time and read at `docker run`.
+
+### Without Zetaris, Nightshift or a network (sample mode)
+
+Three live runs (montelukast, isotretinoin, metformin, 26 Oct) were recorded: every Zetaris query result and every Nemotron reply each run received is in [samples/](samples/). Sample mode replays them through the same pipeline, so a judge without Zetaris or Nightshift still sees a real run, its agents' disagreements and its dossier. It needs no `.env`.
+
+```bash
+SAMPLE_MODE=true python -I run.py --drug montelukast
+```
+
+```bash
+docker run --rm -p 8000:8000 -e SAMPLE_MODE=true vigil
+```
+
+```bash
+curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @input_examples/example_2.json
+```
+
+- A replay takes about 5 s and gives the recorded run's queue, rounds and counts (checked by `tests/test_sample_mode.py`). Checked on 26 Oct in a container with `--network none` and Zetaris and Nightshift stopped.
+- It is labelled: every trace event carries `"sample_mode": true`, the console prefixes `[SAMPLE]`, and the dossier and the API response name the recorded run. Run IDs, times and timings are the replay's own. A replay keeps its own World Model (`logs/sample-world-model.json`), so a second replay of a drug shows its verdicts as unchanged.
+- `POST /run` can also ask for it per request with `"options": {"sample_mode": true}`. A drug with no recording returns `NoSampleRecording` with the list of drugs that can be replayed.
+- The recorded runs' own outputs are in [output_examples/](output_examples/). To record another drug: `python -I run.py --drug <drug> --record` (with Zetaris and Nightshift running).
 
 ## Limitations
 
