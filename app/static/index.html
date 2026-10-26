@@ -459,35 +459,45 @@ body.landing .side-toggle { display: inline-block; }
 @media (min-width: 1500px) { .layout.landing-mode .container { max-width: 2000px; } }  /* no sidebar here, so fill large screens */
 @media (max-width: 760px) { .layout.landing-mode.side-open .sidebar { display: block; padding: 20px 16px; } .layout.landing-mode .sidebar .runs-block { margin-top: 30px; } }
 
-/* The drawer: wherever "Investigations" opens the sidebar as a panel (the landing page, and below 1100px; setSide() sets body.drawer),
-   it slides in from the left under the top bar, over the dimmed page. Its header and form stay put; the run list fills the rest of
-   the height and scrolls on its own. --bar-h is the top bar's height, also set by setSide(). */
+/* The Investigations panel: wherever "Investigations" opens the sidebar as a panel (the landing page, and below 1100px; setSide() sets
+   body.dropdown), it drops down from under the top bar, centred on the screen, over the dimmed page: the form on the left, the run
+   list on the right. It unrolls like a blind when it opens and rolls back up when it closes (.closing). --bar-h is the top bar's height,
+   set by setSide(). */
 .side-head { display: none; }
-body.drawer .layout.side-open .sidebar { display: flex; flex-direction: column; align-items: stretch; position: fixed; top: var(--bar-h, 50px); bottom: 0; left: 0; right: auto;
-  z-index: 16; width: min(400px, 100vw); height: auto; max-height: none; padding: 0; overflow: hidden; background: var(--sheet);
-  border-right: 1px solid var(--rule-strong); border-bottom: 0; box-shadow: 16px 0 40px -24px rgba(27, 32, 40, .45); animation: drawer-in .22s cubic-bezier(.2, .7, .2, 1); }
-body.drawer .side-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 14px 24px; flex: none; }
+body.dropdown .layout.side-open .sidebar { display: grid; grid-template-columns: 300px minmax(0, 1fr); column-gap: 32px; align-items: start;
+  position: fixed; top: var(--bar-h, 50px); left: 0; right: 0; bottom: auto; margin: 0 auto; z-index: 16;
+  width: min(880px, calc(100vw - 32px)); height: auto; max-height: calc(100vh - var(--bar-h, 50px) - 24px); overflow-y: auto;
+  padding: 0 24px 24px; background: var(--sheet); border: 1px solid var(--rule-strong); border-top: 0; border-bottom: 2px solid var(--ink-2);
+  box-shadow: 0 28px 48px -28px rgba(27, 32, 40, .5); animation: blind-down .42s cubic-bezier(.22, .8, .24, 1); }
+body.dropdown .layout.side-open .sidebar.closing { animation: blind-up .26s cubic-bezier(.4, 0, .9, .6) forwards; }
+body.dropdown .side-head { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0 12px; }
 .side-head h2 { font: 600 20px/1.2 var(--serif); letter-spacing: -.01em; margin: 0; }
-.side-close { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 8px 10px; min-height: 36px; font-size: 13px; color: var(--ink-2); border-radius: 2px; }
+.side-close { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 8px 10px; margin-right: -10px; min-height: 36px;
+  font-size: 13px; color: var(--ink-2); border-radius: 2px; }
 .side-close:hover { background: var(--hover); color: var(--ink); }
-body.drawer #run-form { flex: none; margin: 0 16px; padding: 16px; background: var(--paper); }
-body.drawer .sidebar .runs-block { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 22px 24px 0; }
-body.drawer .sidebar .runs { flex: 1; min-height: 0; max-height: none; overflow-y: auto; margin-right: -8px; padding-right: 8px; padding-bottom: 16px; }
+body.dropdown #run-form { padding: 16px; background: var(--paper); }
+body.dropdown .sidebar .runs-block { margin: 0; padding-top: 2px; }
+body.dropdown .sidebar .runs { max-height: min(440px, calc(100vh - var(--bar-h, 50px) - 190px)); overflow-y: auto; }
+/* Phones: the panel spans the screen under the top bar, one column, and scrolls as a whole. */
 @media (max-width: 760px) {
-  body.drawer .side-head { padding-left: 16px; }
-  body.drawer #run-form { margin: 0; }
-  body.drawer .sidebar .runs-block { padding: 20px 16px 0; }
+  body.dropdown .layout.side-open .sidebar { display: block; left: 0; width: 100%; max-height: calc(100vh - var(--bar-h, 50px)); padding: 0 16px 20px;
+    border-left: 0; border-right: 0; }
+  body.dropdown .sidebar .runs-block { margin-top: 24px; }
+  body.dropdown .sidebar .runs { max-height: none; overflow: visible; }
 }
-/* Phones and short screens: the form would leave the list too little room, so the whole drawer scrolls instead. */
-@media (max-width: 760px), (max-height: 700px) {
-  body.drawer .layout.side-open .sidebar { overflow-y: auto; }
-  body.drawer .sidebar .runs-block, body.drawer .sidebar .runs { flex: none; overflow: visible; }
-}
-@keyframes drawer-in { from { transform: translateX(-24px); opacity: 0; } }
-.scrim { position: fixed; inset: 0; z-index: 15; background: rgba(27, 32, 40, .3); animation: scrim-in .22s ease-out; }
+/* The blind: a reveal from the top edge down (the clip leaves room for the shadow at the sides and bottom), its content following
+   a moment later. Rolling up is the same, reversed and quicker. */
+@keyframes blind-down { from { clip-path: inset(0 -60px 100% -60px); } to { clip-path: inset(0 -60px -60px -60px); } }
+@keyframes blind-up { from { clip-path: inset(0 -60px -60px -60px); } to { clip-path: inset(0 -60px 100% -60px); } }
+body.dropdown .layout.side-open .sidebar > * { animation: blind-content .42s cubic-bezier(.22, .8, .24, 1); }
+@keyframes blind-content { from { opacity: 0; transform: translateY(-14px); } 30% { opacity: 0; } }
+.scrim { position: fixed; inset: 0; z-index: 15; background: rgba(27, 32, 40, .3); animation: scrim-in .3s ease-out; transition: opacity .26s; }
+.scrim.closing { opacity: 0; }
 .scrim[hidden] { display: none; }
 @keyframes scrim-in { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { body.drawer .layout.side-open .sidebar, .scrim { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  body.dropdown .layout.side-open .sidebar, body.dropdown .layout.side-open .sidebar > *, .scrim { animation: none; transition: none; }
+}
 
 /* One grid for the whole landing page: a 5/7 split, statement on the left, a real piece of the product on the right. */
 .lp { --lp-gap: 64px; }
@@ -774,16 +784,27 @@ function drawRuns() {
 // On the landing page and below 1100px the sidebar is a panel the "Investigations" button opens over the page; wider, on an
 // investigation, it is always shown and this does nothing. Clicking the dimmed page or pressing Escape closes the panel.
 function setSide(open) {
-  const drawer = open && (document.body.classList.contains("landing") || matchMedia("(max-width: 1100px)").matches);
-  const was = document.body.classList.contains("drawer");
+  const side = $("#sidebar"), scrim = $("#scrim"), was = document.body.classList.contains("dropdown");
+  // Closing an open panel rolls it up first (unless motion is reduced), then closes it for real.
+  if (!open && was && !side.classList.contains("closing") && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    side.classList.add("closing");
+    scrim.classList.add("closing");
+    $("#side-toggle").setAttribute("aria-expanded", "false");
+    side.addEventListener("animationend", () => { if (side.classList.contains("closing")) setSide(false); }, {once: true});
+    return;
+  }
+  side.classList.remove("closing");
+  scrim.classList.remove("closing");
+  const dropdown = open && (document.body.classList.contains("landing") || matchMedia("(max-width: 1100px)").matches);
   document.documentElement.style.setProperty("--bar-h", `${$(".topbar").offsetHeight}px`);
   $(".layout").classList.toggle("side-open", open);
-  document.body.classList.toggle("drawer", drawer);
+  document.body.classList.toggle("dropdown", dropdown);
   $("#side-toggle").setAttribute("aria-expanded", String(open));
-  $("#scrim").hidden = !drawer;
-  if (drawer && !was) $("#side-close").focus();
+  scrim.hidden = !dropdown;
+  if (dropdown && !was) $("#side-close").focus();
 }
-$("#side-toggle").addEventListener("click", () => setSide(!$(".layout").classList.contains("side-open")));
+// A click while the panel is rolling up opens it again.
+$("#side-toggle").addEventListener("click", () => setSide(!$(".layout").classList.contains("side-open") || $("#sidebar").classList.contains("closing")));
 $("#scrim").addEventListener("click", () => setSide(false));
 $("#side-close").addEventListener("click", () => { setSide(false); $("#side-toggle").focus(); });
 // The panel stops floating past 1100px on an investigation, and the top bar's height changes as it wraps.
