@@ -5,7 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval.score import agreement, load_gold, load_run, score_run  # noqa: E402
+from eval.score import agreement, gold_provenance, load_gold, load_run, score_run, summarise  # noqa: E402
+
+EVAL = Path(__file__).resolve().parents[1] / "eval"
 
 GOLD_ROWS = [
     {"drug": "x", "reaction": "A", "gold": "on_label", "ambiguous": False},
@@ -80,3 +82,25 @@ def test_repeat_run_agreement(tmp_path):
     assert (p["accepted_in_both"], p["same_classification"]) == (2, 1)
     assert p["reaction_overlap_jaccard"] == round(2 / 3, 3)
     assert out["classification_agreement"] == 0.5
+
+
+def test_report_header_says_who_reviewed_the_gold():
+    rows = {(r["drug"], r["reaction"]): r for r in GOLD_ROWS}
+    assert gold_provenance(rows) == "labelled by an AI assistant, not yet reviewed by a person"
+    by = {"by": "a team member", "date": "2026-10-26"}
+    partly = {k: {**r, "review": {"verdict": "agree", **by} if r["reaction"] in "AE" else {"verdict": "not reviewed"}}
+              for k, r in rows.items()}
+    assert gold_provenance(partly) == ("drafted by an AI assistant; 2 of 5 rows reviewed by a team member on "
+                                       "2026-10-26, covering 1 of its 4 clear rows; the other clear rows are "
+                                       "AI-drafted, see `eval/GOLD_REVIEW.md`")
+    fully = {k: {**r, "review": {"verdict": "change", **by}} for k, r in rows.items()}
+    assert "5 of 5 rows reviewed by a team member on 2026-10-26, covering all 4 clear rows" in gold_provenance(fully)
+    report = summarise([], [], "gold.jsonl", fully)
+    assert "not yet reviewed" not in report and "covering all 4 clear rows" in report
+
+
+def test_report_header_for_the_repo_gold_files():
+    for name in ("gold_v1.jsonl", "gold_v2.jsonl", "gold_newdrugs_v1.jsonl"):
+        assert gold_provenance(load_gold(EVAL / name)).endswith("not yet reviewed by a person")
+    assert "covering all 68 clear rows" in gold_provenance(load_gold(EVAL / "gold_v2_reviewed.jsonl"))
+    assert "15 of 217 rows reviewed" in gold_provenance(load_gold(EVAL / "gold_newdrugs_v1_reviewed.jsonl"))

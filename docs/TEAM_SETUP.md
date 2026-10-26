@@ -24,7 +24,7 @@ python -m pip install -r requirements.txt
 python -I -m pytest tests -q
 ```
 
-Expect all tests to pass (309 on 26 Oct). Python 3.11 or newer.
+Expect all tests to pass (311 on 26 Oct). Python 3.11 or newer.
 
 ## 2. Running real investigations: your own local stack
 

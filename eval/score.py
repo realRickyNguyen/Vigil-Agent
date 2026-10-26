@@ -132,8 +132,25 @@ def agreement(runs: list[dict]) -> dict:
     return out
 
 
-def summarise(scores: list[dict], agreements: list[dict], gold_name: str = GOLD.name) -> str:
-    """Markdown report."""
+def gold_provenance(gold: dict | None) -> str:
+    """Who labelled the gold set, read from its rows' `review` fields (eval/GOLD_REVIEW.md)."""
+    rows = list((gold or {}).values())
+    reviewed = [r for r in rows if r.get("review", {}).get("verdict", "not reviewed") != "not reviewed"]
+    if not reviewed:
+        return "labelled by an AI assistant, not yet reviewed by a person"
+    clear = [r for r in rows if not r.get("ambiguous")]
+    clear_reviewed = sum(r in reviewed for r in clear)
+    who = " and ".join(sorted({r["review"].get("by", "a person") for r in reviewed}))
+    dates = sorted({r["review"].get("date", "") for r in reviewed} - {""})
+    covers = (f"all {len(clear)} clear rows" if clear_reviewed == len(clear)
+              else f"{clear_reviewed} of its {len(clear)} clear rows; the other clear rows are AI-drafted")
+    return (f"drafted by an AI assistant; {len(reviewed)} of {len(rows)} rows reviewed by {who}"
+            + (f" on {', '.join(dates)}" if dates else "") + f", covering {covers}, see `eval/GOLD_REVIEW.md`")
+
+
+def summarise(scores: list[dict], agreements: list[dict], gold_name: str = GOLD.name,
+              gold: dict | None = None) -> str:
+    """Markdown report. Pass the gold rows so the header says whether a person reviewed them."""
     def tot(key):
         s = sum(x[key]["scored"] for x in scores)
         c = sum(x[key]["correct"] for x in scores)
@@ -143,7 +160,7 @@ def summarise(scores: list[dict], agreements: list[dict], gold_name: str = GOLD.
     for x in scores:
         eff.update(x["reviewer_effect"])
     lines = ["# Vigil evaluation", "",
-             f"Gold set: `eval/{gold_name}` (labelled by an AI assistant, not yet reviewed by a person; "
+             f"Gold set: `eval/{gold_name}` ({gold_provenance(gold)}; "
              f"ambiguous rows excluded from accuracy). Runs: {len(scores)}.", "",
              "| Run | Drug | Round-1 accuracy | Final accuracy | Reviewer effect | Added via 'missing' | New-signal claims (gold-confirmed) | Review next (gold) | Unresolved | Pending/failed |",
              "|---|---|---|---|---|---|---|---|---|---|"]
@@ -183,7 +200,7 @@ def main(run_ids: list[str]) -> None:
         by_drug[r["drug"]].append(r)
     agreements = [agreement(rs) for rs in by_drug.values() if len(rs) > 1]
     print(json.dumps({"scores": scores, "agreement": agreements}, indent=1))
-    print(summarise(scores, agreements))
+    print(summarise(scores, agreements, gold=gold))
 
 
 if __name__ == "__main__":

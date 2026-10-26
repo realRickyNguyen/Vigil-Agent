@@ -63,7 +63,7 @@ def main() -> int:
     name = f"eval-{stamp}-{args.gold.stem}"
     (REPORTS / f"{name}.json").write_text(json.dumps({"gold": args.gold.name, "scores": scores,
                                                       "agreement": agreements}, indent=1), encoding="utf-8")
-    report = summarise(scores, agreements, args.gold.name)
+    report = summarise(scores, agreements, args.gold.name, gold)
     (REPORTS / f"{name}.md").write_text(report, encoding="utf-8")
     print(report)
     print(f"Report: eval/reports/{name}.md")
