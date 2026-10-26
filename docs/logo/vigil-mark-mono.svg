@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 106 106" width="512" height="512" role="img" aria-labelledby="t"><title id="t">Vigil</title>
+  <circle cx="50" cy="50" r="34" fill="none" stroke="#11151b" stroke-width="9"/>
+  <line x1="75" y1="75" x2="104" y2="104" stroke="#11151b" stroke-width="13" stroke-linecap="round"/>
+  <g transform="rotate(-45 50 50)">
+    <path d="M48 39 H39 A11 11 0 0 0 39 61 H48 Z" fill="#11151b"/>
+    <path d="M52 39 H61 A11 11 0 0 1 61 61 H52 Z" fill="#11151b"/>
+  </g>
+</svg>

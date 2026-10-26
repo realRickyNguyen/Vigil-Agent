@@ -243,6 +243,8 @@ curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @i
 - With `"options": {"wait": false}` it answers `202` at once; `GET /runs/<run_id>` then reports `running` or the finished result.
 - Failures come back as `{"status": "error", "error": {"type", "message", "recoverable"}}`: `InvalidInput` (400), `DrugNotFound` (404), `Busy` or `RunIdInUse` (409), `ZetarisUnavailable`, `NightshiftUnavailable` or `NightshiftUnauthorized` (502), `NoSampleRecording` (404, in sample mode for a drug with no recording). The trace records the error too.
 - `GET /health` shows the configured models and service addresses (never keys) and whether a run is in progress.
+- `GET /runs` lists the run in progress and every dossier in `logs/`; `GET /runs/<run_id>/events?after=<seq>` returns a run's progress lines from its trace (the same lines the console shows).
+- **Investigation page:** open http://localhost:8000/ in a browser. Start a run (live or a sample-mode replay), watch its progress, and open any earlier run: counts, how the agents got there, the ranked review queue with each item's evidence, Reviewer verdicts and objections, the Skeptic's co-drug check and the World Model comparison, then the safety net and what the run does not test. It reads only what the API returns and needs no network beyond the API.
 
 ### With Docker
 

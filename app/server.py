@@ -1,4 +1,4 @@
-"""HTTP entry point: POST /run (JSON in, JSON out), GET /runs/<run_id>, GET /health.
+"""HTTP entry point: POST /run (JSON in, JSON out), GET /runs/<run_id>, GET /health, and the investigation page.
 
 Standard library only (ThreadingHTTPServer), bound to 0.0.0.0 so Docker's port mapping reaches it.
 One investigation at a time: parallel runs compete for the NVIDIA per-minute cap, so a second POST /run
@@ -7,13 +7,18 @@ while one is running gets a structured "Busy" error instead of slowing both down
 POST /run takes either the bare input file ({"drug": "montelukast"}, as in input_examples/) or the
 organisers' envelope ({"run_id": ..., "input": {"drug": ...}, "options": {...}}). A run takes several
 minutes; the request waits for it by default. With "options": {"wait": false} it returns 202 at once and
-GET /runs/<run_id> reports progress and, when done, the same response a waiting request gets."""
+GET /runs/<run_id> reports progress and, when done, the same response a waiting request gets.
+
+GET / is the investigation page (app/static/index.html): it starts runs through POST /run, follows them through
+GET /runs/<run_id>/events and opens earlier ones from GET /runs. It only reads what the API returns."""
 import json
 import re
 import threading
 import time
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs
 
 from app.adapters.meterless import MeterlessError, MeterlessUnauthorized
 from app.adapters.zetaris import ZetarisError
@@ -21,10 +26,11 @@ from app import sample_mode
 from app.config import Settings, for_sample_mode, get_settings
 from app.data.faers import DrugNotFound, validate_drug
 from app.orchestration.pipeline import investigate
-from app.tracing import Tracer
+from app.tracing import Tracer, progress_line
 
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")  # it becomes part of the trace and dossier file names
 MAX_BODY = 64 * 1024
+PAGE = Path(__file__).parent / "static" / "index.html"
 
 AGENTS = [
     {"name": "Data Clerk", "role": "Registers openFDA FAERS counts and the current label in Zetaris and computes "
@@ -226,6 +232,51 @@ class Runner:
             return 200, success_body(d, self.settings, (d.get("run_time") or {}).get("seconds") or 0)
         return 404, error_body(run_id, "RunNotFound", f"no run {run_id} in this server or in logs/", False)
 
+    def list_runs(self) -> list[dict]:
+        """GET /runs: the run in progress, then every dossier in logs/, newest first."""
+        runs = []
+        if self.current:
+            runs.append({"run_id": self.current, "status": "running"})
+        for f in sorted(self.settings.logs_dir.glob("dossier-*.json"), reverse=True):
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+                runs.append({"run_id": d["run_id"], "status": "success", "drug": d["drug"],
+                             "review_next": d["counts"].get("review_next"),
+                             "unresolved": d["counts"].get("unresolved"),
+                             "seconds": (d.get("run_time") or {}).get("seconds"),
+                             "sample_mode": bool(d.get("sample_mode"))})
+            except (ValueError, KeyError, TypeError, OSError):  # a dossier from an older or broken run
+                continue
+        return runs
+
+    def events(self, run_id: str, after: int = 0) -> tuple[int, dict]:
+        """GET /runs/<run_id>/events?after=<seq>: the readable progress lines of a run's trace after seq,
+        the same lines the console shows. Prompts and replies stay in the trace file."""
+        if not RUN_ID.match(run_id or ""):
+            return 400, error_body(None, "InvalidInput", "not a valid run_id", False)
+        path = self.settings.logs_dir / f"trace-{run_id}.jsonl"
+        if not path.exists():
+            return 404, error_body(run_id, "RunNotFound", f"no trace for run {run_id} in logs/", False)
+        lines, last = [], after
+        with path.open(encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    rec = json.loads(raw)
+                except ValueError:  # the last line can be half written while the run goes on
+                    break
+                if rec.get("seq", 0) <= after:
+                    continue
+                last = rec["seq"]
+                try:
+                    text = progress_line(rec)
+                except (KeyError, TypeError, ValueError):
+                    text = None
+                if text:
+                    lines.append({"seq": rec["seq"], "ts": rec.get("ts"), "agent": rec.get("agent"),
+                                  "event": rec.get("event"), "sample_mode": bool(rec.get("sample_mode")),
+                                  "line": text})
+        return 200, {"run_id": run_id, "running": self.current == run_id, "last_seq": last, "events": lines}
+
     def health(self) -> dict:
         s = self.settings
         return {"status": "ok", "busy": self.current is not None, "current_run": self.current,
@@ -248,13 +299,32 @@ def make_handler(runner: Runner):
             self.end_headers()
             self.wfile.write(data)
 
+        def _page(self) -> None:
+            data = PAGE.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
-            path = self.path.split("?", 1)[0].rstrip("/")
+            path, _, query = self.path.partition("?")
+            path = path.rstrip("/")
+            if path in ("", "/index.html"):
+                return self._page()
             if path == "/health":
                 return self._send(200, runner.health())
+            if path == "/runs":
+                return self._send(200, {"runs": runner.list_runs()})
+            if path.startswith("/runs/") and path.endswith("/events"):
+                after = parse_qs(query).get("after", ["0"])[0]
+                return self._send(*runner.events(path[len("/runs/"):-len("/events")],
+                                                 int(after) if after.isdigit() else 0))
             if path.startswith("/runs/"):
                 return self._send(*runner.status(path[len("/runs/"):]))
-            self._send(404, error_body(None, "NotFound", "use POST /run, GET /runs/<run_id> or GET /health", False))
+            self._send(404, error_body(None, "NotFound", "use GET /, POST /run, GET /runs, GET /runs/<run_id> "
+                                       "or GET /health", False))
 
         def do_POST(self):
             if self.path.split("?", 1)[0].rstrip("/") != "/run":
@@ -282,7 +352,7 @@ def serve(port: int, settings: Settings | None = None, host: str = "0.0.0.0") ->
     settings = settings or get_settings()
     runner = Runner(settings)
     httpd = ThreadingHTTPServer((host, port), make_handler(runner))
-    print(f"[INFO] Vigil API on http://{host}:{port}  (POST /run, GET /runs/<run_id>, GET /health); "
+    print(f"[INFO] Vigil API on http://{host}:{port}  (page at /, POST /run, GET /runs/<run_id>, GET /health); "
           f"Zetaris {settings.zetaris_url}, Nightshift {settings.meterless_url}"
           + ("; SAMPLE_MODE on" if settings.sample_mode else ""), flush=True)
     try:

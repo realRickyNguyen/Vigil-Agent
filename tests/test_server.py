@@ -150,6 +150,14 @@ def test_http_round_trip(tmp_path):
         status, out = call("/run", json.dumps({"drug": "montelukast"}).encode())
         assert status == 200 and out["output"]["drug"] == "montelukast"
         assert call(f"/runs/{out['run_id']}")[1]["status"] == "success"
+        runs = call("/runs")[1]["runs"]
+        assert runs[0]["run_id"] == out["run_id"] and runs[0]["drug"] == "montelukast" and runs[0]["review_next"] == 1
+        status, ev = call(f"/runs/{out['run_id']}/events?after=0")
+        assert status == 200 and ev["events"][0]["line"].startswith("Starting run for montelukast")
+        assert call(f"/runs/{out['run_id']}/events?after={ev['last_seq']}")[1]["events"] == []
+        assert call("/runs/nope/events")[0] == 404
+        with urllib.request.urlopen(base + "/", timeout=10) as r:
+            assert r.headers["Content-Type"].startswith("text/html") and b"<title>Vigil" in r.read()
         status, out = call("/run", b"{not json")
         assert status == 400 and out["error"]["type"] == "InvalidInput"
         assert call("/nowhere")[0] == 404
