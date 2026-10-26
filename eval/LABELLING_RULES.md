@@ -57,9 +57,9 @@ The label text was searched with regular expressions over all label sections, no
 - Same rules and categories as v1, applied to the new top 20 and the newly chosen label (its `set_id` is on each row).
 - Rows still in the top 20 keep their v1 decision unless the new label no longer supports the v1 evidence. Each row's `origin` says which applies: `kept from v1` (83), `re-checked against the new label` (7), `new in the top 20` (10).
 - Re-checked: montelukast pneumonia and bronchitis (the newest label has no pediatric adverse-reaction list), metformin acute kidney injury (named only in the combination label's sitagliptin part) and weight decreased, sertraline intentional overdose, paranoia and drug abuse (evidence wording changed).
-- Labelled by Claude (AI) from the label text and the screen only, **before looking at any output of the 23 Oct evaluation runs**. Earlier runs on 23 Oct had been looked at, for a few items. **Not yet reviewed by a person.**
+- Labelled by Claude (AI) from the label text and the screen only, **before looking at any output of the 23 Oct evaluation runs**. Earlier runs on 23 Oct had been looked at, for a few items. **Reviewed 26 Oct** by a team member with AI assistance, for its 71 clear rows: 66 confirmed, 2 changed, 3 made ambiguous. The result is [gold_v2_reviewed.jsonl](gold_v2_reviewed.jsonl); this file's rows are unchanged. See [GOLD_REVIEW.md](GOLD_REVIEW.md).
 
-## Rows flagged for the human review (24 Oct 2026)
+## Rows flagged for the human review (24 Oct 2026; decided 26 Oct, see [GOLD_REVIEW.md](GOLD_REVIEW.md))
 
 An outside design review (Astra High, `docs/reviews/astra-high-review-2026-10-24.md`, section 5) disputed several gold rows. Two of them conflict with these rules as written, so the person reviewing the gold set should decide them first. **The gold files are unchanged:** changing labels right after seeing results would bias the scores.
 

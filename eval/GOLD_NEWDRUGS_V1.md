@@ -2,7 +2,7 @@
 
 `eval/gold_newdrugs_v1.jsonl` is the reference set for Task 3, which tests how Vigil handles newer drugs and drugs with few reports. It has the same fields as `eval/gold_v2.jsonl` and is scored the same way (`python -I eval/run_eval.py --gold eval/gold_newdrugs_v1.jsonl --score-only <run_id> ...`).
 
-**AI-drafted and not reviewed by a person.** Don't quote accuracy on it publicly until a team member has reviewed every row, starting with the ambiguous ones.
+**AI-drafted, and mostly not reviewed by a person.** On 26 Oct a team member reviewed, with AI assistance, the 15 serious terms outside the screen for empagliflozin and zuranolone (8 confirmed, 2 changed, 5 left ambiguous; [GOLD_REVIEW.md](GOLD_REVIEW.md), result in [gold_newdrugs_v1_reviewed.jsonl](gold_newdrugs_v1_reviewed.jsonl)). The other 202 rows are unreviewed, so accuracy on this set must be quoted as against an AI-drafted reference.
 
 ## Drugs and labels
 
@@ -36,7 +36,7 @@ Two parts, set by `origin`.
 
 ## Limits
 
-- No person has reviewed it. None of us is a pharmacovigilance professional.
+- Only its 15 serious terms outside the screen have been reviewed by a person (with AI assistance, 26 Oct). None of us is a pharmacovigilance professional.
 - The two passes are the same model, so their agreement shows consistency, not correctness.
 - The reference is the label alone. A signal the label doesn't mention can still be well known (NAION with semaglutide, for example). Then the row stays `possible_new_signal`, which is right for this task.
 
