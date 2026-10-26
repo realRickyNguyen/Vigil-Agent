@@ -39,7 +39,7 @@ The hackathon requires Zetaris and Meterless to run on your own machine, so each
    - one lane running `nvidia/nemotron-3-ultra-550b-a55b`
    - every other lane stopped
    - Preferences › race width 1
-   - Preferences › Quality track, with the quality race and the reasoning scaffold both off. They are saved in `%LOCALAPPDATA%\ai.meterless.runtime\state\setpoints.json` as `"raceParallelism": 1`, `"qualityRace": "off"` and `"reasoningScaffold": "off"`, and take effect after a Nightshift restart. With the quality race on, Nightshift answers about half our calls without streaming and cuts them off at 45 s.
+   - Preferences › Quality track: answer fusion, answer judging, best-of-N, the quality race and the reasoning scaffold all off. Leave the cloud first-token limit at 45 s and NVIDIA thinking at default. They are saved in `%LOCALAPPDATA%\ai.meterless.runtime\state\setpoints.json` as `"raceParallelism": 1`, `"qualityRace": "off"` and `"reasoningScaffold": "off"` (with `moaSynthesis` and `generativeVerifier` off), and take effect after a Nightshift restart. Tested with Nightshift 1.2.1 and 1.2.7 (26 Oct). The 1.2.7 settings page can show its own defaults (race width 6, Quality track options on auto) instead of these saved values, so set them once by hand after installing or updating. With the quality race on, Nightshift answers about half our calls without streaming and cuts them off at 45 s.
 
    Racing lanes breaks model pinning. Check the lanes and the Quality track again after every Nightshift restart.
 3. **`.env`.** Copy `.env.example` to `.env` and fill in the Zetaris URL, key and org ID, and the Nightshift URL and Runtime token (shown in the Nightshift Console). Never commit `.env`.
@@ -87,7 +87,7 @@ A run on `main` (25 Oct) should take about 8 to 13 minutes per drug. Most of tha
    ```
 
    `MODEL_TIMEOUT_SECONDS=180`, `MODEL_PARALLEL=2` or `REVIEWER_ROUNDS=2` give the slower runs from 23 Oct.
-3. **Check Nightshift** (section 2, step 2): one Ultra lane with every other lane stopped, race width 1, and the quality race and reasoning scaffold off. Restart Nightshift after changing these, then check the lanes again, because a restart can bring stopped lanes back.
+3. **Check Nightshift** (section 2, step 2): one Ultra lane with every other lane stopped, race width 1, and the Quality track options off. On 1.2.7, check the settings page shows those values, not its defaults. Restart Nightshift after changing these, then check the lanes again, because a restart can bring stopped lanes back.
 4. **Read the progress lines.** Each run prints one line per step. They show where the time goes:
    - `hit NVIDIA's rate limit; all model calls pause N s`: your NVIDIA key's per-minute cap. A few are normal. If there are more than about 15 per run, set `MODEL_PARALLEL=2` (fewer calls at once). If your NVIDIA key is in use elsewhere, for example in another run, stop that first. Code changes do not help here.
    - `model call failed (... provider_deadline ...)`: Nightshift cut a call at 45 s. That happens to unstreamed calls, so streaming is off (`MODEL_STREAM`) or the quality race is still on (step 3).
