@@ -1518,16 +1518,17 @@ function worldModel(wm) {
 function setLanding(on) { $(".layout").classList.toggle("landing-mode", on); document.body.classList.toggle("landing", on); }
 
 // The item the landing page shows: the newest finished run's first review-next item that went through review, else its first item to decide.
+// Before this machine has finished any run, the item comes from GET /example: a replay of a recorded live run that the
+// server makes once, outside the run list (example is then true).
 async function landingItem() {
   const run = runs.find((r) => r.status === "success" && !r.sample_mode) || runs.find((r) => r.status === "success");
-  if (!run) return null;
-  const [status, out] = await api(`/runs/${encodeURIComponent(run.run_id)}`);
+  const [status, out] = await api(run ? `/runs/${encodeURIComponent(run.run_id)}` : "/example");
   const d = out.output?.dossier;
   if (status !== 200 || !d?.review_queue?.length) return null;
   const q = d.review_queue;
   let i = q.findIndex((x) => reviewNext(x) && x.history?.length && x.uncertainty?.prr_ci95);
   if (i < 0) i = Math.max(0, q.findIndex(toDecide));
-  return {d, x: q[i], i};
+  return {d, x: q[i], i, example: !run};
 }
 
 async function intro() {
@@ -1581,9 +1582,12 @@ async function intro() {
 
   const got = await landingItem();
   if (!got || lp !== $(".lp")) return;  // nothing finished yet, or the visitor has already moved on
-  const {d, x, i} = got, ci = x.uncertainty?.prr_ci95, u = x.uncertainty || {}, se = x.seriousness || {};
+  const {d, x, i, example} = got, ci = x.uncertainty?.prr_ci95, u = x.uncertainty || {}, se = x.seriousness || {};
   const hi = Math.max(4, ci?.[1] ?? x.prr ?? 0);
-  const from = `Item ${i + 1} of the <b>${esc(d.drug)}</b> investigation, ${esc(when(d.run_id))}${d.sample_mode ? " (replay)" : ""}.
+  const from = example
+    ? `An example result: item ${i + 1} of a recorded live <b>${esc(d.drug)}</b> investigation${d.sample_mode?.recorded_at ? ` (${esc(fmtTs(d.sample_mode.recorded_at))})` : ""}, replayed.
+       Your own results appear here once you run an investigation.`
+    : `Item ${i + 1} of the <b>${esc(d.drug)}</b> investigation, ${esc(when(d.run_id))}${d.sample_mode ? " (replay)" : ""}.
     <button type="button" class="link" data-run="${esc(d.run_id)}">Open it</button>`;
   $("#lp-hero-fig").innerHTML = `<figure class="lp-stage">
       <div class="lp-frag lp-item" data-ui>
@@ -1593,6 +1597,7 @@ async function intro() {
           <span class="muted">PRR${ci ? `, 95% CI ${ci[0]} to ${ci[1]}` : ""}; the tick is the screen's threshold, PRR 2</span></div>` : ""}
       </div>
       <figcaption>${from}</figcaption></figure>`;
+  if (example) return;  // the sections below show this machine's own runs, never the example
 
   const rows = [];
   rows.push(`<section class="lp-row"><div class="lp-say"><h2>Numbers from SQL, not from a model</h2>

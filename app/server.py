@@ -10,9 +10,12 @@ minutes; the request waits for it by default. With "options": {"wait": false} it
 GET /runs/<run_id> reports progress and, when done, the same response a waiting request gets.
 
 GET / is the investigation page (app/static/index.html): it starts runs through POST /run, follows them through
-GET /runs/<run_id>/events and opens earlier ones from GET /runs. It only reads what the API returns."""
+GET /runs/<run_id>/events and opens earlier ones from GET /runs. It only reads what the API returns. Before this
+machine has finished a run, its landing page shows an item from GET /example, a replay of a recorded live run."""
 import json
 import re
+import shutil
+import tempfile
 import threading
 import time
 from dataclasses import replace
@@ -170,6 +173,8 @@ class Runner:
         self.current: str | None = None
         self.results: dict[str, dict] = {}
         self._decide = threading.Lock()  # decisions are appended to one file per run
+        self._example_lock = threading.Lock()
+        self._example: dict | None = None
 
     def start(self, body: dict) -> tuple[int, dict, threading.Thread | None]:
         """Validate, claim the single run slot and create the trace. Returns (HTTP status, body, worker);
@@ -353,6 +358,33 @@ class Runner:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         return 201, {"status": "saved", "decision": rec}
 
+    def example(self) -> tuple[int, dict]:
+        """GET /example: a finished investigation for the landing page to show before this machine has any of its
+        own. It is a replay of a recorded live run (samples/), made by the same pipeline as any replay but in a
+        temporary folder with its own World Model, so it never joins GET /runs or touches logs/ and state/. Made
+        once per process, on the first request; replays make no network calls, so it can run beside a live run."""
+        with self._example_lock:
+            if self._example is None:
+                drugs = sample_mode.available(self.settings)
+                if not drugs:
+                    return 404, error_body(None, "NoSampleRecording", "no recorded run to replay as an example", False)
+                drug = "montelukast" if "montelukast" in drugs else drugs[0]
+                tmp = Path(tempfile.mkdtemp(prefix="vigil-example-"))
+                try:
+                    settings = for_sample_mode(replace(self.settings, logs_dir=tmp))
+                    t0 = time.monotonic()
+                    d = self.investigate({"drug": drug}, settings, Tracer(tmp, echo=False))
+                    body = success_body(d, settings, time.monotonic() - t0)
+                    # Its trace and dossier went with the temporary folder, so it names no files.
+                    body["output"]["artifacts"], body["log_file"] = [], None
+                    self._example = {**body, "example": True}
+                except Exception as e:  # no example is better than a broken landing page
+                    kind, status, recoverable = classify_error(e)
+                    return status, error_body(None, kind, f"{type(e).__name__}: {e}", recoverable)
+                finally:
+                    shutil.rmtree(tmp, ignore_errors=True)
+            return 200, self._example
+
     def health(self) -> dict:
         s = self.settings
         return {"status": "ok", "busy": self.current is not None, "current_run": self.current,
@@ -398,6 +430,8 @@ def make_handler(runner: Runner):
                 return self._send(200, runner.health())
             if path == "/runs":
                 return self._send(200, {"runs": runner.list_runs()})
+            if path == "/example":
+                return self._send(*runner.example())
             if path.startswith("/runs/") and path.endswith("/decisions"):
                 return self._send(*runner.decisions(path[len("/runs/"):-len("/decisions")]))
             if path.startswith("/runs/") and path.endswith("/events"):
@@ -406,8 +440,8 @@ def make_handler(runner: Runner):
                                                  int(after) if after.isdigit() else 0))
             if path.startswith("/runs/"):
                 return self._send(*runner.status(path[len("/runs/"):]))
-            self._send(404, error_body(None, "NotFound", "use GET /, POST /run, GET /runs, GET /runs/<run_id> "
-                                       "or GET /health", False))
+            self._send(404, error_body(None, "NotFound", "use GET /, POST /run, GET /runs, GET /runs/<run_id>, "
+                                       "GET /example or GET /health", False))
 
         def do_POST(self):
             path = self.path.split("?", 1)[0].rstrip("/")

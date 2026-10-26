@@ -19,6 +19,11 @@ Everything from "The three fixes" down to "Then" step 3 below is **done**: the J
   - **Animation:** it unrolls like a blind (`blind-down`) and rolls up on close (`blind-up`). A 320ms timer also closes it if no frames are drawn.
   - **Semantics:** while floating it is `role="dialog"` with `aria-modal`.
   - **Code:** `body.floating` and `setSide()`.
+- **Landing page before any run.** `logs/` and `state/` are not in the repo or the Docker image, so judges start with no runs. Until a machine has finished one, the landing page's item block on the right comes from `GET /example`.
+  - **What it is:** a replay of the recorded montelukast run, made once per server start in a temporary folder (`Runner.example()` in `app/server.py`), outside `GET /runs` and the World Model.
+  - **Caption:** "An example result … replayed. Your own results appear here once you run an investigation."
+  - **What stays hidden:** the sections below the hero still show only the machine's own runs.
+  - **Test:** `test_the_example_is_a_replay_made_once_outside_the_run_list`.
 - **Wide screens.** From 1500px, the Analyst's summary and "How the agents got here" share a row (`.pair`).
 - **Browser Back.** Going Back from a run to `/` now shows the landing page (`goHome()` from `hashchange`), instead of leaving the run on screen.
 - **Not done:** the third critique (compare with 26/40); a glossary for PRR, IC and reporting cluster; decision shortcuts and batch close. Field names inside model text (for example "report_sources flag" in an objection) are left verbatim, since that text is the model's own.

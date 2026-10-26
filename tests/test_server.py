@@ -129,6 +129,32 @@ def test_sample_mode_and_a_reused_run_id_are_refused_clearly(tmp_path):
     assert status == 409 and out["error"]["type"] == "RunIdInUse"
 
 
+def test_the_example_is_a_replay_made_once_outside_the_run_list(tmp_path):
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    (samples / "metformin.json.gz").write_bytes(b"")
+    (samples / "montelukast.json.gz").write_bytes(b"")
+    calls = []
+
+    def replay(request, s, tracer):
+        calls.append((request, s))
+        return fake_investigate(request, s, tracer)
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    runner = Runner(settings(logs, samples_dir=samples), replay)
+    status, out = runner.example()
+    assert status == 200 and out["example"] is True and out["output"]["dossier"]["drug"] == "montelukast"
+    request, s = calls[0]
+    assert request == {"drug": "montelukast"} and s.sample_mode and s.logs_dir != logs
+    assert s.world_path.parent == s.logs_dir and not s.logs_dir.exists()  # its own World Model, folder removed after
+    assert out["log_file"] is None and out["output"]["artifacts"] == []
+    assert runner.list_runs() == [] and not any(logs.iterdir())  # never in GET /runs, nothing left in logs/
+    assert runner.example() == (200, out) and len(calls) == 1  # made once per process
+    status, out = Runner(settings(logs, samples_dir=tmp_path / "none"), replay).example()
+    assert status == 404 and out["error"]["type"] == "NoSampleRecording"
+
+
 def test_decisions_are_appended_with_what_vigil_said_and_the_latest_wins(tmp_path):
     runner = Runner(settings(tmp_path), fake_investigate)
     runner.run({"run_id": "done", "input": {"drug": "montelukast"}})
