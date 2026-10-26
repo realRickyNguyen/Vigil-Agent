@@ -67,8 +67,12 @@ def progress_line(rec: dict) -> str | None:
     if k == "budget_stop":
         return f"{who} skips the {d['step']}: {d['seconds_left']} s left in the run's time budget"
     if k == "remembered":
+        s = d.get("since_last_run") or {}
+        compared = (f"; against earlier runs: {s.get('changed', 0)} changed, {s.get('unchanged', 0)} unchanged, "
+                    f"{s.get('new', 0)} new" if s.get("compared_with_runs") else "; no earlier verdicts for this drug")
         return (f"{who} recorded {d['decisions_recorded']} verdicts against label version "
-                f"{(d.get('label_version') or {}).get('effective_time')}; {len(d.get('reopened') or [])} reopened")
+                f"{(d.get('label_version') or {}).get('effective_time')}; {len(d.get('reopened') or [])} reopened"
+                + (compared if s else ""))
     if k == "run_end":
         return f"Completed in {d.get('seconds')} s; dossier logs/{d['dossier']}"
     return None

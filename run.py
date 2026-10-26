@@ -46,8 +46,17 @@ def main() -> int:
         if q.get("review_priority") == "review_next" or q["workflow_status"] == "unresolved":
             print(f"      objection: {(q.get('strongest_objection') or q.get('status_note') or '-')[:140]}")
             print(f"      next check: {(q.get('next_check') or '-')[:140]}")
+        slr = q.get("since_last_run") or {}
+        if slr.get("status") in ("changed", "not_settled_now") or slr.get("label_changed"):
+            print(f"      since last run: {slr['status']}; {slr['why'][:160]}")
     for warning in d.get("nightshift_warnings") or []:
         print(f"\nNightshift setup warning. {warning}")
+    s = (d.get("world_model") or {}).get("since_last_run") or {}
+    if s.get("compared_with_runs"):
+        print(f"\nWorld Model, against earlier runs: {s['changed']} changed, {s['unchanged']} unchanged, {s['new']} new, "
+              f"{s['not_settled_now']} not settled now" + ("; label version changed" if s.get("label_version_changed") else ""))
+        for x in s.get("earlier_review_next_not_assessed") or []:
+            print(f"  earlier review next, not assessed this run: {x['reaction']} (run {x['earlier_run']})")
     print(f"\nRounds: {d['rounds']}")
     print(f"Dossier: logs/dossier-{d['run_id']}.json   Trace: logs/{d['trace']}")
     return 0

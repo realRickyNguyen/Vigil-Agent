@@ -705,29 +705,100 @@ def skeptic_round(ctx: dict, state: dict, skeptic: Skeptic, reviewer: Reviewer, 
 SETTLED = ("reviewed", "unresolved")
 
 
+VERDICT_FIELDS = ("workflow_status", "context", "label_coverage", "review_priority")
+# What reads the World Model, for the dossier (the engine guide asks runs to say which read paths are live).
+WORLD_MODEL_READS = {
+    "code": "every queue item is compared with the verdict the World Model holds from earlier runs (since_last_run), "
+            "and a new label version reopens the verdicts that rested on the old one",
+    "agent_prompts": "none: earlier verdicts are kept out of the Analyst's and Reviewer's prompts, because a past "
+                     "answer shown to the model is read as evidence (Nightshift's H-MEM replay, found 24 Oct)",
+}
+
+
+def since_last_run(q: dict, earlier: dict | None, earlier_version: dict | None, version: dict) -> dict:
+    """How this run's verdict on one reaction compares with the one the World Model holds from an earlier run,
+    and why it may differ: a new label version, different report counts, or this run's judgement on the same
+    evidence. `earlier` is the stored decision as it was before this run wrote anything."""
+    if earlier is None:
+        return {"status": "new", "why": "No earlier settled verdict for this reaction in the World Model."}
+    e = earlier["value"]
+    before = {"run_id": e.get("run_id"), "decided_at": earlier.get("decidedAt"),
+              "label_effective": (earlier_version or {}).get("effective_time"),
+              **{k: e.get(k) for k in VERDICT_FIELDS + ("a", "prr")}}
+    changed = [{"field": k, "earlier": e.get(k), "now": q.get(k)} for k in VERDICT_FIELDS
+               if e.get(k) is not None and q.get(k) is not None and e.get(k) != q.get(k)]
+    label_changed = bool(earlier_version) and earlier_version != version
+    if label_changed:
+        why = (f"The label changed from version {earlier_version.get('effective_time')} to "
+               f"{version.get('effective_time')} since run {e.get('run_id')}, which reopened the earlier verdict.")
+    elif e.get("a") is None:
+        why = (f"Same label version as run {e.get('run_id')}; that run's report counts were not recorded, so a "
+               f"difference may come from new reports or from this run's judgement.")
+    elif e.get("a") != q.get("a"):
+        why = (f"Same label version as run {e.get('run_id')}; reports with the drug went from {e.get('a')} to "
+               f"{q.get('a')} (PRR {e.get('prr')} to {q.get('prr')}).")
+    else:
+        why = (f"Same label version and the same {q.get('a')} reports as run {e.get('run_id')}"
+               + ("; the difference is this run's judgement on the same evidence." if changed else "."))
+    if q["workflow_status"] not in SETTLED:
+        status = "not_settled_now"
+        why = f"Not settled in this run ({q['workflow_status']}); the earlier verdict is shown for reference. " + why
+    else:
+        status = "changed" if changed else "unchanged"
+    return {"status": status, "label_changed": label_changed, "changed": changed, "earlier": before, "why": why}
+
+
 def remember(world: WorldModel, drug: str, label: dict, queue: list[dict], run_id: str, at: str) -> dict:
     """Record this run's label version and settled verdicts in the World Model. A label version that
     differs from the last run's supersedes it, which reopens every earlier verdict that rested on it:
-    those come back in `reopened` so the analyst knows which past answers need a second look."""
+    those come back in `reopened` so the analyst knows which past answers need a second look.
+    Before writing, every queue item is compared with the World Model's earlier verdict and gets
+    `since_last_run`, so every run shows what the engine holds, not only runs where a label changed."""
     source = {"kind": "openfda-label-via-zetaris", "at": at, "runId": run_id}
+    audit_from = len(world.audit())
     entity = world.upsert_entity(type="drug", name=drug, source=source)
     version = {"set_id": label.get("set_id"), "effective_time": label.get("effective_time")}
+    previous = world.current_fact(entity["id"], "label_version")
+    # Snapshots, taken before this run's writes change the decisions' status or replace them.
+    earlier = {d["value"]["reaction"]: json.loads(json.dumps(d)) for d in world.decisions(about=entity["id"])}
+    facts = world.state["facts"]
+    earlier_versions = {r: (facts.get((d.get("dependsOn") or [None])[0]) or {}).get("value")
+                        for r, d in earlier.items()}
     before = {d["key"] for d in world.decisions(status="reopened", about=entity["id"])}
     fact = world.assert_fact(about=entity["id"], predicate="label_version", value=version, source=source)
     reopened = [{"reaction": d["value"]["reaction"], "earlier_run": d["value"]["run_id"],
                  "earlier_label_coverage": d["value"].get("label_coverage"),
                  "earlier_review_priority": d["value"].get("review_priority")}
                 for d in world.decisions(status="reopened", about=entity["id"]) if d["key"] not in before]
+    for q in queue:
+        q["since_last_run"] = since_last_run(q, earlier.get(q["reaction"]), earlier_versions.get(q["reaction"]),
+                                             version)
     recorded = 0
     for q in queue:
         if q["workflow_status"] in SETTLED:
             world.record_decision(
                 key=f"{entity['id']}|{q['reaction']}", about=entity["id"], depends_on=[fact["id"]], source=source,
                 value={"reaction": q["reaction"], "run_id": run_id, "workflow_status": q["workflow_status"],
-                       **{k: q.get(k) for k in ("label_coverage", "context", "review_priority")}})
+                       **{k: q.get(k) for k in ("label_coverage", "context", "review_priority", "a", "prr")}})
             recorded += 1
+    in_queue = {q["reaction"] for q in queue}
+    statuses = [q["since_last_run"]["status"] for q in queue]
+    summary = {
+        "compared_with_runs": sorted({d["value"].get("run_id") for d in earlier.values()} - {None}),
+        "previous_label_version": (previous or {}).get("value"),
+        "label_version_changed": bool(previous) and previous["value"] != version,
+        **{s: statuses.count(s) for s in ("new", "unchanged", "changed", "not_settled_now")},
+        "changed_items": [q["reaction"] for q in queue if q["since_last_run"]["status"] == "changed"],
+        # Reactions an earlier run sent to review next that this run did not assess at all: the selection or the
+        # screen moved, and an analyst should know a past flag is not being re-checked.
+        "earlier_review_next_not_assessed": [
+            {"reaction": r, "earlier_run": d["value"].get("run_id")} for r, d in sorted(earlier.items())
+            if r not in in_queue and d["value"].get("review_priority") == "review_next"],
+        "earlier_verdicts_not_in_this_run": sum(r not in in_queue for r in earlier),
+    }
+    audit = [{k: a.get(k) for k in ("seq", "kind", "actor", "summary", "eventId")} for a in world.audit()[audit_from:]]
     return {"label_fact": fact["id"], "label_version": version, "decisions_recorded": recorded,
-            "reopened": reopened}
+            "reopened": reopened, "since_last_run": summary, "read_by": WORLD_MODEL_READS, "audit": audit}
 
 
 PRIORITY_ORDER = {"review_next": 0, "insufficient_evidence": 1, "lower_priority": 2, None: 3}

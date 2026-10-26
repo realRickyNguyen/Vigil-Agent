@@ -97,7 +97,7 @@ def summary(d: dict) -> str:
 
 def success_body(d: dict, settings: Settings, seconds: float) -> dict:
     review_next = [{k: q.get(k) for k in ("reaction", "a", "prr", "label_coverage", "context", "reasoning",
-                                          "strongest_objection", "next_check", "evidence")}
+                                          "strongest_objection", "next_check", "evidence", "since_last_run")}
                    for q in d["review_queue"]
                    if q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"]
     return {
@@ -110,6 +110,8 @@ def success_body(d: dict, settings: Settings, seconds: float) -> dict:
             # evidence, objections and history, is in the dossier.
             "recommendations": review_next,
             "unresolved": [q["reaction"] for q in d["review_queue"] if q["workflow_status"] == "unresolved"],
+            # The World Model's comparison with earlier runs of this drug (each item also has since_last_run).
+            "since_last_run": (d.get("world_model") or {}).get("since_last_run"),
             "nightshift_warnings": d.get("nightshift_warnings") or [],
             "artifacts": [f"logs/dossier-{d['run_id']}.json", f"logs/{d['trace']}"],
             "dossier": d,
