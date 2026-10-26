@@ -1,4 +1,4 @@
-# Handoff: Vigil: Drug Reaction Review, state as of Sun 25 Oct 2026, evening Sydney
+# Handoff: Vigil: Drug Reaction Review, state as of Mon 26 Oct 2026, afternoon Sydney
 
 Start here if you are picking up the work, whether you are a teammate or a new Claude session. The design and its reasoning are in [ideas/VIGIL.md](ideas/VIGIL.md). Event rules are in [HACKATHON_KNOWLEDGE.md](HACKATHON_KNOWLEDGE.md).
 
@@ -158,6 +158,22 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 - **Services** were stopped at the end of 22 Oct. Use the "lets begin" routine in `CLAUDE.md`, then check that the Nightshift lanes are still Ultra-only.
 
 ## Next steps, in order
+
+**Open tasks by owner, 26 Oct afternoon (read this first).** Deadline Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney).
+
+**Bryan (agent system):**
+1. **Re-score the 25 to 26 Oct re-evaluation against the reviewed gold sets** (see [eval/GOLD_REVIEW.md](../eval/GOLD_REVIEW.md)). The runs exist only on Bryan's machine. The scorer reads `logs/` only, needs no Zetaris, Nightshift or model calls, and takes about a minute. At least Phase F, which the README leads with:
+   ```
+   python -I eval/run_eval.py --gold eval/gold_v2_reviewed.jsonl --score-only 20261025T153908Z-eee925 20261025T160326Z-ee1771 20261025T172203Z-2e5486
+   python -I eval/run_eval.py --gold eval/gold_v2_reviewed.jsonl --score-only 20261025T161311Z-fe8e30 20261025T163715Z-2903a9 20261025T171203Z-6183bf
+   python -I eval/run_eval.py --gold eval/gold_newdrugs_v1_reviewed.jsonl --score-only 20261025T155031Z-10a84a 20261025T170120Z-bf10e5 20261025T174149Z-313ee3
+   python -I eval/run_eval.py --gold eval/gold_newdrugs_v1_reviewed.jsonl --score-only 20261025T162622Z-a375af 20261025T164743Z-1a7b50 20261025T173105Z-51dc64
+   ```
+   The first and third commands are the final version (RF, `8ae141c`), the second and fourth its `main` control (R2'). Every other phase's run IDs are under `scores[].run_id` in its `eval/reports/reeval-*.json`, with that file's `gold` naming the set to swap for its `_reviewed` version. Then update the README's "Results so far" with the re-scored figures and remove the sentence that says they predate the review. The newer-drug set is reviewed only for its 15 hidden serious terms, so its figures stay "against an AI-drafted reference".
+2. **Finish the agent system** with bug fixes only (Ricky's freeze, 26 Oct). After any change to agent behaviour, re-record the three samples with Zetaris and Nightshift running (`python -I run.py --drug <drug> --record`, montelukast, isotretinoin and metformin, about 6 minutes each). Then check `python -I -m pytest tests`: `tests/test_sample_mode.py` replays montelukast against `output_examples/montelukast/`.
+
+**Ricky (packaging):** the investigation page; a secret scan, then making the repo public; the deck, video and sponsor explanation; the HackOS submission.
+
 
 **25 Oct, the re-evaluation at Ricky's code defaults.** Every version re-run with no `.env` settings beyond the connection keys, scored on gold v2 by one scorer. Results, method and what one run per drug can't show are in [eval/reports/reeval-25oct-summary.md](../eval/reports/reeval-25oct-summary.md) and the README's Results section.
 
