@@ -71,6 +71,11 @@ python -I run.py --drug montelukast
 One investigation. Writes `logs/trace-<run>.jsonl` and `logs/dossier-<run>.json`. `python -I run.py` with no arguments starts the API on port 8000; `docker build -t vigil .` then `docker run --rm -p 8000:8000 --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/state:/app/state" vigil` runs it in Docker (README, Run it).
 
 ```bash
+SAMPLE_MODE=true python -I run.py --drug montelukast
+```
+Replays the recorded montelukast run (also isotretinoin, metformin) in about 5 s with no service and no network. The same works in Docker with `-e SAMPLE_MODE=true` and no `.env`. Record a drug with `python -I run.py --drug <drug> --record`.
+
+```bash
 python -I eval/run_eval.py
 ```
 All 5 gold drugs, plus 2 extra montelukast runs: about 60 to 75 minutes.

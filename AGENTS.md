@@ -11,8 +11,9 @@ Vigil is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` 
   - Every number comes from Zetaris SQL (`app/data/faers.py`).
   - Do not add a direct model API or a data path that bypasses Zetaris.
 - **No hardcoding.** Never match known inputs to stored outputs, never read `output_examples/` at runtime, and never edit anything in `logs/`.
-- **Do not weaken** the Reviewer's code checks (`app/agents/reviewer.py`) or the gold set (`eval/gold_v1.jsonl`) to make a run look better.
-- **Keep model calls small.** Batches of 3 reactions and per-reaction label excerpts are deliberate: large prompts time out on Nightshift.
+- **Do not weaken** the Reviewer's code checks (`app/agents/reviewer.py`) or the gold sets (`eval/gold_*.jsonl`; the person-reviewed versions are `eval/*_reviewed.jsonl`, see `eval/GOLD_REVIEW.md`) to make a run look better.
+- **Keep model calls small.** One reaction per call and per-reaction label excerpts are deliberate: large prompts run long on Nightshift and NVIDIA, and calls are bounded at 90 s.
+- **Sample mode replays recordings.** `samples/<drug>.json.gz` are recorded live runs that `SAMPLE_MODE=true` replays (`app/sample_mode.py`), and `output_examples/` holds those runs' unedited outputs. After any change to what the agents do, re-record them with `python -I run.py --drug <drug> --record`, with Zetaris and Nightshift running.
 - **One investigation at a time per NVIDIA key.** Parallel runs share the per-minute cap.
 - **Wording.** FAERS shows reporting patterns, not causation. Say "review next", not "new side effect". Do not overclaim in the README, deck or comments.
 - **Keep the handoff current.** When the state changes, update `docs/HANDOFF.md`.
