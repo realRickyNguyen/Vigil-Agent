@@ -46,6 +46,9 @@ def main() -> int:
         if q.get("review_priority") == "review_next" or q["workflow_status"] == "unresolved":
             print(f"      objection: {(q.get('strongest_objection') or q.get('status_note') or '-')[:140]}")
             print(f"      next check: {(q.get('next_check') or '-')[:140]}")
+        cluster = q.get("reporting_cluster") or {}
+        if cluster.get("needed"):
+            print(f"      check the reporting cluster first: {'; '.join(cluster['reasons'])[:200]}")
         slr = q.get("since_last_run") or {}
         if slr.get("status") in ("changed", "not_settled_now") or slr.get("label_changed"):
             print(f"      since last run: {slr['status']}; {slr['why'][:160]}")

@@ -92,12 +92,14 @@ def summary(d: dict) -> str:
     return (f"{d['drug']}: {d['data']['drug_reports']} reports; {c['passing_evans']} of {c['reactions_screened']} "
             f"reactions pass the screen; {c['assessed']} assessed ({c['decided_by_rule']} by rule), "
             f"{c['reviewed']} reviewed, {c['unresolved']} unresolved, {c['pending']} pending, {c['failed']} failed; "
-            f"{c['review_next']} to review next")
+            f"{c['review_next']} to review next"
+            + (f" ({c['review_next_check_cluster_first']} of them to check for a reporting cluster first)"
+               if c.get("review_next_check_cluster_first") else ""))
 
 
 def success_body(d: dict, settings: Settings, seconds: float) -> dict:
     review_next = [{k: q.get(k) for k in ("reaction", "a", "prr", "label_coverage", "context", "reasoning",
-                                          "strongest_objection", "next_check", "evidence", "since_last_run")}
+                                          "strongest_objection", "next_check", "evidence", "since_last_run", "reporting_cluster")}
                    for q in d["review_queue"]
                    if q.get("review_priority") == "review_next" and q["workflow_status"] == "reviewed"]
     return {
@@ -110,6 +112,10 @@ def success_body(d: dict, settings: Settings, seconds: float) -> dict:
             # evidence, objections and history, is in the dossier.
             "recommendations": review_next,
             "unresolved": [q["reaction"] for q in d["review_queue"] if q["workflow_status"] == "unresolved"],
+            # Recommendations whose reports cluster in one country or come mostly from lawyers: still review next,
+            # but check the cluster first (app/data/sources.py, cluster_check).
+            "check_reporting_cluster_first": [r["reaction"] for r in review_next
+                                              if (r.get("reporting_cluster") or {}).get("needed")],
             # The World Model's comparison with earlier runs of this drug (each item also has since_last_run).
             "since_last_run": (d.get("world_model") or {}).get("since_last_run"),
             "nightshift_warnings": d.get("nightshift_warnings") or [],

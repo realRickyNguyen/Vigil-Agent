@@ -22,6 +22,12 @@ LAWYER_SHARE = Fraction(2, 10)
 HEALTH_PROFESSIONAL_SHARE = Fraction(5, 10)
 MIN_REPORTS = 10
 MIN_KNOWN_REPORTER = Fraction(5, 10)
+# A strong cluster marks a review-next item "check the reporting cluster first" (cluster_check). Stricter than the
+# flags above: one country with 80% or more, 50 or more points above the drug's usual share, or lawyers with half.
+STRONG_COUNTRY_SHARE = Fraction(8, 10)
+STRONG_COUNTRY_ABOVE_USUAL = Fraction(5, 10)
+STRONG_LAWYER_SHARE = Fraction(5, 10)
+CLUSTER_NOTE = "review next; check the reporting cluster first"
 # Review-next items checked per run. Each costs two to four openFDA reads (registering a table fetches once, and each
 # read of it fetches again), and the drug's usual mix as much again per run. The no-key limit is about 1,000 a day.
 # 0 turns the check off.
@@ -56,6 +62,7 @@ def country_check(item: dict[str, int], usual: dict[str, int] | None) -> dict:
         return {**out, "usual_share": None, "flag": "unknown", "why": "the drug's usual country mix is not available"}
     usual_known = sum(usual.values())
     out["usual_share"] = share(usual.get(top, 0), usual_known)
+    out["usual_top_reports"], out["usual_known"] = usual.get(top, 0), usual_known  # exact, for cluster_check
     exact = Fraction(n, known)
     out["flag"] = bool(usual_known) and exact >= COUNTRY_SHARE and         exact - Fraction(usual.get(top, 0), usual_known) >= COUNTRY_ABOVE_USUAL
     return out
@@ -100,6 +107,32 @@ def check(clerk, drug: str, reaction: str, usual, a: int | None = None) -> dict:
     ev = assess_sources(item["reports"] or a or 0, item["country"], item["reporter"], mix["country"], mix["reporter"],
                         mix["reports"])
     return {"reaction": reaction, **ev, "query_ids": qids + usual_qids}
+
+
+def cluster_check(ev: dict | None) -> dict:
+    """Whether a review-next item's reports are concentrated enough that an analyst should rule out a reporting
+    cluster before reading it as a signal: re-filed copies of the same cases from one country, or a litigation wave.
+    On 25 and 26 Oct montelukast's FULL BLOOD COUNT ABNORMAL (97% of reports from Canada, against 13% for the drug)
+    and SPUTUM DISCOLOURED (88%) went to review next in every run. Display only, like the flags: the item keeps its
+    priority and its place in the queue."""
+    if not ev or "country" not in ev:
+        return {"needed": False, "reasons": [], "why": "report sources were not checked for this item"}
+    c, r, reasons = ev["country"], ev["reporter"], []
+    if c.get("flag") is True and c.get("usual_known"):
+        item_share = Fraction(c["top_reports"], c["known"])
+        usual_share = Fraction(c["usual_top_reports"], c["usual_known"])
+        if item_share >= STRONG_COUNTRY_SHARE and item_share - usual_share >= STRONG_COUNTRY_ABOVE_USUAL:
+            reasons.append(f"{pct(c['share'])} of the reports with a known country come from {c['top']}, against "
+                           f"{pct(c['usual_share'])} for the drug, so re-filed copies of the same cases are likely")
+    lawyers = (r.get("by_type") or {}).get("lawyer", 0)
+    if r.get("lawyer_flag") is True and r.get("known") and Fraction(lawyers, r["known"]) >= STRONG_LAWYER_SHARE:
+        reasons.append(f"{pct(r['lawyer_share'])} of the reports that say who reported came from lawyers, so a "
+                       f"litigation wave is likely")
+    if not reasons:
+        return {"needed": False, "reasons": [], "why": "no strong reporting cluster"}
+    return {"needed": True, "note": CLUSTER_NOTE, "reasons": reasons,
+            "why": "A reporting cluster can inflate the count without making the pattern false. Check how many "
+                   "distinct cases lie behind the reports before reading this as a signal. The priority is unchanged."}
 
 
 def compact(ev: dict) -> dict:

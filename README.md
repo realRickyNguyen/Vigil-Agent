@@ -62,6 +62,8 @@ Public data makes this harder, not easier. For montelukast (an asthma drug), the
 | `label_search`, where the label names the reaction | every fetched section searched in code before any model call, with which sections can support coverage |
 | `uncertainty`, how thin the evidence is | expected count, PRR 95% interval, IC025 and a thin-evidence mark, worked out in code |
 | `report_sources` (review-next entries only) | country and reporter-type flags against the drug's usual mix, as context, never a reason to reject |
+| `reporting_cluster` (review-next entries only) | "check the reporting cluster first" when 80% or more of the reports come from one country (50 or more points above the drug's usual share) or half or more from lawyers, with the reason. Display only: the priority and the order don't change |
+| `since_last_run` | this verdict against the World Model's verdict from earlier runs: new, unchanged, changed or not settled now, with the changed fields and why |
 | `manual_review`, whether a person should look first | a flag with its reasons, which changes no status, priority or ranking |
 
 The dossier also reports **coverage**: how many reactions were screened, passed the statistical screen, were shown to the agents, assessed, reviewed, left unresolved or not reached. "Reviewed" means the Reviewer model accepted the finding, not that a safety professional checked it. The trace (`logs/trace-<run>.jsonl`) records every Zetaris query, every model call (including which model actually answered), and every agent message.

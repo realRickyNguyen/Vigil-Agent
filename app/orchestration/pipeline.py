@@ -25,6 +25,7 @@ from app.data.label import search, sections
 from app.data.safety_net import collect as collect_safety_net
 from app.data.sources import SOURCE_ITEMS
 from app.data.sources import check as check_report_sources
+from app.data.sources import cluster_check
 from app.engines.world_model import WorldModel
 from app.orchestration.manual_review import manual_review
 from app.schemas import CAVEAT, STATUS, Finding, Verdict
@@ -282,6 +283,9 @@ def run_investigation(request: dict, settings: Settings, tracer: Tracer | None, 
               **{f"skeptic_{k}": v for k, v in skeptic_counts.items()},
               "report_sources_checked": sum("flags" in ev for ev in sources.values()),
               "report_sources_flagged": sum(bool(ev.get("raised")) for ev in sources.values()),
+              "review_next_check_cluster_first": sum(
+                  q["workflow_status"] == "reviewed" and (q.get("reporting_cluster") or {}).get("needed", False)
+                  for q in queue),
               "thin_evidence": sum(bool((q.get("uncertainty") or {}).get("thin_evidence")) for q in queue),
               "manual_review": sum(q["manual_review"]["needed"] for q in queue),
               "safety_net_terms": net["term_count"]}
@@ -849,6 +853,8 @@ def review_queue(state: dict, passing: list, pending: list[dict], failed: list[s
                       "status_note": "the Analyst's model gave no classification for it after every fallback"})
     for q in queue:  # context only, added after every other field and never part of the sort below
         q["manual_review"] = manual_review(q, stats[q["reaction"]].a if q["reaction"] in stats else q.get("a"))
+        if q.get("review_priority") == "review_next":  # display only, like the flags it reads
+            q["reporting_cluster"] = cluster_check(q.get("report_sources"))
     queue.sort(key=lambda q: (PRIORITY_ORDER.get(q.get("review_priority"), 3),
                               STATUS_ORDER.get(q["workflow_status"], 5), -(q.get("chi2") or 0)))
     return queue
