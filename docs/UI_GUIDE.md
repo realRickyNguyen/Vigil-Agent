@@ -164,8 +164,22 @@ Built by `render()`, in this order:
 5. **Review queue** (see [9](#9-review-queue)).
 6. **Since the last run** (`sinceLastRun()`, World Model): what changed against earlier runs of the drug, whether the label version changed, and links that open the items.
 7. **The Analyst's summary:** model text, one column across the full width.
-8. **How the agents got here** (`proceedings()`): one row per step and round (Data Clerk, Analyst, Reviewer round N, Skeptic, World Model), each with its mascot and counts. One column.
-9. **Appendices**, folded:
+8. **How the agents got here** (`proceedings()`): one row per step and round (Data Clerk, Analyst, Reviewer round N, Skeptic, World Model), each with its mascot and counts. A Reviewer row reads "20 reviewed: 19 accepted, 1 rejected, 0 unresolved" (`reviewed` counts every finding reviewed). One column.
+   - **Each row opens the agent's history** (`onAgentRow()`, `agentHistory()`): a button with an arrow that turns and a "History"/"Hide" link, like the SQL rows. Several can be open at once.
+   - **With the other agents** (`exchanges()`, from the dossier):
+     - Data Clerk: what it handed the Analyst;
+     - Analyst: every finding sent back, its claim round by round (changed fields in bold) and the Reviewer's verdict on each;
+     - Reviewer, round N: each objection with its reason (model text) and whether it went back to the Analyst; the accepted findings, folded; the reactions it named as missing;
+     - Skeptic: each co-drug check, and for a challenge the Reviewer's re-review and the Analyst's revision;
+     - World Model: verdicts recorded and reopened.
+     
+     Reaction names open their item in the queue.
+   - **In the run's trace** (`timeline()`): the agent's own lines from `GET /runs/<id>/events`, read once per run (`traceLines()`). The Analyst and Reviewer also get the orchestrator's hand-offs; the Skeptic gets the re-review its challenge set off. Counts of model calls, retries, Zetaris queries and rule decisions sit above.
+     - Hand-off and result lines (`HANDOFF`) are dark, with their direction ("Analyst → Reviewer", "Reviewer → Analyst"); "Only hand-offs and results" hides the rest.
+     - Times are from the run's start; a replay shows each line's place in the trace (#seq), as its lines come out within seconds.
+     - A Reviewer row shows the Reviewer's lines from every round (rounds overlap in time) and highlights that round's verdicts.
+     - If the trace is not in this server's `logs/`, the panel says so.
+9. **Appendices**, folded. Each summary has an arrow that turns, a hover tint and a "Show details"/"Hide details" link:
    - the **safety net** (serious terms outside the screen, for a person to review; not signals);
    - **World Model** verdicts across runs;
    - **Limits and model calls**: untested factors; Nightshift call counts (served by another model, memory injected, without a receipt); the model; the trace file.
@@ -317,7 +331,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 ## 16. Accessibility
 
-- Rows: the reaction name is a `button` with `aria-expanded` and `aria-controls`.
+- Rows: the reaction name is a `button` with `aria-expanded` and `aria-controls`. So is each row of "How the agents got here".
 - Tabs: `role="tablist"` / `tab` / `tabpanel`; arrow keys move between the queue tabs.
 - The Investigations panel is a dialog while floating. Escape closes it, and focus returns to its button.
 - The log is `aria-live="polite"`; decorative mascots and the crew bubble are `aria-hidden` or have empty `alt`.
@@ -343,6 +357,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** each agent in "How the agents got here" opens its history: its exchanges with the other agents (dossier) and its lines from the run's trace. Reviewer rows now say "N reviewed: M accepted". The safety net, World Model and Limits sections show they open (arrow, hover, "Show details").
 - **27 Oct:** the orange "Replay mode" label removed from the header.
 - **27 Oct:** replays get a header chip again, a plain one: the drug and "Investigation replay" (then "· finished" or "· stopped"), with no agent or clock.
 - **27 Oct:** a case report's extra reactions open in place, on the same lines, instead of in a new list below.

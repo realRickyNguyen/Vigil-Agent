@@ -491,13 +491,19 @@ pre { font: 12px/1.5 var(--mono); background: var(--paper); border: 1px solid va
 /* ---------- appendices ---------- */
 details.appx { border-top: 1px solid var(--rule-strong); }
 details.appx:last-of-type { border-bottom: 1px solid var(--rule-strong); }
-details.appx > summary { list-style: none; cursor: pointer; padding: 16px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: baseline; }
+/* Each appendix opens like the SQL rows: an arrow that turns, a hover tint, and a "Show details" link. */
+details.appx > summary { list-style: none; cursor: pointer; padding: 16px 8px 16px 4px; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 4px 12px; align-items: baseline; }
 details.appx > summary::-webkit-details-marker { display: none; }
+details.appx > summary:hover { background: var(--hover); }
+details.appx > summary:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
+details.appx > summary > svg { width: 14px; height: 14px; color: var(--accent); transition: transform .15s; align-self: center; }
+details.appx[open] > summary > svg { transform: rotate(90deg); }
 details.appx > summary h3 { font: 600 18px/1.3 var(--serif); margin: 0; }
-details.appx > summary .tog { font-size: 12px; color: var(--accent); }
-details.appx > summary .tog::after { content: "Show"; }
-details.appx[open] > summary .tog::after { content: "Hide"; }
-details.appx > summary p { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--muted); max-width: 760px; }
+details.appx > summary .tog { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+details.appx > summary .tog::after { content: "Show details"; }
+details.appx[open] > summary .tog::after { content: "Hide details"; }
+details.appx > summary p { grid-column: 2 / -1; margin: 0; font-size: 13px; color: var(--muted); max-width: 760px; }
 details.appx > .body { padding: 0 0 22px; }
 details.sub { margin-top: 10px; }
 details.sub > summary { cursor: pointer; color: var(--accent); font-size: 13px; }
@@ -552,6 +558,52 @@ ol.proc.steps li.pending .mascot { opacity: .35; filter: grayscale(1); }
 ol.proc.with-crew li { align-items: center; }
 ol.proc.with-crew .who { display: flex; gap: 8px; align-items: center; }
 ol.proc.with-crew .mascot { width: 40px; height: 36px; }
+/* "How the agents got here": each row is a button that opens the agent's history, with an arrow that turns and a
+   "History" link, as the SQL rows do. */
+ol.proc.agents li { grid-template-columns: 34px minmax(0, 1fr); align-items: start; padding: 0; }
+ol.proc.agents li::before { line-height: 56px; }
+.ag-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 10px 8px 10px 0;
+  background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.ag-row:hover { background: var(--hover); }
+.ag-row:hover .who { text-decoration: underline; text-underline-offset: 3px; }
+.ag-show { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--accent); white-space: nowrap; }
+.ag-show::after { content: "History"; text-decoration: underline; text-underline-offset: 2px; }
+.ag-row[aria-expanded="true"] .ag-show::after { content: "Hide"; }
+.ag-show svg { transition: transform .15s; }
+.ag-row[aria-expanded="true"] .ag-show svg { transform: rotate(90deg); }
+ol.proc.agents li.open { background: var(--paper); }
+.ag-hist { grid-column: 2; padding: 4px 12px 18px 0; font-size: 13px; }
+.ag-hist h4 { font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 6px; }
+ul.xch { list-style: none; margin: 0; padding: 0; }
+ol.proc .ag-hist li { display: block; counter-increment: none; padding: 0; border-bottom: 0; font-size: 13px; background: none; }
+ol.proc .ag-hist li::before { content: none; }
+ol.proc .ag-hist ul.xch > li { padding: 8px 0; border-top: 1px dotted var(--rule-strong); line-height: 1.5; }
+ol.proc .ag-hist ul.xch > li:first-child { border-top: 0; }
+ul.xch ol { list-style: none; margin: 4px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--rule); }
+ol.proc .ag-hist ul.xch ol li { padding: 2px 0; color: var(--ink-2); }
+ul.xch .rn { font: 12px var(--mono); color: var(--muted); margin-right: 6px; }
+ul.xch .then { color: var(--muted); margin-top: 2px; }
+ul.xch .verdict { font-weight: 600; }
+ul.xch .verdict.accept { color: var(--ok); } ul.xch .verdict.reject { color: var(--signal); } ul.xch .verdict.unresolved { color: var(--unres); }
+.tl-key { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-2); margin: 0 0 6px; cursor: pointer; }
+ol.tl { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; border: 1px solid var(--rule); background: var(--sheet); font-size: 12px; }
+ol.proc .ag-hist ol.tl li { display: grid; grid-template-columns: 44px 150px minmax(0, 1fr); gap: 10px; padding: 4px 10px; color: var(--muted); border-bottom: 1px solid var(--rule); }
+ol.proc .ag-hist ol.tl li:last-child { border-bottom: 0; }
+ol.proc .ag-hist ol.tl li.key { color: var(--ink); }
+ol.proc .ag-hist ol.tl li.hit { background: var(--accent-tint); }
+ol.tl .t { font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+ol.tl .x { color: var(--accent); font-weight: 600; }
+ol.proc .ag-hist ol.tl.only li:not(.key) { display: none; }
+@media (max-width: 640px) {
+  ol.proc.agents li { grid-template-columns: 30px minmax(0, 1fr); }
+  .ag-row { grid-template-columns: minmax(0, 1fr) auto; }
+  ol.proc .ag-row .what { grid-column: 1 / -1; grid-row: 2; }
+  ol.proc .ag-row .ag-show { grid-column: 2; grid-row: 1; }
+  ol.proc .ag-hist ol.tl li { grid-template-columns: 40px minmax(0, 1fr); }
+  ol.tl .x { grid-column: 2; }
+  ol.tl .x:empty { display: none; }
+  ol.tl .l { grid-column: 2; }
+}
 .stopped .mascot { width: 60px; height: 54px; display: block; margin: 18px 0 4px; }
 @media (max-width: 900px) {
   .crew .fig { height: 72px; }
@@ -1355,7 +1407,7 @@ async function render(res) {
   h.push(safetyNet(d.safety_net));
   h.push(worldModel(d.world_model));
   const mc = d.model_calls || {};
-  h.push(`<details class="appx"><summary><h3>Limits and model calls</h3><span class="tog"></span><p>What this run does not test, and how the model was reached.</p></summary>
+  h.push(`<details class="appx"><summary>${CHEV}<h3>Limits and model calls</h3><span class="tog"></span><p>What this run does not test, and how the model was reached.</p></summary>
     <div class="body"><ul class="list">${(d.untested_factors || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <dl class="facts-list" style="margin-top:16px"><dt>Calls through Meterless Nightshift</dt><dd>${num(mc.total)}</dd><dt>Model</dt><dd class="mono">${esc(res.models?.analyst)}</dd>
       <dt>Served by another model</dt><dd>${num(mc.served_by_other_model)}</dd><dt>With memory injected</dt><dd>${num(mc.with_memory_injected)}</dd>
@@ -1368,7 +1420,8 @@ async function render(res) {
   $("#export").onclick = () => exportCsv();
   qSearch = "";
   $("#q-search").addEventListener("input", (e) => { qSearch = e.target.value.trim().toLowerCase(); renderQueue(); });
-  $("#main").onclick = onOpenItem;
+  $("#main").onclick = (e) => { onAgentRow(e); onOpenItem(e); };
+  $("#main").onchange = (e) => { if (e.target.matches(".tl-only")) e.target.closest(".ag-hist").querySelector(".tl").classList.toggle("only", e.target.checked); };
   renderQueue();
   drawProgress();
   window.scrollTo({top: 0});
@@ -1422,14 +1475,129 @@ function sinceLastRun(d) {
 
 function proceedings(d) {
   const c = d.counts, rows = [];
-  rows.push(["data_clerk", "Data Clerk", `Registered the openFDA counts and the current label in Zetaris; ${num(c.passing_evans)} of ${num(c.reactions_screened)} reactions pass the screen.`]);
-  rows.push(["analyst", "Analyst", `Shown the ${num(c.shown_to_analyst)} strongest, picked ${num(c.picked_by_analyst)}; ${num(c.decided_by_rule)} settled by code rules.`]);
+  rows.push(["data_clerk", "", "Data Clerk", `Registered the openFDA counts and the current label in Zetaris; ${num(c.passing_evans)} of ${num(c.reactions_screened)} reactions pass the screen.`]);
+  rows.push(["analyst", "", "Analyst", `Shown the ${num(c.shown_to_analyst)} strongest, picked ${num(c.picked_by_analyst)}; ${num(c.decided_by_rule)} settled by code rules.`]);
   for (const r of d.rounds || []) {
-    if (r.round === "skeptic") rows.push(["skeptic", "Skeptic", `Checked ${num(r.checked)} against co-reported drugs; ${num(r.challenged)} challenged, ${num(r.priority_changed)} changed priority.`]);
-    else rows.push(["reviewer", `Reviewer, round ${r.round}`, `${num(r.reviewed)} accepted, ${num(r.rejected)} rejected, ${num(r.unresolved)} unresolved${r.missing ? `; named ${num(r.missing)} more to assess` : ""}.`]);
+    if (r.round === "skeptic") rows.push(["skeptic", "skeptic", "Skeptic", `Checked ${num(r.checked)} against co-reported drugs; ${num(r.challenged)} challenged, ${num(r.priority_changed)} changed priority.`]);
+    else rows.push(["reviewer", r.round, `Reviewer, round ${r.round}`, `${num(r.reviewed)} reviewed: ${num(r.reviewed - r.rejected - r.unresolved)} accepted, ${num(r.rejected)} rejected, ${num(r.unresolved)} unresolved${r.missing ? `; named ${num(r.missing)} more to assess` : ""}.`]);
   }
-  rows.push(["world_model", "World Model", `${num(d.world_model?.decisions_recorded)} verdicts recorded against this label version; ${num((d.world_model?.reopened || []).length)} reopened.`]);
-  return `<ol class="proc with-crew">${rows.map(([k, w, t]) => `<li><span class="who">${sprite(k)}${esc(w)}</span><span class="what">${esc(t)}</span></li>`).join("")}</ol>`;
+  rows.push(["world_model", "", "World Model", `${num(d.world_model?.decisions_recorded)} verdicts recorded against this label version; ${num((d.world_model?.reopened || []).length)} reopened.`]);
+  // Each row opens that agent's history (agentHistory()).
+  return `<ol class="proc with-crew agents">${rows.map(([k, r, w, t], n) => `<li><button type="button" class="ag-row" data-agent="${k}" data-round="${esc(r)}" aria-expanded="false" aria-controls="ag-${n}">
+    <span class="who">${sprite(k)}${esc(w)}</span><span class="what">${esc(t)}</span><span class="ag-show" aria-hidden="true">${CHEV}</span></button>
+    <div class="ag-hist" id="ag-${n}" hidden></div></li>`).join("")}</ol>`;
+}
+
+// ---------- an agent's history ----------
+// What the agent handed to or took back from the others, from the dossier, then its own lines from the run's trace
+// (GET /runs/<id>/events, the lines the console shows). The trace is read once per run, when the first row opens.
+let traceCache = null;   // {id, lines}, lines a promise of {events} or {error}
+function traceLines(id) {
+  if (traceCache?.id !== id) traceCache = {id, lines: api(`/runs/${encodeURIComponent(id)}/events?after=0`)
+    .then(([s, b]) => s === 200 ? {events: b.events || []} : {error: b?.error?.message || `HTTP ${s}`})};
+  return traceCache.lines;
+}
+
+async function onAgentRow(e) {
+  const b = e.target.closest(".ag-row");
+  if (!b || !shown) return;
+  const open = b.getAttribute("aria-expanded") !== "true", panel = $(`#${b.getAttribute("aria-controls")}`);
+  b.setAttribute("aria-expanded", String(open));
+  b.parentElement.classList.toggle("open", open);
+  panel.hidden = !open;
+  if (!open) return;
+  const d = shown.d, k = b.dataset.agent, r = /^\d+$/.test(b.dataset.round) ? Number(b.dataset.round) : b.dataset.round;
+  panel.innerHTML = agentHistory(d, k, r, null);
+  const t = await traceLines(d.run_id);
+  if (shown?.d === d && !panel.hidden) panel.innerHTML = agentHistory(d, k, r, t);
+}
+
+function agentHistory(d, k, r, t) {
+  const ex = exchanges(d, k, r);
+  return `${ex ? `<h4>With the other agents</h4>${ex}` : ""}<h4>In the run's trace</h4>${t ? timeline(k, r, t) : `<p class="muted small">Reading the trace…</p>`}`;
+}
+
+// A claim as its three fields, with the ones that differ from the claim before it in bold.
+function claimText(c, prev) {
+  return ["label_coverage", "context", "review_priority"].map((f) => {
+    const v = label(c?.[f]);
+    return prev && prev[f] !== c?.[f] ? `<b>${v}</b>` : v;
+  }).join(", ");
+}
+const openBtn = (x) => `<button class="link" data-open="${esc(x.reaction)}">${esc(x.reaction)}</button>`;
+const verdict = (h) => `<span class="verdict ${esc(h.decision)}">${{accept: "Accepted", reject: "Rejected"}[h.decision] || capital(label(h.decision))}</span>`;
+
+function exchanges(d, k, r) {
+  const q = d.review_queue || [], c = d.counts || {};
+  if (k === "data_clerk")
+    return `<p class="small">Gave the Analyst the ${num(c.shown_to_analyst)} strongest of the ${num(c.passing_evans)} reactions that pass the screen, with the label, all registered in Zetaris.</p>`;
+  if (k === "analyst") {
+    // Every finding the Analyst had to revise: its claims round by round, and the Reviewer's verdict on each.
+    const back = q.filter((x) => (x.history || []).length > 1);
+    if (!back.length) return `<p class="small">The Reviewer sent none of its findings back.</p>`;
+    return `<p class="small">Findings the Reviewer sent back, and how the Analyst revised them (changes in bold):</p>
+      <ul class="xch">${back.map((x) => `<li>${openBtn(x)}<ol>${x.history.map((h, j) => `<li><span class="rn">${esc(roundName(h.round))}</span>
+        Claimed ${claimText(h.claim, x.history[j - 1]?.claim)}. Reviewer: ${verdict(h)}.</li>`).join("")}</ol></li>`).join("")}</ul>`;
+  }
+  if (k === "reviewer") {
+    const mine = q.flatMap((x) => (x.history || []).map((h, j) => [x, h, x.history[j + 1]]).filter(([, h]) => h.round === r));
+    const objected = mine.filter(([, h]) => h.decision !== "accept"), ok = mine.filter(([, h]) => h.decision === "accept");
+    const rr = (d.rounds || []).find((x) => x.round === r);
+    return `${objected.length ? `<ul class="xch">${objected.map(([x, h, next]) => `<li>${openBtn(x)} ${verdict(h)}.
+        <span class="model-text">${esc(h.reason)}</span>
+        <div class="then">${next ? `Sent back to the Analyst, who revised it in ${esc(roundName(next.round).toLowerCase())}.` : `Not sent back: ${label(x.workflow_status)}.`}</div></li>`).join("")}</ul>`
+      : `<p class="small">No objections this round.</p>`}
+      ${ok.length ? `<details class="sub"><summary>Accepted (${ok.length})</summary><p class="small" style="margin-top:6px">${ok.map(([x]) => openBtn(x)).join(", ")}</p></details>` : ""}
+      ${rr?.missing ? `<p class="small">Named ${num(rr.missing)} strong reactions the Analyst had not assessed.</p>` : ""}`;
+  }
+  if (k === "skeptic") {
+    const checked = q.filter((x) => x.co_reported_drugs);
+    return `<ul class="xch">${checked.map((x) => {
+      const after = (x.history || []).filter((h) => String(h.round).startsWith("skeptic"));
+      return `<li>${openBtn(x)} ${esc(capital(skepticOutcome(x.co_reported_drugs)))}.${after.length ? `<ol>${after.map((h, j) => `<li><span class="rn">${esc(roundName(h.round))}</span>
+        ${j ? `The Analyst claimed ${claimText(h.claim, after[j - 1].claim)}. ` : ""}Reviewer: ${verdict(h)}. <span class="model-text">${esc(h.reason)}</span></li>`).join("")}</ol>` : ""}</li>`;
+    }).join("")}</ul>`;
+  }
+  if (k === "world_model") {
+    const wm = d.world_model || {};
+    return `<p class="small">Recorded ${num(wm.decisions_recorded)} verdicts against this label version; ${(wm.reopened || []).length ? `reopened ${(wm.reopened || []).map((x) => esc(x.reaction || x)).join(", ")}` : "reopened none"}. The World Model section below has the detail.</p>`;
+  }
+  return "";
+}
+
+// Lines that pass work between agents, with the direction they go.
+const HANDOFF = {evidence_ready: "Data Clerk → Analyst", findings: "Analyst → Reviewer", verdicts: "Verdicts", retry: "Reviewer → Analyst",
+                 early_checks: "Starts alongside", challenge_queued: "Skeptic → Reviewer", co_drug_check: "Result", dispute_unresolved: "→ you",
+                 selection: "Choice", remembered: "Result", safety_net: "Result"};
+const TL_COUNTS = [["llm_call", "model calls"], ["llm_retry", "retries"], ["zetaris_query", "Zetaris queries"], ["zetaris_exists", "registrations checked"],
+                   ["routed", "settled by rule"]];
+
+function timeline(k, r, t) {
+  if (t.error) return `<p class="muted small">The trace is not available on this server: ${esc(t.error)}</p>`;
+  const ev = t.events, start = Date.parse(ev[0]?.ts);
+  // The agent's own lines, the orchestrator's hand-offs between Analyst and Reviewer, and for the Skeptic the
+  // re-review its challenge sets off.
+  const mine = ev.filter((e) => e.agent === k
+    || (["analyst", "reviewer"].includes(k) && e.agent === "orchestrator" && ["retry", "dispute_unresolved"].includes(e.event))
+    || (k === "skeptic" && e.agent !== "skeptic" && /round skeptic/.test(e.line)));
+  if (!mine.length) return `<p class="muted small">No lines for this agent in the trace.</p>`;
+  const hit = r !== "" && k === "reviewer" ? new RegExp(`round ${r}\\b`) : null;
+  // Time since the run started; a replay runs in seconds, so its lines show their place in the trace instead.
+  const replay = ev.some((e) => e.sample_mode);
+  const clock = (e) => {
+    if (replay) return `#${e.seq}`;
+    const s = Math.max(0, Math.round((Date.parse(e.ts) - start) / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const counts = TL_COUNTS.map(([e, n]) => [mine.filter((x) => x.event === e && x.agent === k).length, n]).filter(([v]) => v);
+  return `${hit ? `<p class="small muted">The Reviewer's lines from every round, as rounds overlap in time; this round's verdicts are highlighted.</p>` : ""}
+    <p class="ledger">${counts.map(([v, n]) => `<span><b>${num(v)}</b> ${n}</span>`).join("")}<span>${num(mine.length)} lines</span></p>
+    <p class="small muted">${replay ? "A replay: these are the recorded live run's own lines, numbered by their place in the trace." : "Times are from the start of the run."}</p>
+    <label class="tl-key"><input type="checkbox" class="tl-only"> Only hand-offs and results</label>
+    <ol class="tl">${mine.map((e) => {
+      const h = HANDOFF[e.event];
+      return `<li class="${h ? "key" : ""}${hit?.test(e.line) ? " hit" : ""}"><span class="t">${clock(e)}</span><span class="x">${h ? esc(h) : ""}</span><span class="l">${e.agent !== k ? `<i>${esc(AGENT[e.agent] || e.agent)}:</i> ` : ""}${esc(e.line)}</span></li>`;
+    }).join("")}</ol>`;
 }
 
 // ---------- queue ----------
@@ -1778,7 +1946,7 @@ function safetyNet(sn) {
   const top = sn.summary?.top_not_mentioned || [];
   const lists = [["designated_medical_events", "Designated medical events"], ["missed_serious_terms", "Serious terms outside the screen"], ["pregnancy_and_newborn", "Pregnancy and newborn"]];
   const table = (rows) => `<div class="table-wrap"><table class="small-table"><thead><tr><th>Reaction</th><th class="r">Reports</th><th class="r">Serious</th><th>Label</th><th>Screen</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.reaction)}</td><td class="r">${num(r.reports)}</td><td class="r">${num(r.serious_reports)}</td><td title="${esc(r.label_detail)}">${label(r.label_status)}</td><td title="${esc(r.screen_detail)}">${label(r.screen_status)}</td></tr>`).join("")}</tbody></table></div>`;
-  return `<details class="appx"><summary><h3>Safety net: ${num(sn.summary?.terms)} terms outside the screen</h3><span class="tog"></span><p>${esc(sn.note)}</p></summary>
+  return `<details class="appx"><summary>${CHEV}<h3>Safety net: ${num(sn.summary?.terms)} terms outside the screen</h3><span class="tog"></span><p>${esc(sn.note)}</p></summary>
     <div class="body"><p class="small" style="max-width:760px">${esc(sn.summary?.text)}</p>
     ${top.length ? `<div class="table-wrap"><table class="small-table" style="max-width:760px"><thead><tr><th>Not found on the label</th><th>List</th><th class="r">Reports</th><th class="r">Serious</th></tr></thead><tbody>${top.map((r) => `<tr><td>${esc(r.reaction)}</td><td class="muted">${label(r.section)}</td><td class="r">${num(r.reports)}</td><td class="r">${num(r.serious_reports)}</td></tr>`).join("")}</tbody></table></div>` : ""}
     ${lists.map(([k, name]) => (sn[k] || []).length ? `<details class="sub"><summary>${esc(name)} (${sn[k].length})</summary>${table(sn[k])}</details>` : "").join("")}
@@ -1788,7 +1956,7 @@ function safetyNet(sn) {
 function worldModel(wm) {
   if (!wm) return "";
   const s = wm.since_last_run || {}, reopened = wm.reopened || [];
-  return `<details class="appx"><summary><h3>World Model: verdicts across runs</h3><span class="tog"></span><p>The Meterless World Model engine keeps each settled verdict with the label version it rests on, and reopens it when that label changes.</p></summary>
+  return `<details class="appx"><summary>${CHEV}<h3>World Model: verdicts across runs</h3><span class="tog"></span><p>The Meterless World Model engine keeps each settled verdict with the label version it rests on, and reopens it when that label changes.</p></summary>
     <div class="body">
       <p class="ledger"><span><b>${num(wm.decisions_recorded)}</b> recorded</span><span><b>${num(reopened.length)}</b> reopened</span>
         ${s.compared_with_runs ? `<span><b>${num(s.new)}</b> new</span><span><b>${num(s.unchanged)}</b> unchanged</span><span><b>${num(s.changed)}</b> changed</span><span><b>${num(s.not_settled_now)}</b> not settled now</span>` : ""}</p>
