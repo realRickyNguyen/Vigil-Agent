@@ -96,7 +96,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | Path | What it does |
 |---|---|
 | `run.py` | Entry point: no arguments starts the API (`app/server.py`); `--drug` or `--input` runs one investigation and prints the review queue |
-| `app/server.py` | HTTP API (standard library): `POST /run`, `GET /runs/<run_id>`, `GET /health`; one run at a time; maps exceptions to structured errors |
+| `app/server.py` | HTTP API (standard library): `POST /run`, `GET /runs/<run_id>`, `POST /runs/<run_id>/stop`, `GET /health`; one run at a time; maps exceptions to structured errors |
 | `app/sample_mode.py` | Sample mode: records a live run at the Zetaris and Nightshift adapters, and replays it with no service (`samples/`, `output_examples/`) |
 | `Dockerfile`, `.dockerignore` | Image for judges; secrets only at `docker run`; `logs/` and `state/` as mounts |
 | `app/config.py` | Settings from `.env`. Defaults: Ultra for both agents, 4 parallel model calls, 1 revision round, 90 s per call, 1 retry, a 600 s budget |

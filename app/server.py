@@ -8,6 +8,7 @@ POST /run takes either the bare input file ({"drug": "montelukast"}, as in input
 organisers' envelope ({"run_id": ..., "input": {"drug": ...}, "options": {...}}). A run takes several
 minutes; the request waits for it by default. With "options": {"wait": false} it returns 202 at once and
 GET /runs/<run_id> reports progress and, when done, the same response a waiting request gets.
+POST /runs/<run_id>/stop stops the run in progress: it ends with a "Stopped" error and leaves no dossier.
 
 GET / is the investigation page (app/static/index.html): it starts runs through POST /run, follows them through
 GET /runs/<run_id>/events and opens earlier ones from GET /runs. It only reads what the API returns. Before this
@@ -29,7 +30,7 @@ from app import sample_mode
 from app.config import Settings, for_sample_mode, get_settings
 from app.data.faers import OPENFDA, REACTION_FIELD, DrugNotFound, drug_search, phrase, validate_drug
 from app.orchestration.pipeline import investigate
-from app.tracing import Tracer, progress_line
+from app.tracing import RunStopped, Tracer, progress_line
 
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")  # it becomes part of the trace and dossier file names
 MAX_BODY = 64 * 1024
@@ -170,6 +171,7 @@ class Runner:
         self.current: str | None = None
         self.current_drug: str | None = None  # the run in progress, for the page's top bar and run list
         self.current_sample = False
+        self._tracer: Tracer | None = None  # the run in progress, so POST /runs/<run_id>/stop can reach it
         self.results: dict[str, dict] = {}
         self._example_lock = threading.Lock()
         self._example: dict | None = None
@@ -201,7 +203,7 @@ class Runner:
         except Exception:
             self._busy.release()
             raise
-        self.current = tracer.run_id
+        self.current, self._tracer = tracer.run_id, tracer
         self.current_drug, self.current_sample = request["drug"], settings.sample_mode
         with self._lock:
             self.results[tracer.run_id] = {"run_id": tracer.run_id, "status": "running",
@@ -216,6 +218,11 @@ class Runner:
             try:
                 d = self.investigate(request, settings, tracer)
                 out = success_body(d, settings, time.monotonic() - t0)
+            except RunStopped:  # a person stopped it: an error with its own type, and no dossier was written
+                seconds = time.monotonic() - t0
+                tracer.event("orchestrator", "run_stopped", seconds=round(seconds))
+                out = {**error_body(tracer.run_id, "Stopped", "the run was stopped before it finished; no results "
+                                    "were kept", False, seconds, f"logs/{tracer.path.name}"), "http_status": 409}
             except Exception as e:  # every failure becomes a structured error, never a dropped connection
                 kind, status, recoverable = classify_error(e)
                 tracer.event("orchestrator", "run_error", error_type=kind, error=f"{type(e).__name__}: {e}"[:500])
@@ -224,7 +231,7 @@ class Runner:
             with self._lock:
                 self.results[tracer.run_id] = out
         finally:
-            self.current = self.current_drug = None
+            self.current = self.current_drug = self._tracer = None
             self._busy.release()
 
     def run(self, body: dict) -> tuple[int, dict]:
@@ -237,6 +244,18 @@ class Runner:
             return 202, {**out, "poll": f"/runs/{out['run_id']}"}
         worker.join()
         return self.status(out["run_id"])
+
+    def stop(self, run_id: str) -> tuple[int, dict]:
+        """POST /runs/<run_id>/stop: ask the run in progress to stop. It ends once the calls already under way come
+        back, usually within a minute; GET /runs/<run_id> then reports the "Stopped" error."""
+        if not RUN_ID.match(run_id or ""):
+            return 400, error_body(None, "InvalidInput", "not a valid run_id", False)
+        tracer = self._tracer
+        if tracer is None or tracer.run_id != run_id:
+            return 409, error_body(run_id, "NotRunning", f"run {run_id} is not the run in progress, so there is "
+                                   "nothing to stop", False)
+        tracer.stop()
+        return 202, {"run_id": run_id, "status": "stopping", "poll": f"/runs/{run_id}"}
 
     def status(self, run_id: str) -> tuple[int, dict]:
         """GET /runs/<run_id>: running, the result held in memory, or a dossier left by an earlier process."""
@@ -328,7 +347,9 @@ class Runner:
 
     def health(self) -> dict:
         s = self.settings
+        tracer = self._tracer
         return {"status": "ok", "busy": self.current is not None, "current_run": self.current,
+                "stopping": bool(tracer and tracer.stopped.is_set()),
                 "current_drug": self.current_drug, "current_sample_mode": self.current_sample,
                 "sample_mode": s.sample_mode, "samples": sample_mode.available(s),
                 "analyst_model": s.analyst_model, "reviewer_model": s.reviewer_model,
@@ -390,8 +411,10 @@ def make_handler(runner: Runner):
 
         def do_POST(self):
             path = self.path.split("?", 1)[0].rstrip("/")
+            if path.startswith("/runs/") and path.endswith("/stop"):
+                return self._send(*runner.stop(path[len("/runs/"):-len("/stop")]))
             if path != "/run":
-                return self._send(404, error_body(None, "NotFound", "use POST /run", False))
+                return self._send(404, error_body(None, "NotFound", "use POST /run or POST /runs/<run_id>/stop", False))
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
                 return self._send(413, error_body(None, "InvalidInput", "request body too large", False))

@@ -4,6 +4,7 @@ Run: python -I -m pytest tests"""
 import json
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import replace
@@ -18,6 +19,7 @@ from app.adapters.meterless import MeterlessError, MeterlessUnauthorized  # noqa
 from app.adapters.zetaris import ZetarisError  # noqa: E402
 from app.data.faers import DrugNotFound  # noqa: E402
 from app.server import BadRequest, Runner, classify_error, make_handler, parse_request  # noqa: E402
+from app.tracing import RunStopped, Tracer  # noqa: E402
 
 
 def settings(tmp_path, **kw):
@@ -226,3 +228,70 @@ def test_container_reaches_host_services_and_env_file_values_are_cleaned(monkeyp
     assert config.env_value("http://127.0.0.1:8088/v1   # example only") == "http://127.0.0.1:8088/v1"
     assert config.env_value('"quoted"') == "quoted" and config.env_value("a#b") == "a#b"
     assert config.env_value(None) is None
+
+
+def until_done(runner, run_id):
+    for _ in range(500):
+        status, out = runner.status(run_id)
+        if out["status"] != "running":
+            return status, out
+        time.sleep(0.01)
+    pytest.fail("the run did not end")
+
+
+def endless(started):
+    """A run that keeps working until it is stopped, and whose steps fall back on any Exception, as the agents do."""
+    def run(request, s, tracer):
+        tracer.event("orchestrator", "run_start", request=request, analyst_model="m", reviewer_model="m")
+        started.set()
+        for _ in range(1000):
+            time.sleep(0.01)
+            try:
+                tracer.event("analyst", "routed", reaction="X", classification="on_label")
+            except Exception:  # a degraded step; a stop must still get through
+                pass
+        (s.logs_dir / f"dossier-{tracer.run_id}.json").write_text("{}", encoding="utf-8")
+        return dossier(tracer.run_id, request["drug"])
+    return run
+
+
+def test_a_stopped_run_ends_as_stopped_and_keeps_no_results(tmp_path):
+    started = threading.Event()
+    runner = Runner(settings(tmp_path), endless(started))
+    assert runner.run({"run_id": "stop-1", "input": {"drug": "montelukast"}, "options": {"wait": False}})[0] == 202
+    assert started.wait(5)
+    status, out = runner.stop("stop-1")
+    assert status == 202 and out["status"] == "stopping"
+    status, out = until_done(runner, "stop-1")
+    assert status == 409 and out["status"] == "error" and out["error"]["type"] == "Stopped"
+    assert out["log_file"] == "logs/trace-stop-1.jsonl"
+    assert not (tmp_path / "dossier-stop-1.json").exists()
+    kinds = [json.loads(line)["event"] for line in (tmp_path / "trace-stop-1.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert "stop_requested" in kinds and kinds[-1] == "run_stopped"
+    # The slot is free again for the next run.
+    assert runner.health()["busy"] is False and runner.current is None
+
+
+def test_only_the_run_in_progress_can_be_stopped(tmp_path):
+    runner = Runner(settings(tmp_path), fake_investigate)
+    assert runner.stop("no-such-run")[1]["error"]["type"] == "NotRunning"
+    assert runner.stop("../x")[0] == 400
+    runner.run({"run_id": "done-1", "input": {"drug": "montelukast"}})
+    assert runner.stop("done-1")[0] == 409
+
+
+def test_a_stopped_run_sends_no_more_model_calls_or_queries(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters import meterless, zetaris
+    tracer = Tracer(tmp_path, echo=False)
+    tracer.stop()
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("a request went out after the stop"))
+    llm = meterless.NightshiftClient(SimpleNamespace(meterless_token="t", meterless_app="a", meterless_url="http://x",
+                                                     model_stream=True, model_timeout=5), tracer)
+    with pytest.raises(RunStopped):
+        llm._post({"model": "m", "messages": []})
+    db = zetaris.ZetarisClient(SimpleNamespace(zetaris_key="k", zetaris_org="o", zetaris_url="http://x"), tracer)
+    with pytest.raises(RunStopped):
+        db._post("SELECT 1", 5)
+    with pytest.raises(RunStopped):
+        tracer.event("analyst", "routed", reaction="X", classification="on_label")

@@ -82,7 +82,21 @@ def progress_line(rec: dict) -> str | None:
         return f"Sample mode: not in the recording ({d['source']}{': ' + d['purpose'] if d.get('purpose') else ''})"
     if k == "run_end":
         return f"Completed in {d.get('seconds')} s; dossier logs/{d['dossier']}"
+    if k == "stop_requested":
+        return "Stop requested; the run ends once the calls already under way come back"
+    if k == "run_stopped":
+        return f"Stopped after {d.get('seconds')} s at a person's request; no results were kept"
     return None
+
+
+class RunStopped(BaseException):
+    """A person stopped the run (POST /runs/<run_id>/stop). A BaseException, so the agents' `except Exception`
+    fallbacks, which turn a failed step into a degraded one, cannot catch it: the run ends without a dossier, and the
+    pipeline's own BaseException handler cancels its background pools and model calls."""
+
+
+# Events still written after a stop: the request itself, the run's end, and the record that it stopped.
+AFTER_STOP = {"stop_requested", "run_stopped", "run_error"}
 
 
 class Tracer:
@@ -94,8 +108,24 @@ class Tracer:
         self.echo = echo  # readable progress lines on stdout, next to the JSONL trace
         self.stamp: dict = {}  # added to every event, e.g. {"sample_mode": True} when a recording is replayed
         self._lock = threading.Lock()  # agents make model calls from worker threads
+        self.stopped = threading.Event()
+
+    def stop(self) -> bool:
+        """Ask the run to stop. Every later event, model call and Zetaris query raises RunStopped, in whichever thread
+        it comes; a call already under way finishes first. False if a stop was already asked for."""
+        if self.stopped.is_set():
+            return False
+        self.stopped.set()
+        self.event("orchestrator", "stop_requested")
+        return True
+
+    def check(self) -> None:
+        if self.stopped.is_set():
+            raise RunStopped(f"run {self.run_id} was stopped")
 
     def event(self, agent: str, kind: str, **data) -> dict:
+        if kind not in AFTER_STOP:
+            self.check()
         with self._lock:
             self.seq += 1
             rec = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "run_id": self.run_id,

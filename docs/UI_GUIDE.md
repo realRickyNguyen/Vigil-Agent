@@ -45,7 +45,8 @@ This is the reference for the web UI: what every part does, where its code is, a
 
 | Call | Used for |
 |---|---|
-| `GET /health` | Top bar: models, service addresses, whether keys are set, sample mode, `busy`, `current_run`, `current_drug`, `current_sample_mode`, the replayable `samples`. |
+| `GET /health` | Top bar: models, service addresses, whether keys are set, sample mode, `busy`, `current_run`, `current_drug`, `current_sample_mode`, `stopping` (a stop was asked for), the replayable `samples`. |
+| `POST /runs/<id>/stop` | Stop the run in progress (202 `{"status": "stopping"}`; 409 `NotRunning` for any other run). It ends with the error type `Stopped` (HTTP 409 on `GET /runs/<id>`) and leaves no dossier. |
 | `GET /runs` | Investigations list: the run in progress (with its drug), then every dossier in `logs/`, newest first. |
 | `GET /runs/<id>` | A run's status (`running`, `success` with `output.dossier`, or `error`). |
 | `GET /runs/<id>/events?after=<seq>` | A run's progress lines from its trace, after a sequence number. It also returns `running` and `last_seq`. |
@@ -130,6 +131,7 @@ Sections rise in as they scroll into view (not with reduced motion). The old "Re
 Built by `follow()`.
 
 - **Masthead:** the drug, "In progress", the run ID, and the clock **"■ 0:04 elapsed"** (live square, 21 px mono figures, then the word). The clock counts from the run's start, taken from the run ID's UTC time, and ticks each second.
+- **Stop** (`drawStop()` in `follow()`), beside the clock, for a live run only. A click asks inline, "Stop this run? No results are kept. [Stop] Keep running". Confirming sends `POST /runs/<id>/stop`; the button becomes "Stopping…" and the state "Stopping: waiting for the calls under way", since a model call or query already sent finishes first (often seconds, at most about a minute). The page then shows the stopped view: "Stopped before it finished", how long it ran, that no results were kept, and the trace file. The button goes when the run ends, and replays never show it (they have finished on the server before the page plays them).
 - **Crew stage:** the five agents (Data Clerk, Analyst, Reviewer, Skeptic, and Vigil standing for the World Model) on a centred track.
   - **Waiting:** grey, faded.
   - **Working:** drawn larger, moving, with a navy "WORKING" pill.
@@ -340,7 +342,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 ## 17. Checking a change
 
-1. Tests: `.venv\Scripts\python.exe -I -m pytest -q tests` (313 pass as of 27 Oct). Plain `python` on Ricky's laptop is Inkscape's Python, which has no pytest.
+1. Tests: `.venv\Scripts\python.exe -I -m pytest -q tests` (316 pass as of 27 Oct). Plain `python` on Ricky's laptop is Inkscape's Python, which has no pytest.
 2. Start sample mode (the `vigil-sample` preview, port 8000) and look at the change at about 1440 px, 1800 px and 375 px wide.
 3. To inspect the running view, replace `window.api` in the console to answer `{status: "running"}` for `/runs/<id>`. That holds the view on screen. Restore it afterwards.
 4. Check for sideways scrolling at 375 px, and that every new value goes through `esc()`.
@@ -357,6 +359,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** a Stop button beside the clock on a live run (asks inline, then "Stopping…"), with a stopped view; the server's `POST /runs/<id>/stop`.
 - **27 Oct:** each agent in "How the agents got here" opens its history: its exchanges with the other agents (dossier) and its lines from the run's trace. Reviewer rows now say "N reviewed: M accepted". The safety net, World Model and Limits sections show they open (arrow, hover, "Show details").
 - **27 Oct:** the orange "Replay mode" label removed from the header.
 - **27 Oct:** replays get a header chip again, a plain one: the drug and "Investigation replay" (then "· finished" or "· stopped"), with no agent or clock.

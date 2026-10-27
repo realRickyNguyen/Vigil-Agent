@@ -291,6 +291,7 @@ class NightshiftClient:
             # The trace header makes the final frame carry the full receipt, as the buffered reply does.
             body = {**body, "stream": True, "stream_options": {"include_usage": True}}
             headers["meterless-trace"] = "on"
+        self.tracer.check()  # a run a person stopped sends no more calls
         req = urllib.request.Request(self.s.meterless_url + "/chat/completions",
                                      data=json.dumps(body).encode(), headers=headers)
         # With streaming the socket timeout is a gap between chunks, so read_sse also stops at the whole-call limit.

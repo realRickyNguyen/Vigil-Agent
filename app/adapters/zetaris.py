@@ -36,6 +36,7 @@ class ZetarisClient:
                    "Authorization": "Bearer " + self.s.zetaris_key,
                    "X-Org-ID": self.s.zetaris_org,
                    "X-Request-ID": str(uuid.uuid4())}
+        self.tracer.check()  # a run a person stopped sends no more queries
         req = urllib.request.Request(self.s.zetaris_url + "/sql-editor/sqls/run",
                                      data=json.dumps(body).encode(), headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as r:

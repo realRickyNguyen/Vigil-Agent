@@ -18,7 +18,7 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
   - `22408ae` Investigation page: agent mascots, run chip, paced replays, tabbed items and a UI guide. It also removes the page's decision controls; that removal was interleaved with the rest in `index.html`.
   - `905084b` SQL rows show they open, no header chip for replays, tab labels on one line.
   - The commit that adds this file: case reports as readable cards fetched live from openFDA, the "Since last run" tab removed, the logo dances, run warnings folded into one clickable bar, with the UI guide and `docs/HANDOFF.md` updated.
-- **Working tree:** clean apart from the local folders below. Tests: 313 pass.
+- **Working tree:** clean apart from the local folders below. Tests: 316 pass.
 - **Never commit** `.claude/` (the local preview config), `.impeccable/` or `.taste-skill/` (local design tools). Stage files by path.
 - **The user's last message had an empty item 6.** Ask what it was meant to be.
 
@@ -26,7 +26,7 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
 
 - **The page:** `app/static/index.html`, one file of HTML, CSS and JS, no build step. The server is `app/server.py`.
 - **Tests:** `.venv\Scripts\python.exe -I -m pytest -q tests`. Plain `python` here is Inkscape's Python, which has no pytest but does have Pillow, which `make_mascots.py` needs. `C:\Program Files\Python312\python.exe` is a plain Python.
-- **Preview:** the `vigil-sample` entry in `.claude/launch.json` starts the server in sample mode on port **8000** with the `.venv` Python (moved from 8010 on 27 Oct; a live server started by hand also defaults to 8000, so only one can run at a time). Sample mode has three recordings: montelukast, isotretinoin and metformin. There are also two live runs in `logs/` that carry warnings: `20261027T043153Z-b59273` (metformin) and `20261027T052457Z-3b77ad`.
+- **Preview:** the `vigil-sample` entry in `.claude/launch.json` starts the server in sample mode on port **8000** with the `.venv` Python (moved from 8010 on 27 Oct; a live server started by hand also defaults to 8000, so only one can run at a time). A second entry, `vigil-live`, starts the same server live (`SAMPLE_MODE=false`) on 8000; it needs Zetaris and Nightshift up. Sample mode has three recordings: montelukast, isotretinoin and metformin. There are also two live runs in `logs/` that carry warnings: `20261027T043153Z-b59273` (metformin) and `20261027T052457Z-3b77ad`.
 - **Inspecting the running view:** a replay ends in about 5 s on the server; the page then plays it over 15 to 20 s. To hold the view, replace `window.api` in the console so `/runs/<id>` answers `{status: "running"}`, then restore it.
 - **Starting a run without leaving the current view:** `fetch("/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({drug: "metformin", options: {wait: false, sample_mode: true}})})`, then `loadHealth()`.
 - **Checks to repeat after a change:**

@@ -516,6 +516,15 @@ details.sub > summary { cursor: pointer; color: var(--accent); font-size: 13px; 
 .elapsed .sq { align-self: center; width: 8px; height: 8px; }
 .elapsed b { font: 600 21px/1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .elapsed .skip { margin-left: 10px; font-size: 12px; }
+/* The clock and, beside it, Stop (asks once inline, then "Stopping…" until the run ends). */
+.run-ctl { display: inline-flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.stop-ctl { display: inline-flex; align-items: center; gap: 10px; padding-bottom: 2px; font-size: 12px; }
+.stop-ctl:empty { display: none; }
+.stop-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--rule-strong);
+  border-radius: 2px; background: var(--sheet); color: var(--signal); font: 600 12px var(--sans); cursor: pointer; }
+.stop-btn:hover:not(:disabled) { border-color: var(--signal); background: var(--signal-tint); }
+.stop-btn:disabled { color: var(--muted); cursor: default; }
+.stop-q { color: var(--ink-2); }
 .log { font: 12px/1.65 var(--mono); background: var(--sheet); border: 1px solid var(--rule); padding: 10px 14px;
   height: 46vh; min-height: 260px; overflow: auto; margin-top: 22px; color: var(--ink-2); }
 .log .ln { display: grid; grid-template-columns: 66px 124px 1fr; gap: 8px; }
@@ -865,6 +874,7 @@ setInterval(() => {
     img.src = `/mascots/${who}-${f[beat % f.length]}.png`;
   }
 }, 420);
+const STOP_ICON = `<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor"/></svg>`;
 const CHEV = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`;
 // Provenance marks: figures computed from openFDA data in Zetaris (and re-checked in code), and text a model wrote.
 const COMPUTED = `<span class="src c" title="Computed from openFDA data in Zetaris SQL or by code. The Reviewer's code re-checks every count, PRR and label quote a model cites.">Computed</span>`;
@@ -1150,7 +1160,7 @@ function follow(runId, drug) {
   let after = 0;
   const seen = new Set();
   $("#main").innerHTML = `
-    <header class="masthead"><div class="mast-row"><h1 class="title">${esc(drug || "Investigation")}</h1><span class="elapsed" title="Time since the run started"><span class="sq live"></span><b id="elapsed">0:00</b> elapsed</span></div>
+    <header class="masthead"><div class="mast-row"><h1 class="title">${esc(drug || "Investigation")}</h1><span class="run-ctl"><span class="elapsed" title="Time since the run started"><span class="sq live"></span><b id="elapsed">0:00</b> elapsed</span><span class="stop-ctl" id="stop-ctl"></span></span></div>
       <div class="facts"><span><b id="run-state">In progress</b></span><span>Run <span class="mono">${esc(runId)}</span></span></div></header>
     <section class="stage" aria-label="Progress">
       <ol class="crew" id="crew"></ol>
@@ -1185,6 +1195,26 @@ function follow(runId, drug) {
     el.title = says ? `${AGENT[says.agent]}: ${says.line}` : "";
   };
   drawStages(null);
+  // Stop, beside the clock. It asks once, inline; once asked, the run ends when the calls already under way come back.
+  const drawStop = (step) => {
+    const el = $("#stop-ctl");
+    if (!el) return;
+    el.innerHTML = step === "ask"
+      ? `<span class="stop-q">Stop this run? No results are kept.</span><button type="button" class="stop-btn" data-stop="yes">Stop</button><button type="button" class="link" data-stop="no">Keep running</button>`
+      : step === "stopping" ? `<button type="button" class="stop-btn" disabled>Stopping…</button>`
+      : step === "none" ? "" : `<button type="button" class="stop-btn" data-stop="ask" title="Stop this investigation">${STOP_ICON}Stop</button>`;
+  };
+  drawStop(health?.stopping && health?.current_run === runId ? "stopping" : null);
+  $("#stop-ctl").onclick = async (e) => {
+    const b = e.target.closest("[data-stop]");
+    if (!b) return;
+    if (b.dataset.stop !== "yes") return drawStop(b.dataset.stop === "ask" ? "ask" : null);
+    drawStop("stopping");
+    const [s, out] = await api(`/runs/${encodeURIComponent(runId)}/stop`, {method: "POST"});
+    if (s === 202) { $("#run-state").textContent = "Stopping: waiting for the calls under way"; return; }
+    drawStop(out?.error?.type === "NotRunning" ? "none" : null);
+    toast(out?.error?.message || "Could not stop the run");
+  };
   // A replay comes back from the server in a few seconds. Its progress lines are played out here at a readable pace,
   // about 25 seconds in all, with how far the playback has got and a link to skip to the result. Every line shown is
   // the replay's own; only the pace is the page's. A live run's lines show as soon as they arrive.
@@ -1217,6 +1247,7 @@ function follow(runId, drug) {
   }, 100);
   const markReplay = () => {
     replay = paced = true;
+    drawStop("none");  // a replay has finished on the server before the page plays it, so there is nothing to stop
     $("#run-state").textContent = "Replaying a recorded run";
     $(".elapsed").outerHTML = `<span class="elapsed" title="Progress lines of the replay shown so far; the page plays them at a readable pace">
       <span class="sq live"></span><b id="replay-n">0 of 0</b> lines replayed <button type="button" class="link skip" id="skip">Skip to the result</button></span>`;
@@ -1238,6 +1269,7 @@ function follow(runId, drug) {
     const [ss, st] = await api(`/runs/${encodeURIComponent(runId)}`);
     if (st.status === "running") { pollTimer = setTimeout(tick, replay ? 700 : 2000); return; }  // a replay is short: check often
     await fetchLines();  // any lines written between the two calls
+    drawStop("none");
     ended = [ss, st];    // the pump shows the result once every line is out
   };
   tick();
@@ -1262,6 +1294,16 @@ function showError(out, drug, status) {
   setLanding(false);
   shown = null;
   const e = out.error || {};
+  // A run someone stopped is not a failure: it says so plainly, without an HTTP status.
+  if (e.type === "Stopped") {
+    $("#main").innerHTML = `
+      <header class="masthead"><h1 class="title">${esc(drug || "Investigation stopped")}</h1>
+        <div class="facts"><span><b>Stopped before it finished</b></span>${out.run_id ? `<span>Run <span class="mono">${esc(out.run_id)}</span></span>` : ""}</div></header>
+      <div class="stopped">${sprite("orchestrator", "concerned")}</div>
+      <p class="notice">This run was stopped${out.execution_time_seconds != null ? ` after ${num(Math.round(out.execution_time_seconds))} s` : ""}. No results were kept, so it is not in the list of investigations.
+      ${out.log_file ? `<br><span class="muted">Its trace up to the stop: <span class="mono">${esc(out.log_file)}</span></span>` : ""}</p>`;
+    return;
+  }
   $("#main").innerHTML = `
     <header class="masthead"><h1 class="title">${esc(drug || (e.type === "RunNotFound" ? "No such run" : "Run failed"))}</h1>
       ${drug ? `<div class="facts"><span><b>Investigation stopped</b></span></div>` : ""}</header>

@@ -13,6 +13,9 @@ class FakeTracer:
     def __init__(self):
         self.events = []
 
+    def check(self):  # the run was not stopped
+        pass
+
     def event(self, agent, kind, **data):
         self.events.append((agent, kind, data))
 

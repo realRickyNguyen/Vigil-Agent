@@ -241,6 +241,7 @@ curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @i
 
 - `POST /run` takes `{"drug": "montelukast"}` or `{"run_id": "demo-001", "input": {"drug": "montelukast"}, "options": {"wait": true}}`. It answers when the run ends with `status`, `output` (summary, accepted review-next items, unresolved items, the full dossier), the agents, the models, `trace_id`, `log_file` and `execution_time_seconds`.
 - With `"options": {"wait": false}` it answers `202` at once; `GET /runs/<run_id>` then reports `running` or the finished result.
+- `POST /runs/<run_id>/stop` stops the run in progress. Calls already sent finish first; the run then ends with the error type `Stopped` and keeps no results (no dossier).
 - Failures come back as `{"status": "error", "error": {"type", "message", "recoverable"}}`: `InvalidInput` (400), `DrugNotFound` (404), `Busy` or `RunIdInUse` (409), `ZetarisUnavailable`, `NightshiftUnavailable` or `NightshiftUnauthorized` (502), `NoSampleRecording` (404, in sample mode for a drug with no recording). The trace records the error too.
 - `GET /health` shows the configured models and service addresses (never keys) and whether a run is in progress.
 - `GET /runs` lists the run in progress and every dossier in `logs/`; `GET /runs/<run_id>/events?after=<seq>` returns a run's progress lines from its trace (the same lines the console shows).
