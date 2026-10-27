@@ -59,7 +59,19 @@ a { color: var(--accent); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
 /* Vigil's body fills canvas pixels x 4-15 and y 3-17 of 20 x 18, so at 2x the margins trim the clear 8px at each side and
    6px at the top: the box is the body itself, and centres on the wordmark. */
-.brand-mascot { width: 40px; height: 36px; margin: -6px -8px 0; }
+.brand-mascot { width: 40px; height: 36px; margin: -6px -8px 0; transform-origin: 50% 100%; animation: vigil-dance 3.6s ease-in-out infinite; }
+/* Every few seconds the logo hops, sways side to side and lands. */
+@keyframes vigil-dance {
+  0%, 52%, 100% { transform: none; }
+  58% { transform: translateY(-5px) rotate(-10deg); }
+  64% { transform: translateY(0) rotate(0); }
+  70% { transform: translateY(-5px) rotate(10deg); }
+  76% { transform: translateY(0) rotate(0); }
+  82% { transform: translateY(-3px); }
+  88% { transform: translateY(0) scaleY(.9); }
+  92% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .brand-mascot { animation: none; } }
 .brand b { font: 600 21px/1 var(--serif); letter-spacing: -.01em; }
 .brand-sub { color: var(--muted); font-size: 13px; padding-left: 12px; border-left: 1px solid var(--rule-strong); }
 .status { margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
@@ -350,6 +362,17 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .doc blockquote.objection, .doc .needs { max-width: none; }
 /* Figures: three groups side by side as room allows, each a ruled list with values right-aligned. */
 .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 40px; align-items: start; }
+.warns { margin: 16px 0 0; border: 1px solid #e3cf9f; background: var(--replay-tint); border-radius: 2px; font-size: 13px; }
+.warns summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 12px; color: var(--ink); }
+.warns summary::-webkit-details-marker { display: none; }
+.warns summary svg { color: var(--pend); flex: none; }
+.warns summary span { color: var(--ink-2); }
+.warns summary .open { margin-left: auto; color: var(--accent); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+.warns[open] summary .open { font-size: 0; } .warns[open] summary .open::before { content: "Hide"; font-size: 12px; }
+.warns dl { margin: 0; padding: 4px 12px 10px 37px; display: grid; gap: 6px; }
+.warns dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }
+.warns dt { font-weight: 600; color: var(--ink); } .warns dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 640px) { .warns dl { padding-left: 12px; } .warns dl > div { grid-template-columns: 1fr; gap: 2px; } }
 .fgroup h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .fgroup dl { margin: 0; border-top: 1px solid var(--rule-strong); }
 .fgroup dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
@@ -360,6 +383,29 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fplot small, .fnote { font-size: 12px; color: var(--muted); }
 .fnote { margin: 8px 0 0; line-height: 1.45; }
 .fwarn { margin: 16px 0 0; padding: 8px 12px; background: var(--replay-tint); font-size: 13px; color: var(--ink); }
+/* Case reports: one card per FAERS report, its seriousness as flags, the item's reaction picked out. */
+.case-list { display: grid; gap: 12px; margin: 12px 0; }
+.case-count { margin: 0; font-size: 12px; color: var(--muted); }
+.case { border: 1px solid var(--rule); background: var(--paper); padding: 12px 16px; border-radius: 2px; }
+.case header { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; font-size: 12.5px; color: var(--ink-2); }
+.case header b { font-size: 13.5px; color: var(--ink); }
+.case .flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
+.case .flag { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; background: var(--signal-tint); color: var(--signal); font-weight: 600; }
+.case .flag.death { background: var(--signal); color: #fff; }
+.case .flag.quiet { background: var(--hover); color: var(--ink-2); font-weight: 400; }
+.case dl { margin: 0; display: grid; gap: 6px; }
+.case dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; font-size: 13px; }
+.case dt { color: var(--muted); } .case dt small { margin-left: 4px; }
+.case dd { margin: 0; color: var(--ink); }
+.case ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.case .drugs li { display: inline-flex; gap: 6px; align-items: baseline; margin-right: 8px; }
+.case .role { font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.case .role.r1 { color: var(--signal); font-weight: 600; }
+.case .rx li { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 2px; font-size: 12px; background: var(--sheet); }
+.case .rx li.it { border-color: var(--accent); background: var(--accent-tint); font-weight: 600; }
+.case details.more summary { cursor: pointer; font-size: 12px; color: var(--accent); margin-top: 4px; }
+.case details.more[open] summary { margin-bottom: 4px; }
+@media (max-width: 640px) { .case dl > div { grid-template-columns: 1fr; gap: 2px; } }
 .dhead { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin: 0 0 10px; }
 .dhead .dnote { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
 .dhead .aside { font-size: 12px; color: var(--muted); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
@@ -683,7 +729,7 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
 <header class="topbar">
   <a class="brand" href="#" id="home" aria-label="Vigil home">
     <img class="mascot brand-mascot" src="/mascots/vigil-neutral.png" alt="" width="40" height="36"
-      data-frames="vigil:neutral,neutral,neutral,neutral,blink,neutral,neutral,look,look,look,neutral,bob,neutral,neutral,blink,neutral">
+      data-frames="vigil:neutral,bob,neutral,blink,look,look,bob,neutral,happy,neutral,bob,blink">
     <b>Vigil</b>
   </a>
   <span class="brand-sub">Drug reaction review</span>
@@ -1269,9 +1315,14 @@ async function render(res) {
     </div></header>`);
 
   if (sm) h.push(`<p class="notice replay"><b>Recorded replay.</b> The Zetaris results and model replies below are the ones live run <span class="mono">${esc(sm.replayed_from_run)}</span> received on ${esc(fmtTs(sm.recorded_at))}, played back without calling any service.</p>`);
-  for (const w of out.nightshift_warnings || []) h.push(`<p class="notice warn"><b>Nightshift setup warning.</b> ${esc(w)}</p>`);
-  if ((d.degraded_steps || []).length) h.push(`<p class="notice warn"><b>Degraded steps.</b> ${esc(d.degraded_steps.map((x) => typeof x === "string" ? x : x.step || JSON.stringify(x)).join("; "))}</p>`);
-  if ((rt.skipped_for_time || []).length) h.push(`<p class="notice warn"><b>Skipped for time:</b> ${esc(rt.skipped_for_time.join(", "))}</p>`);
+  // Warnings about the run, folded into one indicator: their names in a line, the details on a click.
+  const warns = [];
+  for (const w of out.nightshift_warnings || []) warns.push(["Nightshift setup", esc(w)]);
+  if ((d.degraded_steps || []).length) warns.push(["Degraded steps", esc(d.degraded_steps.map((x) => typeof x === "string" ? x : x.step || JSON.stringify(x)).join("; "))]);
+  if ((rt.skipped_for_time || []).length) warns.push(["Skipped for time", esc(rt.skipped_for_time.join(", "))]);
+  if (warns.length) h.push(`<details class="warns"><summary><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3z" fill="currentColor"/><path d="M12 10v5m0 3v.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <b>${warns.length} warning${warns.length === 1 ? "" : "s"}</b><span>${[...new Set(warns.map(([k]) => k))].join(" · ")}</span><span class="open">Details</span></summary>
+    <dl>${warns.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl></details>`);
 
   const reviewRounds = (d.rounds || []).filter((r) => typeof r.round === "number").length;
   h.push(`<div class="figures">
@@ -1523,6 +1574,59 @@ const qlinks = (i, ids) => {
 function showTab(doc, key) {
   doc.querySelectorAll(".dtab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === key)));
   doc.querySelectorAll(".dpanel").forEach((p) => { p.hidden = p.dataset.panel !== key; });
+  if (key === "cases") loadCases(doc.querySelector(".cases"));
+}
+
+// ---------- FAERS case reports, as cards ----------
+// openFDA's codes for the fields a card shows (openFDA's drug event API reference).
+const QUALIFICATION = {1: "Physician", 2: "Pharmacist", 3: "Other health professional", 4: "Lawyer", 5: "Consumer"};
+const AGE_UNIT = {800: "decades", 801: "years", 802: "months", 803: "weeks", 804: "days", 805: "hours"};
+const SEX = {1: "Male", 2: "Female"};
+const ROLE = {1: "Suspect", 2: "Concomitant", 3: "Interacting"};
+const SERIOUS = [["seriousnessdeath", "Death"], ["seriousnesslifethreatening", "Life-threatening"], ["seriousnesshospitalization", "Hospitalised"],
+                 ["seriousnessdisabling", "Disabling"], ["seriousnesscongenitalanomali", "Congenital anomaly"], ["seriousnessother", "Other serious"]];
+const country = (code) => { try { return new Intl.DisplayNames(undefined, {type: "region"}).of(code); } catch (e) { return code; } };
+const faersDate = (v) => /^\d{8}$/.test(v || "") ? fmtDate(v) : (v || "–");
+
+function caseCard(r, reaction) {
+  const p = r.patient || {}, src = r.primarysource || {};
+  const age = p.patientonsetage ? `${p.patientonsetage} ${AGE_UNIT[p.patientonsetageunit] || ""}`.trim() : "";
+  const who = [SEX[p.patientsex], age, p.patientweight ? `${p.patientweight} kg` : ""].filter(Boolean).join(", ") || "Not given";
+  const flags = SERIOUS.filter(([k]) => r[k] === "1").map(([, n]) => `<span class="flag${n === "Death" ? " death" : ""}">${n}</span>`).join("");
+  // Each drug once, suspects first, with its role.
+  const drugs = [...new Map((p.drug || []).map((x) => [String(x.medicinalproduct || "").toUpperCase(), x])).values()]
+    .sort((a, b) => (a.drugcharacterization || 9) - (b.drugcharacterization || 9));
+  const reactions = [...new Set((p.reaction || []).map((x) => x.reactionmeddrapt).filter(Boolean))];
+  const isIt = (n) => n.toUpperCase() === reaction.toUpperCase();
+  const shown = [...reactions.filter(isIt), ...reactions.filter((n) => !isIt(n))];
+  const rx = (list) => list.map((n) => `<li${isIt(n) ? ' class="it"' : ""}>${esc(n)}</li>`).join("");
+  return `<article class="case">
+    <header><b>Report ${esc(r.safetyreportid || "–")}</b><span>Received ${esc(faersDate(r.receivedate))}</span>
+      <span>${esc(country(r.occurcountry || src.reportercountry || "") || "Country not given")}</span>
+      <span>Reported by ${esc(QUALIFICATION[src.qualification] || "unknown")}</span></header>
+    <div class="flags">${r.serious === "1" ? flags || '<span class="flag">Serious</span>' : '<span class="flag quiet">Not serious</span>'}</div>
+    <dl><div><dt>Patient</dt><dd>${esc(who)}</dd></div>
+      <div><dt>Drugs</dt><dd><ul class="drugs">${drugs.map((x) => `<li><span class="role r${x.drugcharacterization || 0}">${ROLE[x.drugcharacterization] || "Role not given"}</span>${esc(x.medicinalproduct || "–")}</li>`).join("") || "–"}</ul></dd></div>
+      <div><dt>Reactions <small>${reactions.length}</small></dt><dd><ul class="rx">${rx(shown.slice(0, 12))}</ul>${shown.length > 12
+        ? `<details class="more"><summary>${shown.length - 12} more</summary><ul class="rx">${rx(shown.slice(12))}</ul></details>` : ""}</dd></div></dl>
+  </article>`;
+}
+
+// Fetch an item's reports once, when its tab first opens. Without a network (a no-network demo, say) it says so.
+async function loadCases(box) {
+  if (!box || box.dataset.loaded) return;
+  box.dataset.loaded = "1";
+  const list = box.querySelector(".case-list");
+  list.innerHTML = `<p class="loading small">Fetching the reports from openFDA…</p>`;
+  try {
+    const r = await fetch(box.dataset.url);
+    if (!r.ok) throw new Error(`openFDA answered ${r.status}`);
+    const j = await r.json(), res = j.results || [];
+    list.innerHTML = `<p class="case-count">${num(res.length)} of ${num(j.meta?.results?.total)} matching reports on openFDA</p>${res.map((x) => caseCard(x, box.dataset.reaction)).join("")}`;
+  } catch (e) {
+    delete box.dataset.loaded;  // try again next time the tab opens
+    list.innerHTML = `<p class="notice warn small">Could not reach openFDA (${esc(e.message)}). The reports need a network connection; the raw link below opens them when one is available.</p>`;
+  }
 }
 
 // An SQL link opens what hides its queries first: their tab, or the folds around them.
@@ -1599,12 +1703,10 @@ function detail(x, i, d) {
     COMPUTED + qlinks(i, [qid(d, "disproportionality screen"), d.data?.seriousness_query]));
 
   const url = shown.res.output.case_reports?.[x.reaction];
-  if (url) tab("cases", "Case reports", `<p class="cases"><a href="${esc(url)}" target="_blank" rel="noopener">Open the matching FAERS reports on openFDA</a></p>
-    <p class="small muted">The first 10 reports, as openFDA's JSON. Its <span class="mono">meta.results.total</span> is the number of matching reports, which can differ slightly from the count above as openFDA updates.</p>`);
-
-  const sl = x.since_last_run;
-  if (sl) tab("since", "Since last run", `<p class="small">${esc(sl.why)}</p>${(sl.changed || []).length ? `<ul class="list">${sl.changed.map((c) => `<li>${capital(label(c.field))}: ${label(c.earlier)} → <b>${label(c.now)}</b></li>`).join("")}</ul>` : ""}`, COMPUTED,
-    capital(label(sl.status)));
+  if (url) tab("cases", "Case reports", `<div class="cases" data-url="${esc(url)}" data-reaction="${esc(x.reaction)}">
+      <p class="small muted">The first 10 matching FAERS reports, fetched live from openFDA when this tab opens. They are not part of the run, and openFDA's count can differ slightly from the one above as it updates.</p>
+      <div class="case-list"></div>
+      <p class="small"><a href="${esc(url)}" target="_blank" rel="noopener">The same reports as openFDA's raw JSON</a></p></div>`);
 
   const ids = [...new Set([...(x.evidence || []), qid(d, "disproportionality screen"), d.data?.seriousness_query, qid(d, "label text"),
                            ...(x.report_sources?.query_ids || []), ...(co?.query_ids || [])].filter(Boolean))];

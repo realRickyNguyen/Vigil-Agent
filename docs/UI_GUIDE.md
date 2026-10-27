@@ -30,7 +30,7 @@ This is the reference for the web UI: what every part does, where its code is, a
 
 | Path | What it is |
 |---|---|
-| `app/static/index.html` | The whole UI: one self-contained file of HTML, CSS and JavaScript (about 1,800 lines). No framework, no build step and no CDN, so it works offline and in sample mode with no network. |
+| `app/static/index.html` | The whole UI: one self-contained file of HTML, CSS and JavaScript (about 1,800 lines). No framework, no build step and no CDN, so it works offline and in sample mode with no network. The one exception is an item's Case reports tab, which fetches from openFDA when opened and says so when it can't. |
 | `app/static/fonts/` | Newsreader, Public Sans and IBM Plex Mono (SIL Open Font License), served at `GET /fonts/<file>.woff2`. |
 | `app/static/mascots/` | The pixel mascots, 20 × 18 px PNGs, served at `GET /mascots/<who>-<face>.png`. They are generated, so don't edit them by hand (see [Mascots](#11-mascots)). |
 | `app/server.py` | Serves the page and its API (standard library `ThreadingHTTPServer`). |
@@ -76,7 +76,7 @@ This is the reference for the web UI: what every part does, where its code is, a
 
 Sticky at the top of every view.
 
-- **Logo:** the Vigil mascot (`.brand-mascot`) beside the wordmark. It idles: mostly still, with an occasional blink, glance or bob. The sprite canvas has clear edges, so negative margins trim them and the body centres on the wordmark. Clicking the logo goes home.
+- **Logo:** the Vigil mascot (`.brand-mascot`) beside the wordmark. It dances: every 3.6 s it hops, sways left and right and lands (CSS `vigil-dance`, pivoting at its feet), while its face changes (blink, glance, bob, a brief happy face). Still with reduced motion. The sprite canvas has clear edges, so negative margins trim them and the body centres on the wordmark. Clicking the logo goes home.
 - **"Drug reaction review"**, the subtitle. It is hidden below 720 px.
 - **Investigations button:** opens the Investigations panel (see [5](#5-investigations-panel)) on the landing page and on narrower screens.
 - **Status area** (`#status`, built by `loadHealth()`):
@@ -154,11 +154,7 @@ Built by `render()`, in this order:
    - the label's effective date and "FAERS data to";
    - how many reports name the drug;
    - the run time against its budget, or "Replayed in N s".
-2. **Notices:**
-   - "Recorded replay" (with the live run it replays and when it was recorded);
-   - Nightshift setup warnings;
-   - degraded steps;
-   - steps skipped for time.
+2. **Notices:** "Recorded replay" (with the live run it replays and when it was recorded), always shown in full. **Warnings** about the run (Nightshift setup warnings, degraded steps, steps skipped for time) are folded into one amber bar, "⚠ 2 warnings · Degraded steps · Skipped for time · Details". A click opens each warning's details (`details.warns`).
 3. **Figures** (`fig()`): reactions screened, passing the PRR screen, assessed, accepted by the Reviewer, and to review next (the key figure).
 4. **Open questions** (`drawProgress()`): four boxes.
    - **N items need you** (light red, leads); **unresolved**; **not reached**; **challenged by the Skeptic**.
@@ -219,8 +215,7 @@ Built by `detail()`. What stays in view, then one tab at a time.
 | Skeptic | Co-reported drugs: share, the co-drug's own PRR, this drug's PRR adjusted for it, possible interaction; the Skeptic's working, folded. | The outcome, e.g. "No challenge, as the PRR stays above 2…" (`skepticOutcome()`). |
 | Label | The label quote and where it matched, or the label search summary. | Coverage, e.g. "Not found". |
 | Figures | Three groups side by side as room allows: **Disproportionality** (reports, expected, PRR, 95% CI, chi-squared, and the CI plot against the threshold); **Information component** (IC and its lower bound, with a one-line explanation); **Seriousness** (serious and fatal, with shares). A thin-evidence warning follows in a tinted note. | – |
-| Case reports | A link to the matching FAERS reports on openFDA, and what its count means. | – |
-| Since last run | Why it changed or not, and the changed fields. | The status, e.g. "Unchanged". |
+| Case reports | The first 10 matching FAERS reports, **fetched live from openFDA when the tab first opens** (`loadCases()`, `caseCard()`; openFDA allows browser requests). Each is a card: report ID, received date, country, reporter type; seriousness flags (Death in solid red); patient sex, age and weight; drugs, each once, suspects first with their role; the reactions, with this item's reaction first and highlighted, and more than 12 folded. Above the cards: "10 of N matching reports on openFDA". The page says they are not part of the run. A link to the raw JSON stays. Without a network it says it could not reach openFDA, keeps the link, and tries again next time. openFDA's codes (reporter, age unit, sex, drug role) are mapped in `QUALIFICATION`, `AGE_UNIT`, `SEX` and `ROLE`. | – |
 | SQL | Every Zetaris query behind the item as a row that opens: an arrow that turns, the query ID and purpose (underlined on hover), and a "Show SQL" / "Hide SQL" link. The SQL opens indented under its row. On phones the ID is hidden. | "N Zetaris queries · open one to see its SQL". |
 
 **SQL links** ("Its SQL", "Its N SQL queries") switch to the SQL tab, open those queries and flash them (`showQuery()`, `showTab()`).
@@ -313,7 +308,7 @@ Tokens are on `:root`. The page is light only, whatever the system setting.
 
 These come from `CLAUDE.md`. Don't break them.
 
-- No made-up numbers or results. Everything shown comes from the API. The landing example is a real replay, captioned as an example.
+- No made-up numbers or results. Everything shown comes from the API, apart from the Case reports tab, which shows openFDA's own reports, fetched live and labelled as not part of the run. The landing example is a real replay, captioned as an example.
 - Computed figures are marked apart from model-written text, and model text is labelled with the agent that wrote it.
 - Replays are always labelled ("Replay mode", "[replay]", "Recorded replay", "Replaying a recorded run", "replay" in lists and the chip). A paced replay changes only the pace, never the lines.
 - Service squares claim only what is known (a key is set), not that a service works.
@@ -348,6 +343,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** Case reports shown as readable cards fetched from openFDA. "Since last run" tab removed (the run's "Since the last run" section stays). Logo dances. Run warnings folded into one clickable bar.
 - **27 Oct:** SQL rows show they open (arrow, "Show SQL" link, underline on hover). No header chip for replays. Item tabs keep their labels on one line.
 - **27 Oct:** this guide written. Item tabs share the width equally from 1200 px. The Figures tab regrouped into Disproportionality, Information component and Seriousness, with the CI plot and a thin-evidence note.
 - **27 Oct:**
