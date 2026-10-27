@@ -89,7 +89,7 @@ Against `53d100d` the code changes 5 of 100 rows in [gold v2](../eval/gold_v2.js
 
 ## Results
 
-The results at Ricky's code defaults (4 model calls at a time, 1 revision round, a 600 s budget) are in the [README](../README.md#results-so-far)'s Results section and [eval/reports/reeval-25oct-summary.md](../eval/reports/reeval-25oct-summary.md). Task 2 ran there as `13421ee`. Its later commits change only the safety net's display, which no agent sees. Task 2's earlier live checks used a developer's `.env` (2 model calls at a time, 2 revision rounds), so they're superseded.
+The results at Ricky's code defaults (4 model calls at a time, 1 revision round, a 600 s budget) are in [eval/reports/reeval-25oct-summary.md](../eval/reports/reeval-25oct-summary.md). Task 2 ran there as `13421ee`. Its later commits change only the safety net's display, which no agent sees. Task 2's earlier live checks used a developer's `.env` (2 model calls at a time, 2 revision rounds), so they're superseded.
 
 ## Decisions left open
 
