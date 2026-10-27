@@ -1587,8 +1587,7 @@ async function intro() {
   const {d, x, i, example} = got, ci = x.uncertainty?.prr_ci95, u = x.uncertainty || {}, se = x.seriousness || {};
   const hi = Math.max(4, ci?.[1] ?? x.prr ?? 0);
   const from = example
-    ? `An example result: item ${i + 1} of a recorded live <b>${esc(d.drug)}</b> investigation${d.sample_mode?.recorded_at ? ` (${esc(fmtTs(d.sample_mode.recorded_at))})` : ""}, replayed.
-       Your own results appear here once you run an investigation.`
+    ? "An example result. Your own results appear here once you run an investigation."
     : `Item ${i + 1} of the <b>${esc(d.drug)}</b> investigation, ${esc(when(d.run_id))}${d.sample_mode ? " (replay)" : ""}.
     <button type="button" class="link" data-run="${esc(d.run_id)}">Open it</button>`;
   $("#lp-hero-fig").innerHTML = `<figure class="lp-stage">
