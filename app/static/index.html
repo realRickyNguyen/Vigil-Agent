@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='8 8 106 106'%3E%3Cstyle%3E.s{stroke:%2314366b}@media (prefers-color-scheme:dark){.s{stroke:%23e8ecf1}}%3C/style%3E%3Ccircle class='s' cx='50' cy='50' r='32' fill='none' stroke-width='15'/%3E%3Cline class='s' x1='76' y1='76' x2='104' y2='104' stroke-width='19' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='50' r='13' fill='%23b4441b'/%3E%3C/svg%3E">
 <!-- The investigation page. Served by app/server.py at GET /. No CDN: its fonts come from the same server
      (GET /fonts/, app/static/fonts/), so it also works in SAMPLE_MODE with no network. It shows what POST /run,
-     GET /runs and GET /runs/<id> return, and records the analyst's decisions through /runs/<id>/decisions. -->
+     GET /runs and GET /runs/<id> return. -->
 <link rel="preload" href="/fonts/publicsans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/newsreader.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -57,19 +57,44 @@ a { color: var(--accent); }
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 10px 28px;
   background: var(--paper); border-bottom: 1px solid var(--rule-strong); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
-.brand svg { flex: none; }
+/* Vigil's body fills canvas pixels x 4-15 and y 3-17 of 20 x 18, so at 2x the margins trim the clear 8px at each side and
+   6px at the top: the box is the body itself, and centres on the wordmark. */
+.brand-mascot { width: 40px; height: 36px; margin: -6px -8px 0; }
 .brand b { font: 600 21px/1 var(--serif); letter-spacing: -.01em; }
 .brand-sub { color: var(--muted); font-size: 13px; padding-left: 12px; border-left: 1px solid var(--rule-strong); }
-.status { margin-left: auto; display: flex; gap: 18px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+.status { margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
 .svc { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .sq { width: 7px; height: 7px; display: inline-block; background: var(--muted); }
 .sq.ok { background: var(--ok); } .sq.bad { background: var(--signal); } .sq.live { background: var(--accent); animation: blink 1.4s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .2; } }
 .svc.replay { color: var(--pend); font-weight: 600; }
+.svcs { display: inline-flex; align-items: stretch; border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--sheet); white-space: nowrap; }
+.svcs .seg { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; min-height: 28px; }
+.svcs .seg + .seg { border-left: 1px solid var(--rule); }
+.svcs .model { color: var(--ink); font-weight: 600; }
+.svcs .seg.off { color: var(--muted); }
+.svcs .seg.bad { background: var(--signal-tint); color: var(--signal); }
+.svcs .seg.bad b { font-weight: 600; }
+/* The run in progress: drug, the agent at work with its mascot, and the time so far; opens the run. */
+.runchip { border: 1px solid var(--rule-strong); background: var(--sheet); border-radius: 2px; min-height: 30px; font-size: 12px; color: var(--ink-2); gap: 0; }
+.runchip:hover { border-color: var(--ink); }
+.runchip button { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; align-self: stretch; }
+.runchip .rc-open { gap: 8px; padding: 3px 10px 3px 8px; }
+.runchip .rc-x { align-self: center; justify-content: center; width: 22px; height: 22px; margin: 0 5px 0 -2px; border-radius: 50%; color: var(--muted); transition: background-color .15s, color .15s; }
+.runchip .rc-x:hover { color: var(--ink); background: var(--rule); }
+.runchip .rc-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.runchip.ok .rc-who { color: var(--ok); font-weight: 600; }
+.runchip.bad .rc-who { color: var(--signal); font-weight: 600; }
+.runchip.ok .rc-t, .runchip.bad .rc-t { color: var(--ink-2); }
+.runchip .mascot { width: 20px; height: 18px; }
+.runchip .rc-drug { font-weight: 600; color: var(--ink); }
+.runchip .rc-t { font: 12px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .runchip .rc-who { display: none; } .runchip.ok .rc-who, .runchip.bad .rc-who { display: inline; } }
 .side-toggle { display: none; border: 1px solid var(--rule-strong); background: var(--sheet); padding: 6px 12px; min-height: 36px; border-radius: 2px; font-size: 13px; }
 .side-toggle[aria-expanded="true"] { border-color: var(--ink); }
 @media (max-width: 720px) {
-  .brand-sub, .svc.model, .svc .set { display: none; }
+  .brand-sub, .svcs .model { display: none; }
+  .svcs .seg { padding: 3px 8px; }
   .topbar { padding: 8px 16px; row-gap: 6px; }
   .status { gap: 14px; }
 }
@@ -182,13 +207,19 @@ h1.title { font: 600 32px/1.15 var(--serif); letter-spacing: -.015em; margin: 0;
   .facts { gap: 2px 16px; font-size: 12.5px; margin-top: 8px; }
   .actions { gap: 4px 16px; }
 }
-.progress { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto; gap: 8px 18px; align-items: center; padding: 10px 0;
-  border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
-.progress b { color: var(--ink); font-variant-numeric: tabular-nums; }
-.bar { height: 6px; background: var(--rule); }
-.bar > div { height: 100%; background: var(--accent); transition: width .3s; }
-.progress .rest span + span::before { content: " · "; color: var(--muted); }
-@media (max-width: 760px) { .progress { grid-template-columns: 1fr; } }
+/* What is left open, as figures: "need you" leads in the signal colour; figures with a queue tab open it. */
+.progress { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.pg { display: inline-flex; align-items: baseline; gap: 8px; padding: 8px 14px; border: 1px solid var(--rule); border-radius: 2px;
+  background: var(--sheet); font: 13px var(--sans); color: var(--ink-2); text-align: left; }
+.pg b { font: 600 22px/1 var(--serif); color: var(--ink); font-variant-numeric: tabular-nums; }
+.pg svg { align-self: center; color: var(--muted); }
+.pg.lead { background: var(--signal-tint); border-color: #e6c9bb; color: var(--ink); }
+.pg.lead b { color: var(--signal); }
+.pg.zero, .pg.zero b { color: var(--muted); }
+button.pg { cursor: pointer; transition: border-color .15s; }
+button.pg:hover { border-color: var(--ink); }
+button.pg:hover svg { color: var(--ink); }
+@media (max-width: 640px) { .progress { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .pg { padding: 7px 10px; gap: 7px; } .pg b { font-size: 19px; } .pg span { line-height: 1.3; } }
 
 /* ---------- sections ---------- */
 .section { margin-top: 44px; }
@@ -196,13 +227,8 @@ h1.title { font: 600 32px/1.15 var(--serif); letter-spacing: -.015em; margin: 0;
 .section > h2 { font: 600 22px/1.25 var(--serif); margin: 0; letter-spacing: -.01em; }
 .sec-lede { color: var(--muted); font-size: 13px; margin: 4px 0 16px; max-width: 780px; }
 .prose { font: 16px/1.65 var(--serif-text); color: var(--ink); max-width: 760px; margin: 0; }
-/* Wide screens: the Analyst's summary and the proceedings share a row instead of leaving the right half empty. */
-@media (min-width: 1500px) {
-  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 64px; align-items: start; }
-  .pair > :only-child { grid-column: 1 / -1; }
-  .pair .prose { font-size: 17px; max-width: 72ch; }
-  .pair ol.proc li { grid-template-columns: 34px 150px minmax(0, 1fr); }
-}
+/* The Analyst's summary is one column across the full width, instead of leaving the right side empty on wide screens. */
+.prose.summary { max-width: none; }
 .changes { border-top: 1px solid var(--rule); }
 .changes > div { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
 .changes dt, .changes .k { color: var(--ink-2); font-weight: 600; }
@@ -230,11 +256,15 @@ ol.proc li.active .who::after { content: ", working"; font-weight: 400; color: v
 .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
 .tab .c { margin-left: 5px; font-variant-numeric: tabular-nums; font-weight: 400; color: var(--muted); }
 .tab.needs[aria-selected="true"] { border-bottom-color: var(--signal); }
-.search { width: 200px; margin-bottom: 7px; padding: 5px 2px; border: 0; border-bottom: 1px solid var(--rule-strong); background: transparent; font-size: 13px; }
-.search:focus { outline: none; border-bottom-color: var(--ink); }
+.search-box { position: relative; display: inline-flex; align-items: center; margin-bottom: 8px; color: var(--muted); }
+.search-box svg { position: absolute; left: 11px; pointer-events: none; }
+.search { width: 300px; padding: 8px 10px 8px 33px; border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--sheet); font-size: 13px; color: var(--ink); }
+.search:hover { border-color: var(--muted); }
+.search:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-tint); }
+.search-box:focus-within { color: var(--ink); }
 .legend { display: flex; gap: 6px 22px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 14px; }
 .table-wrap { overflow-x: auto; }
-/* The queue is not a scroll container, so the open item's decision can stick to the bottom of the screen. */
+/* The queue is not a scroll container, so the page scrolls as one. */
 #queue-panel { overflow-x: clip; }
 table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .queue th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 10px 10px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
@@ -256,21 +286,23 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .queue tr.detail td { padding: 0; background: var(--sheet); border-bottom: 1px solid var(--rule-strong); }
 /* Below 1240px the full table would not fit beside the sidebar: drop the report count (in the For line anyway) and the CI plot. */
 @media (min-width: 1101px) and (max-width: 1240px), (max-width: 940px) {
-  .queue .hide-sm, .queue .forest svg { display: none; } .queue .rx, .yours { min-width: 0; } }
+  .queue .hide-sm, .queue .forest svg { display: none; } .queue .rx { min-width: 0; } }
 /* Phone: each queue row is a stacked block, and an open item's detail spans the screen instead of the table's width. */
 @media (max-width: 760px) {
   table.queue, .queue tbody, .queue tr, .queue td { display: block; }
   .queue thead { display: none; }
+  /* The stacking is for the queue's own rows: tables inside an open item (the Skeptic's) stay tables. */
+  .queue .small-table thead { display: table-header-group; } .queue .small-table tbody { display: table-row-group; }
+  .queue .small-table tr { display: table-row; } .queue .small-table td, .queue .small-table th { display: table-cell; }
   .tabs { gap: 8px 18px; }
-  .search { width: 100%; }
+  .search-box, .search { width: 100%; }
   /* The PRR and its CI are already in the For line, so the stacked row leaves out the PRR cell. */
   .queue tr.row .prrc { display: none; }
-  .queue tr.row { display: grid; grid-template-columns: 18px 30px minmax(0, 1fr); grid-template-areas: "tw rank rx" ". . call" ". . yours";
+  .queue tr.row { display: grid; grid-template-columns: 18px 30px minmax(0, 1fr); grid-template-areas: "tw rank rx" ". . call";
     gap: 4px 6px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
   .queue tr.row td { padding: 0; border: 0; min-width: 0; }
   .queue tr.row .tw { grid-area: tw; padding-top: 3px; } .queue tr.row .rank { grid-area: rank; width: auto; padding-top: 1px; }
   .queue tr.row .rx { grid-area: rx; } .queue tr.row .callc { grid-area: call; } .queue tr.row .prrc { grid-area: prr; }
-  .queue tr.row .yours { grid-area: yours; }
   .queue .call { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; } .queue .call small { margin: 0; }
   .queue .forest { justify-content: flex-start; }
   .why div { grid-template-columns: 64px minmax(0, 1fr); }
@@ -295,92 +327,68 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .forest { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
 .forest svg { flex: none; overflow: visible; }
 .forest .v { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.yours { white-space: nowrap; min-width: 120px; }
-.yours small { display: block; color: var(--muted); font-size: 12px; }
-.dec { font-weight: 600; }
-.dec.agree { color: var(--ok); } .dec.dismiss { color: var(--ink-2); } .dec.escalate { color: var(--signal); }
-.todo { color: var(--accent); font-weight: 600; }
-.yours small.draft { color: var(--pend); font-style: italic; }
 
 /* ---------- item detail ---------- */
-.doc { padding: 22px 26px 26px 72px; }
-/* On a phone the panel would cover half the screen, so it simply closes the item there, with a link to it at the top. */
-@media (max-width: 760px) { .doc { padding: 18px 14px; } .doc .decide { position: static; box-shadow: none; } }
-/* Wide screens: the decision is a column beside the evidence, sticky under the top bar, instead of a bar over it. */
-@media (min-width: 1800px) {
-  .doc { display: grid; grid-template-columns: minmax(0, 1fr) 360px; column-gap: 48px; align-items: start; }
-  .doc > * { grid-column: 1; }
-  .doc > .decide { grid-column: 2; grid-row: 1 / span 12; position: sticky; top: 72px; bottom: auto; margin-top: 0; max-width: none; box-shadow: none; }
-  .doc .decide .noterow { display: block; }
-  .doc .decide .noterow .row2 { margin-top: 8px; }
+/* An open item's key figures, in a strip above its tabs. */
+.dstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 0 0 22px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.dstats > div { padding: 10px 14px 10px 0; }
+.dstats > div + div { padding-left: 14px; border-left: 1px solid var(--rule); }
+.dstats dt { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.dstats dd { margin: 0; }
+.dstats b { font: 600 20px/1.2 var(--serif); color: var(--ink); font-variant-numeric: tabular-nums; }
+.dstats small { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+/* Its tabs: one panel at a time, each opening with its outcome (where it has one) and its sources. */
+.dtabs { display: flex; flex-wrap: wrap; gap: 0 22px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 18px; }
+.dtab { border: 0; background: none; padding: 8px 0 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.dtab:hover { color: var(--ink); }
+.dtab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+/* Big screens: the tabs share the width equally, each label centred over its share. */
+@media (min-width: 1200px) { .dtabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; } .dtab { text-align: center; padding-left: 6px; padding-right: 6px; } }
+/* An open item fills the width it has: the panels, the objection and the reasons run full width, and the Figures list
+   wraps its label-and-value pairs into as many columns as fit (one pair per row on a phone). */
+.dpanel { max-width: none; }
+.doc blockquote.objection, .doc .needs { max-width: none; }
+/* Figures: three groups side by side as room allows, each a ruled list with values right-aligned. */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 40px; align-items: start; }
+.fgroup h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.fgroup dl { margin: 0; border-top: 1px solid var(--rule-strong); }
+.fgroup dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
+.fgroup dt { color: var(--ink-2); }
+.fgroup dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.fgroup dd small { color: var(--muted); margin-left: 6px; font-size: 12px; }
+.fplot { margin-top: 10px; display: grid; gap: 4px; }
+.fplot small, .fnote { font-size: 12px; color: var(--muted); }
+.fnote { margin: 8px 0 0; line-height: 1.45; }
+.fwarn { margin: 16px 0 0; padding: 8px 12px; background: var(--replay-tint); font-size: 13px; color: var(--ink); }
+.dhead { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin: 0 0 10px; }
+.dhead .dnote { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.dhead .aside { font-size: 12px; color: var(--muted); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .dstats { grid-template-columns: 1fr 1fr; column-gap: 14px; }
+  .dstats > div, .dstats > div + div { padding: 8px 0; border-left: 0; }
+  .dtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }  /* one row of tabs that scrolls sideways */
+  .dtab { white-space: nowrap; flex: none; }
 }
-.jump { display: none; }
-.doc .decide { scroll-margin-top: 72px; }
+
+.doc { padding: 22px 26px 26px 72px; }
+@media (max-width: 760px) { .doc { padding: 18px 14px; } }
 /* Touch screens: controls at least 40 to 44px tall. */
 @media (pointer: coarse) {
   .tab { padding: 10px 0 12px; }
-  .opts button { min-height: 44px; }
   .runs button { padding-top: 12px; padding-bottom: 12px; }
   .qlink { display: inline-block; padding: 8px 4px; }
   .btn-plain, .quick button { padding: 8px 0; }
   .modes button { padding: 10px 0; }
 }
-@media (max-width: 760px) { .jump { display: inline-block; margin: 0 0 16px; padding: 8px 0; } }
-/* On a short screen the sticky panel shrinks so the evidence above it stays readable. */
-@media (max-height: 820px) and (min-width: 761px) {
-  .doc .decide { padding: 12px 16px; }
-  .doc .decide .dh { margin-bottom: 6px; }
-  .doc .decide .what { margin: -2px 0 8px; }
-}
-/* The decision closes the item, after the evidence, and stays in view at the bottom of the screen while the item is read. */
-.decide { background: #fff; border: 1px solid var(--rule-strong); padding: 16px 18px; margin-top: 8px; max-width: 820px;
-  position: sticky; bottom: 12px; z-index: 2; box-shadow: 0 6px 18px -8px rgba(27, 32, 40, .28); }
-.decide .what { font-size: 13px; color: var(--ink-2); margin: -4px 0 12px; }
-/* Wide enough: the note and the name/Save column sit side by side, which keeps the sticky panel short. */
-@media (min-width: 900px) {
-  .decide .noterow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
-  .decide .noterow .row2 { margin-top: 0; flex-wrap: nowrap; }
-  .decide .noterow .row2 input { width: 170px; }
-  .decide .noterow .row2 .msg:empty { display: none; }
-}
-.decide .req { font-size: 12px; color: var(--muted); }
 .doc .needs { margin: 0 0 22px; max-width: 820px; }
 .doc .needs h3 { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
 .doc .needs ul { margin: 0; padding-left: 16px; font-size: 13.5px; color: var(--ink); }
 .doc .needs li { margin-bottom: 3px; }
-.decide .dh { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 10px; }
-.decide .dh b { font: 600 17px var(--serif); }
-.decide .dh span { font-size: 12px; color: var(--muted); }
-.decide .was { font-size: 13px; color: var(--ink-2); background: var(--paper); padding: 8px 12px; margin-bottom: 12px; }
-.opts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.opts button { border: 1px solid var(--rule-strong); background: var(--sheet); padding: 7px 14px; font-size: 13px; border-radius: 2px; }
-.opts button:hover { border-color: var(--ink); }
-.opts button[aria-checked="true"] { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600; }
-.opts button[data-d="escalate"][aria-checked="true"] { border-color: var(--signal); background: var(--signal); }
-.opts button[data-d="agree"][aria-checked="true"] { border-color: var(--ok); background: var(--ok); }
-.opts button[data-d="dismiss"][aria-checked="true"] { border-color: var(--ink-2); background: var(--ink-2); }
-/* The note starts one line tall, so the sticky panel covers less of the evidence, and grows once it is used. */
-.decide textarea { width: 100%; min-height: 38px; height: 38px; transition: height .15s; resize: vertical; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--sheet); font-size: 13px; }
-.decide textarea:focus, .decide textarea:not(:placeholder-shown) { height: 72px; }
-.decide textarea:focus, .decide input:focus { outline: none; border-color: var(--ink); }
-.decide input::placeholder { color: var(--muted); opacity: 1; }
-.decide .row2 { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-.decide .row2 input { width: 200px; padding: 6px 8px; border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--sheet); font-size: 13px; }
-.decide .save { padding: 7px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; border-radius: 2px; }
-.decide .save:disabled { opacity: .45; cursor: not-allowed; }
-.decide .msg { font-size: 12px; color: var(--muted); }
-.decide .msg.err { color: var(--signal); }
 .statusline { font-size: 13px; color: var(--pend); margin: 0 0 16px; }
 blockquote.objection { margin: 0 0 24px; padding: 0 0 0 30px; position: relative; max-width: 740px; }
 blockquote.objection::before { content: "\201C"; position: absolute; left: 0; top: -10px; font: 48px/1 var(--serif); color: var(--signal); }
 blockquote.objection p { margin: 0; font: italic 17px/1.55 var(--serif-text); color: var(--ink); }
 blockquote.objection cite { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 6px; font: normal 12px var(--sans); color: var(--muted); }
-.doc-cols { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 0 40px; }
-@media (max-width: 1000px) { .doc-cols { grid-template-columns: 1fr; } }
-.doc h3.bh { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 0 0 8px; padding-top: 12px; border-top: 1px solid var(--rule);
-  display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.doc h3.bh .aside { font-weight: 400; color: var(--muted); text-align: right; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.doc .blk { margin-bottom: 22px; }
 .doc p { margin: 0 0 8px; }
 .doc .reading { font: 15px/1.6 var(--serif-text); color: var(--ink); }
 .doc .reading b { font-family: var(--sans); font-size: 13px; }
@@ -440,12 +448,78 @@ details.sub > summary { cursor: pointer; color: var(--accent); font-size: 13px; 
 .ledger b { color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* ---------- running view ---------- */
-.elapsed { font: 13px var(--mono); color: var(--muted); padding-bottom: 6px; }
+/* The run's clock: large mono figures in ink beside the live square, labelled, so the time so far reads at a glance. */
+.elapsed { display: inline-flex; align-items: baseline; gap: 8px; padding-bottom: 4px; color: var(--muted); font-size: 12px; }
+.elapsed .sq { align-self: center; width: 8px; height: 8px; }
+.elapsed b { font: 600 21px/1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.elapsed .skip { margin-left: 10px; font-size: 12px; }
 .log { font: 12px/1.65 var(--mono); background: var(--sheet); border: 1px solid var(--rule); padding: 10px 14px;
   height: 46vh; min-height: 260px; overflow: auto; margin-top: 22px; color: var(--ink-2); }
-.log .ln { display: grid; grid-template-columns: 66px 96px 1fr; gap: 8px; }
+.log .ln { display: grid; grid-template-columns: 66px 124px 1fr; gap: 8px; }
 .log .t { color: var(--muted); }
-.log .a { color: var(--ink); font-weight: 600; }
+.log .a { color: var(--ink); font-weight: 600; display: flex; gap: 6px; align-items: center; align-self: start; min-height: 1.65em; }
+
+/* The agents' pixel mascots: drawn at 1x and scaled by whole numbers only, so the pixels stay square. */
+.mascot { image-rendering: pixelated; flex: none; }
+/* The running view's stage: the crew as a centred stepper, the agent at work drawn larger and moving, its latest
+   progress line in one line beneath. A track joins the agents; it turns blue up to each agent that has started. */
+.stage { margin-top: 30px; padding: 28px 20px 24px; background: var(--sheet); border: 1px solid var(--rule); }
+.crew { list-style: none; margin: 0 auto; padding: 0; max-width: 760px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.crew li { position: relative; display: grid; justify-items: center; align-content: start; gap: 4px; text-align: center; font-size: 13px; color: var(--ink-2); }
+.crew .fig { height: 90px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 8px; position: relative; z-index: 1; }
+.crew li::before { content: ""; position: absolute; top: 89px; left: -50%; width: 100%; height: 3px; background: var(--rule-strong); }
+.crew li:first-child::before { display: none; }
+.crew li.idle::before, .crew li.active::before { background: var(--accent); }
+.crew .mascot { width: 60px; height: 54px; transition: opacity .3s, filter .3s; }
+.crew li.active .mascot { width: 100px; height: 90px; }
+.crew li.pending .mascot { opacity: .35; filter: grayscale(1); }
+.crew .nm { font-weight: 600; color: var(--ink); line-height: 1.25; }
+.crew li.pending .nm { font-weight: 400; color: var(--muted); }
+.crew .st { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 1px 8px; border-radius: 10px; }
+.crew li.idle .st { color: var(--ink-2); }
+.crew li.active .st { background: var(--accent); color: #fff; font-weight: 600; }
+.says { margin: 22px auto 0; padding: 9px 16px; border: 1px solid var(--rule-strong); border-radius: 18px; background: var(--paper);
+  font: 12px/1.5 var(--mono); color: var(--ink-2); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.says b { color: var(--ink); margin-right: 8px; }
+/* The steps under the stage, as a ruled list like the report's: number, agent, what it does, and its state in words.
+   The step at work gets a navy rule at its left and the live square the top bar uses; steps still to come are muted. */
+ol.proc.steps li { grid-template-columns: 34px 170px minmax(0, 1fr) 110px; padding: 11px 12px; }
+ol.proc.steps li .st { font: 12px var(--mono); color: var(--ink-2); text-align: right; white-space: nowrap; display: inline-flex; gap: 8px;
+  align-items: center; justify-content: flex-end; }
+ol.proc.steps li.active { background: var(--accent-tint); box-shadow: inset 3px 0 0 var(--accent); }
+ol.proc.steps li.active::before, ol.proc.steps li.active .st { color: var(--accent); }
+ol.proc.steps li.active .st { font-weight: 600; }
+ol.proc.steps li.active .who::after { content: none; }
+ol.proc.steps li.pending .st { color: var(--muted); }
+ol.proc.steps li.pending .mascot { opacity: .35; filter: grayscale(1); }
+ol.proc.with-crew li { align-items: center; }
+ol.proc.with-crew .who { display: flex; gap: 8px; align-items: center; }
+ol.proc.with-crew .mascot { width: 40px; height: 36px; }
+.stopped .mascot { width: 60px; height: 54px; display: block; margin: 18px 0 4px; }
+@media (max-width: 900px) {
+  .crew .fig { height: 72px; }
+  .crew li::before { top: 71px; }
+  .crew .mascot { width: 40px; height: 36px; }
+  .crew li.active .mascot { width: 80px; height: 72px; }
+}
+@media (max-width: 640px) {
+  .stage { padding: 20px 8px 16px; margin-left: -8px; margin-right: -8px; }
+  .crew .fig { height: 54px; margin-bottom: 6px; }
+  .crew li::before { top: 53px; }
+  .crew li.active .mascot { width: 60px; height: 54px; }
+  .crew li { font-size: 11px; }
+  .crew .st { font-size: 9.5px; padding: 1px 5px; letter-spacing: .02em; }
+  .crew li:not(.active) .st { visibility: hidden; }  /* too narrow for every state; the steps below give them all */
+  .says { margin-top: 18px; padding: 8px 12px; text-align: left; }
+  ol.proc.steps li { grid-template-columns: 30px minmax(0, 1fr) auto; }
+  ol.proc.steps .what { grid-column: 2 / -1; grid-row: 2; }
+  ol.proc.steps .st { grid-column: 3; grid-row: 1; }
+}
+@media (max-width: 359px) {
+  .crew li.active .mascot { width: 40px; height: 36px; }
+  .crew .fig { height: 36px; }
+  .crew li::before { top: 35px; }
+}
 
 /* ---------- landing ---------- */
 /* The landing page uses the whole width: the sidebar becomes the "Investigations" panel under the top bar at every size. */
@@ -540,35 +614,28 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
 .lp-frag blockquote.objection { margin-bottom: 18px; }
 .lp-frag blockquote.objection p { font-size: 15.5px; }
 .lp-frag ol.thread { max-height: 360px; overflow: auto; }
-.lp-decide .dh { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 10px; }
-.lp-decide .dh b { font: 600 20px var(--serif); }
-.lp-decide .dh span { font-size: 13px; color: var(--muted); }
-.lp-decide .what { font-size: 15px; color: var(--ink-2); margin: 0 0 18px; }
-.lp-decide .opts { margin: 0; gap: 10px; }
-.lp-decide .opts button { font-size: 14px; padding: 10px 16px; transition: background-color .15s, border-color .15s; }
-
 .lp-row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--lp-gap); align-items: start; margin-top: 160px; }
-.lp-row h2, .lp-recent h2 { font: 600 clamp(30px, 3.2vw, 48px)/1.05 var(--serif); letter-spacing: -.02em; margin: 0 0 24px; max-width: 18ch; }
+.lp-row h2 { font: 600 clamp(30px, 3.2vw, 48px)/1.05 var(--serif); letter-spacing: -.02em; margin: 0 0 24px; max-width: 18ch; }
 .lp-say p { font: 17px/1.6 var(--serif-text); color: var(--ink); margin: 0; max-width: 32em; }
 .lp-narrow .lp-frag { max-width: 560px; }
-/* The decision section is the page's one field of colour. */
-.lp-field { background: var(--accent-tint); padding: 72px 64px; }
-.lp-field .lp-stage { background: var(--sheet); }
-.lp-field .lp-frag { border-color: var(--rule); }
-
-.lp-recent { margin-top: 160px; }
-.lp-recent ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 48px; }
-.lp-recent button { width: 100%; text-align: left; border: 0; background: none; padding: 14px 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 16px;
-  align-items: baseline; transition: background-color .15s; }
-.lp-recent button:hover { background: var(--hover); }
-.lp-recent .drug { font: 600 22px/1.2 var(--serif); text-transform: capitalize; }
-.lp-recent .when { grid-column: 1; font-size: 13px; color: var(--ink-2); }
-.lp-recent .n { grid-row: 1 / span 2; grid-column: 2; font-size: 13px; color: var(--ink-2); }
-.lp-recent .n b { color: var(--signal); font: 600 22px var(--serif); margin-right: 4px; }
 
 .lp-close { margin-top: 180px; padding-bottom: 8px; }
-.lp-word { font: 600 clamp(96px, 17vw, 260px)/.8 var(--serif); letter-spacing: -.045em; color: var(--accent); margin: 0 0 32px; }
-.lp-close p:not(.lp-word) { font-size: 14px; color: var(--ink-2); margin: 0 0 6px; max-width: 64em; }
+.lp-word { font: 600 clamp(96px, 17vw, 260px)/.8 var(--serif); letter-spacing: -.045em; color: var(--accent); margin: 0; }
+/* The crew lines up beside the name, feet on its baseline: Vigil first and larger, then the four agents. Whole-number
+   scales keep the pixels square (--v for Vigil, --a for the agents, px per sprite pixel). The margins trim each canvas's
+   clear edges: 4 pixels at the left, and for Vigil also 4 at the right and 3 on top (the agents' props reach those edges).
+   When the row is too narrow for both, the crew drops under the name, starting at the left. */
+.lp-sign { display: flex; flex-wrap: wrap; align-items: baseline; gap: 24px 48px; margin: 0 0 32px;
+  --v: 8px; --a: 6px; }
+.lp-crew { display: flex; align-items: flex-end; gap: calc(var(--a) * 3); }
+.lp-crew .mascot { width: calc(var(--a) * 20); height: calc(var(--a) * 18); margin-left: calc(var(--a) * -4); }
+.lp-crew .mascot:first-child { width: calc(var(--v) * 20); height: calc(var(--v) * 18); margin: calc(var(--v) * -3) calc(var(--v) * -4 + var(--a) * 2) 0 calc(var(--v) * -4); }
+@media (max-width: 1500px) { .lp-sign { --v: 7px; --a: 5px; } }
+@media (max-width: 1100px) { .lp-sign { --v: 6px; --a: 4px; } }
+@media (max-width: 560px) { .lp-sign { --v: 4px; --a: 3px; } }
+/* The lines under the name use the page's full width, so each stays on one line wherever the screen has room for it. */
+.lp-close p:not(.lp-word) { font-size: 14px; color: var(--ink-2); margin: 0 0 6px; }
+.lp-close .lp-sign { margin-bottom: clamp(36px, 5vw, 76px); }  /* the name's "g" hangs about .2em below its line box */
 
 /* Sections rise in once as they scroll into view (set by intro() only when motion is allowed). */
 .lp .rise > * { transition: opacity .7s cubic-bezier(.2, .7, .2, 1), transform .7s cubic-bezier(.2, .7, .2, 1); }
@@ -583,17 +650,14 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
   .lp { --lp-gap: 40px; }
   .lp-hero, .lp-row { grid-template-columns: 1fr; }
   .lp-hero { min-height: 0; padding-top: 24px; }
-  .lp-row, .lp-recent { margin-top: 112px; }
-  .lp-field { padding: 48px 40px; }
+  .lp-row { margin-top: 112px; }
 }
 @media (max-width: 760px) {
   .lp h1 { font-size: 38px; }
   .lp-lead { font-size: 17px; margin: 20px 0 28px; }
   .lp-stage { padding: 16px; }
   .lp-frag { padding: 16px; }
-  .lp-row, .lp-recent { margin-top: 88px; }
-  .lp-field { padding: 32px 16px; margin-left: -16px; margin-right: -16px; }
-  .lp-recent ul { grid-template-columns: 1fr; }
+  .lp-row { margin-top: 88px; }
   .lp-form-row { flex-direction: column; }
   .lp-close { margin-top: 112px; }
 }
@@ -602,13 +666,14 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
   color: var(--paper); font-size: 13px; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; pointer-events: none; }
 .toast.show { opacity: 1; transform: none; }
 .loading { color: var(--muted); font-size: 13px; padding: 40px 0; }
-@media (prefers-reduced-motion: reduce) { .sq.live { animation: none; } .toast, .queue .tw svg, .bar > div, .decide textarea { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sq.live { animation: none; } .crew .mascot { transition: none; } .toast, .queue .tw svg { transition: none; } }
 </style>
 </head>
 <body class="landing">
 <header class="topbar">
   <a class="brand" href="#" id="home" aria-label="Vigil home">
-    <svg width="28" height="28" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="26" fill="#14366b"/><g transform="translate(16.1 16.1) scale(0.72)"><circle cx="50" cy="50" r="34" fill="none" stroke="#fff" stroke-width="10"/><line x1="75" y1="75" x2="104" y2="104" stroke="#fff" stroke-width="14" stroke-linecap="round"/><g transform="rotate(-45 50 50)"><path d="M48 38 H39 A12 12 0 0 0 39 62 H48 Z" fill="#fff"/><path d="M52 38 H61 A12 12 0 0 1 61 62 H52 Z" fill="#f08a5d"/></g></g></svg>
+    <img class="mascot brand-mascot" src="/mascots/vigil-neutral.png" alt="" width="40" height="36"
+      data-frames="vigil:neutral,neutral,neutral,neutral,blink,neutral,neutral,look,look,look,neutral,bob,neutral,neutral,blink,neutral">
     <b>Vigil</b>
   </a>
   <span class="brand-sub">Drug reaction review</span>
@@ -663,22 +728,42 @@ const STAGES = [["data_clerk", "Data Clerk", "Registers openFDA counts and the l
                 ["reviewer", "Reviewer", "Re-checks each finding in code; accepts, objects or leaves it unresolved"],
                 ["skeptic", "Skeptic", "Tests review-next findings against co-reported drugs"],
                 ["world_model", "World Model", "Records the verdicts against this label version"]];
+// Each agent's pixel sprite (/mascots, drawn by docs/video/mascot/make_mascots.py); the World Model and the
+// orchestrator are Vigil itself. REST is the face an agent shows when idle; WORK the frames it cycles while it works.
+const MASCOT = {data_clerk: "clerk", analyst: "analyst", reviewer: "reviewer", skeptic: "skeptic", world_model: "vigil", orchestrator: "vigil"};
+const REST = {clerk: "neutral", analyst: "look", reviewer: "neutral", skeptic: "squint", vigil: "neutral"};
+const WORK = {clerk: ["neutral", "neutral", "blink", "bob"], analyst: ["look", "look", "blink", "bob"],
+              reviewer: ["squint", "squint", "blink", "bob"], skeptic: ["squint", "squint", "concerned", "bob"], vigil: ["look", "look", "blink", "bob"]};
+const sprite = (agent, face) => MASCOT[agent] ? `<img class="mascot" src="/mascots/${MASCOT[agent]}-${face || REST[MASCOT[agent]]}.png" alt="" width="20" height="18">` : "";
+// An agent at work: its sprite with data-frames, which the clock below steps through.
+const working = (agent) => `<img class="mascot" src="/mascots/${MASCOT[agent]}-${WORK[MASCOT[agent]][0]}.png" alt="" width="20" height="18" data-frames="${MASCOT[agent]}:${WORK[MASCOT[agent]].join(",")}">`;
+// An agent at rest that still blinks, glances and bobs now and then; `shift` starts it at another point in the loop, so
+// mascots side by side do not move in step.
+const idle = (agent, shift = 0) => {
+  const m = MASCOT[agent], r = REST[m], f = [r, r, r, r, "blink", r, r, m === "analyst" ? "neutral" : "look", r, r, r, "bob", r, r, "blink", r];
+  const faces = [...f.slice(shift % f.length), ...f.slice(0, shift % f.length)];
+  return `<img class="mascot" src="/mascots/${m}-${faces[0]}.png" alt="" width="20" height="18" data-frames="${m}:${faces.join(",")}">`;
+};
+// One clock for every animated mascot (the logo, the agent at work): an img with data-frames="<sprite>:<face>,<face>,…"
+// shows the next face each beat. Still when the visitor asks for reduced motion, and paused while the tab is hidden.
+const STILL = matchMedia("(prefers-reduced-motion: reduce)");
+let beat = 0;
+setInterval(() => {
+  if (STILL.matches || document.hidden) return;
+  beat++;
+  for (const img of document.querySelectorAll("img[data-frames]")) {
+    const [who, faces] = img.dataset.frames.split(":"), f = faces.split(",");
+    img.src = `/mascots/${who}-${f[beat % f.length]}.png`;
+  }
+}, 420);
 const CHEV = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`;
-// The analyst's three answers to an item (app/server.py DECISIONS), as buttons and as past-tense labels.
-const DECIDE = [["agree", "Agree with Vigil", "Agreed with Vigil"], ["dismiss", "Close, no action", "Closed, no action"],
-                ["escalate", "Escalate for assessment", "Escalated"]];
-const DONE = Object.fromEntries(DECIDE.map(([k, , done]) => [k, done]));
 // Provenance marks: figures computed from openFDA data in Zetaris (and re-checked in code), and text a model wrote.
 const COMPUTED = `<span class="src c" title="Computed from openFDA data in Zetaris SQL or by code. The Reviewer's code re-checks every count, PRR and label quote a model cites.">Computed</span>`;
 const MODEL = (who) => `<span class="src m" title="Written by Nemotron Ultra through Meterless Nightshift">Written by the ${who}, a model</span>`;
 
 let health = null, current = null, pollTimer = null, filter = null, search = "", qSearch = "", sampleMode = false, runs = [];
 let shown = null;              // the run on screen: {res, d}
-let decisions = {};            // reaction -> latest decision on the run on screen
 let openRows = new Set();      // queue indexes whose detail is open
-let drafts = {};               // reaction -> unsaved {d, note, by} on the run on screen, kept when its item is re-drawn or closed
-let reviewer = "";
-try { reviewer = localStorage.getItem("vigil-reviewer") || ""; } catch (e) { /* storage blocked: the name is just not remembered */ }
 
 async function api(path, opts) {
   try {
@@ -699,10 +784,16 @@ function toast(msg, ms = 2800) {
   t._h = setTimeout(() => t.classList.remove("show"), ms);
 }
 
-function when(runId, long) {
+// When a run started, from the UTC time at the front of its ID (run.py's format); null for an ID without one.
+function runStart(runId) {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(runId || "");
-  if (!m) return runId;
-  const d = new Date(Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+}
+
+function when(runId, long) {
+  const t = runStart(runId);
+  if (t == null) return runId;
+  const d = new Date(t);
   return d.toLocaleString(undefined, long ? {weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short"}
                                           : {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
 }
@@ -713,6 +804,8 @@ function fmtDate(v) {
   const m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(v || "");
   return m ? new Date(Date.UTC(+m[1], m[2] - 1, +m[3])).toLocaleDateString(undefined, {day: "numeric", month: "short", year: "numeric", timeZone: "UTC"}) : (v || "–");
 }
+// A progress line's time of day in the viewer's time zone (the trace stores UTC with its offset).
+function clockTime(v) { const t = Date.parse(v || ""); return isNaN(t) ? "" : new Date(t).toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"}); }
 function fmtTs(v) { const t = Date.parse(v || ""); return isNaN(t) ? v : new Date(t).toLocaleString(undefined, {day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"}); }
 function firstSentence(s, max = 170) {
   s = String(s || "").trim();
@@ -730,16 +823,96 @@ async function loadHealth() {
   }
   health = h;
   const s = [];
-  if (h.busy) s.push(`<span class="svc"><span class="sq live"></span>Running ${esc(h.current_run)}</span>`);
+  if (h.busy && bar.id !== h.current_run)  // a new run starts the chip afresh, replacing a finished one
+    Object.assign(bar, {id: h.current_run, drug: h.current_drug, sample: h.current_sample_mode, after: 0, agent: null,
+                        started: runStart(h.current_run), lastTs: null, done: null});
+  if (h.busy) saveBar();
+  if (bar.id) {
+    s.push(runChip());
+    if (!bar.done) followBar(bar.id);  // follows the run, or settles the outcome of one that ended unfollowed
+  }
   if (h.sample_mode) s.push(`<span class="svc replay" title="Every run replays recorded data and model replies">Replay mode</span>`);
-  s.push(`<span class="svc model" title="Analyst and Reviewer model, through Meterless Nightshift">${esc((h.analyst_model || "").split("/").pop())}</span>`);
-  s.push(`<span class="svc" title="${esc(h.zetaris_url)}"><span class="sq ${h.zetaris_key_set ? "ok" : "bad"}"></span>Zetaris <span class="${h.zetaris_key_set ? "set" : ""}">${h.zetaris_key_set ? "key set" : "key missing"}</span></span>`);
-  s.push(`<span class="svc" title="${esc(h.nightshift_url)}"><span class="sq ${h.nightshift_token_set ? "ok" : "bad"}"></span>Nightshift <span class="${h.nightshift_token_set ? "set" : ""}">${h.nightshift_token_set ? "token set" : "token missing"}</span></span>`);
+  // The model and the two services as one group. A square says whether the key or token is set (not whether the service
+  // answers); text appears only when one is missing. In replay mode neither service is used, so both are shown faded.
+  const id = (h.analyst_model || "").split("/").pop();
+  const model = id.split("-").filter((w) => !/^a?\d+(\.\d+)?b$/i.test(w)).map(capital).join(" ") || id;  // "Nemotron 3 Ultra"
+  const seg = (name, url, set, what) => h.sample_mode
+    ? `<span class="seg off" title="${name} is not used: this server replays recorded runs">${name}</span>`
+    : `<span class="seg${set ? "" : " bad"}" title="${name} at ${esc(url)}: ${what} ${set ? "set" : "missing"} (this does not test the connection)"><span class="sq ${set ? "ok" : "bad"}"></span>${name}${set ? "" : `<b>no ${what}</b>`}</span>`;
+  s.push(`<span class="svcs" role="group" aria-label="Model and services">
+    <span class="seg model" title="${esc(id)}: the Analyst and Reviewer model, through Meterless Nightshift">${esc(model)}</span>
+    ${seg("Zetaris", h.zetaris_url, h.zetaris_key_set, "key")}${seg("Nightshift", h.nightshift_url, h.nightshift_token_set, "token")}</span>`);
   $("#status").innerHTML = s.join("");
   $("#samples").innerHTML = (h.samples || []).map((x) => `<option value="${esc(x)}">`).join("");
   if (h.sample_mode) { setMode(true); $("#mode-live").disabled = true; $("#mode-live").title = "Off: this server runs in replay mode (SAMPLE_MODE=true)"; }
   syncForm();
 }
+
+// While a run is going, the top bar names its drug, the agent at work (its mascot moving) and the time so far, and opens
+// the run on a click. It reads the run's progress lines itself, so it stays current whatever the page shows. When the
+// run ends the chip stays, marked finished (or stopped, on an error) with the run's time, until the visitor opens that run,
+// dismisses it, or the next run starts. `done` is null while the run goes, then {ok, ended}. The chip is kept in this
+// browser's storage, so it survives a reload or another page of the app; without storage it lasts as long as the page.
+const bar = {id: null, drug: null, sample: false, after: 0, agent: null, started: null, lastTs: null, polling: false, done: null};
+const BAR_KEY = "vigil-runchip";
+try { const kept = JSON.parse(localStorage.getItem(BAR_KEY) || "null"); if (kept?.id) Object.assign(bar, kept); } catch (e) { /* none kept */ }
+function saveBar() {
+  try {
+    if (bar.id) localStorage.setItem(BAR_KEY, JSON.stringify({id: bar.id, drug: bar.drug, sample: bar.sample, started: bar.started, lastTs: bar.lastTs, done: bar.done}));
+    else localStorage.removeItem(BAR_KEY);
+  } catch (e) { /* storage blocked: the chip lasts as long as the page */ }
+}
+function dismissBar() { bar.id = null; bar.done = null; bar.agent = null; $("#runchip")?.remove(); saveBar(); }
+// Opening a finished run's results is reading what the chip announced, so the chip goes.
+function seenRun(id) { if (bar.done && bar.id === id) dismissBar(); }
+function runChip() {
+  const k = bar.agent, d = bar.done, drug = `<span class="rc-drug">${esc(capital(bar.drug || "Investigation"))}</span>`;
+  const replay = bar.sample ? " · replay" : "", time = `<span class="rc-t" id="runchip-t">${barClock()}</span>`;
+  if (d) return `<span class="svc runchip ${d.ok ? "ok" : "bad"}" id="runchip">
+    <button type="button" class="rc-open" title="Open the ${d.ok ? "finished" : "stopped"} investigation (run ${esc(bar.id)})">
+      <span class="sq ${d.ok ? "ok" : "bad"}"></span>${drug}<span class="rc-who">${d.ok ? "Finished" : "Stopped"}${replay}</span>${time}</button>
+    <button type="button" class="rc-x" aria-label="Dismiss" title="Dismiss"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></span>`;
+  return `<span class="svc runchip" id="runchip"><button type="button" class="rc-open" title="Open the investigation in progress (run ${esc(bar.id)})">
+    ${k ? working(k) : `<span class="sq live"></span>`}${drug}<span class="rc-who">${k ? `${esc(AGENT[k])} working` : "Starting"}${replay}</span>${time}</button></span>`;
+}
+function barClock() {
+  if (bar.started == null) return "";
+  const s = Math.max(0, Math.round(((bar.done ? bar.done.ended : Date.now()) - bar.started) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+const redrawChip = () => { const c = $("#runchip"); if (c) c.outerHTML = runChip(); };
+async function followBar(id) {
+  if (bar.polling) return;
+  bar.polling = true;
+  let running = true;
+  while (running) {
+    const [s, ev] = await api(`/runs/${encodeURIComponent(id)}/events?after=${bar.after}`);
+    if (s !== 200) break;
+    if (bar.started == null && Date.parse(ev.events[0]?.ts)) bar.started = Date.parse(ev.events[0].ts);
+    if (ev.events.length) bar.lastTs = Date.parse(ev.events[ev.events.length - 1].ts) || bar.lastTs;
+    bar.after = ev.last_seq;
+    const last = ev.events.filter((x) => MASCOT[x.agent]).pop();
+    if (last && last.agent !== bar.agent) { bar.agent = last.agent; redrawChip(); }
+    running = ev.running;
+    if (running) await new Promise((r) => setTimeout(r, 3000));
+  }
+  // The run has ended: its outcome and its time to the last progress line, then the bar redrawn without a run in progress.
+  let st = null;
+  for (let n = 0; n < 5; n++) {  // the outcome can lag the last progress line by a moment
+    st = (await api(`/runs/${encodeURIComponent(id)}`))[1];
+    if (st?.status !== "running") break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (bar.id === id) { bar.done = {ok: st?.status !== "error", ended: bar.lastTs ?? Date.now()}; saveBar(); }  // "Stopped" only on an error
+  bar.polling = false;
+  if (shown?.d?.run_id === id && current === id) seenRun(id);
+  loadHealth(); loadRuns();
+}
+setInterval(() => { const t = $("#runchip-t"); if (t && !bar.done) t.textContent = barClock(); }, 1000);
+$("#status").addEventListener("click", (e) => {
+  if (e.target.closest(".rc-x")) return dismissBar();
+  if (e.target.closest(".rc-open") && bar.id && current !== bar.id) openRun(bar.id);
+});
 
 function setMode(sample) {
   sampleMode = sample;
@@ -850,42 +1023,108 @@ function follow(runId, drug) {
   setLanding(false);
   clearTimeout(pollTimer);
   shown = null;
-  const started = Date.now();
+  // The clock counts from when the run started, not from when this page opened it, so it keeps its time when the
+  // visitor looks at another run and comes back. A run ID without a time takes the first progress line's time instead.
+  const fromId = runStart(runId);
+  let started = fromId ?? Date.now();
+  const clock = () => {
+    const s = Math.max(0, Math.round((Date.now() - started) / 1000)), el = $("#elapsed");
+    if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  // The clock ticks each second, apart from the 2-second progress polls; it stops when the page leaves this run's view.
+  const ticker = setInterval(() => { if (current !== runId || !$("#elapsed")) return clearInterval(ticker); clock(); }, 1000);
   let after = 0;
   const seen = new Set();
   $("#main").innerHTML = `
-    <header class="masthead"><div class="mast-row"><h1 class="title">${esc(drug || "Investigation")}</h1><span class="elapsed" id="elapsed">0:00</span></div>
-      <div class="facts"><span><b>In progress</b></span><span>Run <span class="mono">${esc(runId)}</span></span></div></header>
-    <div class="section" style="margin-top:22px"><ol class="proc" id="stages"></ol></div>
+    <header class="masthead"><div class="mast-row"><h1 class="title">${esc(drug || "Investigation")}</h1><span class="elapsed" title="Time since the run started"><span class="sq live"></span><b id="elapsed">0:00</b> elapsed</span></div>
+      <div class="facts"><span><b id="run-state">In progress</b></span><span>Run <span class="mono">${esc(runId)}</span></span></div></header>
+    <section class="stage" aria-label="Progress">
+      <ol class="crew" id="crew"></ol>
+      <p class="says" id="says" aria-hidden="true"></p>
+    </section>
+    <div class="section" style="margin-top:28px"><ol class="proc steps with-crew" id="stages"></ol></div>
     <div class="log" id="log" aria-live="polite"></div>`;
-  const drawStages = (active) => {
-    $("#stages").innerHTML = STAGES.map(([k, name, what]) =>
-      `<li class="${!seen.has(k) ? "pending" : k === active ? "active" : ""}"><span class="who">${name}</span><span class="what">${what}</span></li>`).join("");
+  // An agent is waiting until its first progress line, working while it wrote the latest one, and standing by otherwise:
+  // never "done", as an agent can start again (the Reviewer re-checks after the Skeptic's challenge).
+  const state = (k, active) => !seen.has(k) ? "pending" : k === active ? "active" : "idle";
+  const STATE = {pending: "Waiting", active: "Working", idle: "Standing by"};
+  let drawn = "";
+  const drawStages = (active, says) => {
+    drawSays(says);
+    const key = `${active}|${[...seen].join()}`;
+    if (key === drawn) return;
+    drawn = key;
+    $("#stages").innerHTML = STAGES.map(([k, name, what]) => {
+      const s = state(k, active);
+      return `<li class="${s}"><span class="who">${s === "active" ? working(k) : sprite(k)}${name}</span><span class="what">${what}</span><span class="st">${s === "active" ? `<span class="sq live"></span>` : ""}${STATE[s]}</span></li>`;
+    }).join("");
+    $("#crew").innerHTML = STAGES.map(([k, name]) => {
+      const s = state(k, active);
+      return `<li class="${s}"><span class="fig">${s === "active" ? working(k) : sprite(k)}</span><span class="nm">${name}</span><span class="st">${STATE[s]}</span></li>`;
+    }).join("");
+  };
+  const drawSays = (says) => {
+    // The agent's latest progress line, without the agent's name it starts with (the bubble gives it in bold).
+    const line = says && says.line.startsWith(AGENT[says.agent] + " ") ? says.line.slice(AGENT[says.agent].length + 1) : says?.line;
+    const el = $("#says");
+    el.innerHTML = says ? `<b>${esc(AGENT[says.agent])}</b>${says.sample_mode ? "[replay] " : ""}${esc(line)}` : "Starting the run…";
+    el.title = says ? `${AGENT[says.agent]}: ${says.line}` : "";
   };
   drawStages(null);
-  const tick = async () => {
-    if (current !== runId) return;
-    const s = Math.round((Date.now() - started) / 1000);
-    const el = $("#elapsed");
-    if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-    const [es, ev] = await api(`/runs/${encodeURIComponent(runId)}/events?after=${after}`);
-    if (es === 200) {
-      after = ev.last_seq;
-      if (ev.events.length) {
-        const log = $("#log");
-        const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
-        log.insertAdjacentHTML("beforeend", ev.events.map((x) => `<div class="ln"><span class="t">${esc((x.ts || "").slice(11, 19))}</span><span class="a">${esc(AGENT[x.agent] || x.agent)}</span><span>${x.sample_mode ? "[replay] " : ""}${esc(x.line)}</span></div>`).join(""));
-        if (stick) log.scrollTop = log.scrollHeight;
-        let last = null;
-        for (const x of ev.events) if (STAGES.some(([k]) => k === x.agent)) { seen.add(x.agent); last = x.agent; }
-        if (last) drawStages(last);
-      }
-    }
-    const [ss, st] = await api(`/runs/${encodeURIComponent(runId)}`);
-    if (st.status === "running") { pollTimer = setTimeout(tick, 2000); return; }
+  // A replay comes back from the server in a few seconds. Its progress lines are played out here at a readable pace,
+  // about 25 seconds in all, with how far the playback has got and a link to skip to the result. Every line shown is
+  // the replay's own; only the pace is the page's. A live run's lines show as soon as they arrive.
+  const queue = [];                                   // lines fetched but not shown yet
+  // replay: the run is a replay; paced: its lines are played at a readable pace (until the visitor skips).
+  let replay = false, paced = false, total = 0, done = 0, ended = null;  // ended: [HTTP status, body] once the run has finished
+  const show = (batch) => {
+    const log = $("#log");
+    if (!log || !batch.length) return;
+    const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+    log.insertAdjacentHTML("beforeend", batch.map((x) => `<div class="ln"><span class="t">${esc(clockTime(x.ts))}</span><span class="a">${sprite(x.agent)}${esc(AGENT[x.agent] || x.agent)}</span><span>${x.sample_mode ? "[replay] " : ""}${esc(x.line)}</span></div>`).join(""));
+    if (stick) log.scrollTop = log.scrollHeight;
+    let last = null, says = null;
+    for (const x of batch) if (STAGES.some(([k]) => k === x.agent)) { seen.add(x.agent); last = x.agent; says = x; }
+    if (last) drawStages(last, says);
+    done += batch.length;
+    const n = $("#replay-n");
+    if (n) n.textContent = `${num(done)} of ${num(total)}`;
+  };
+  const finish = () => {
     loadRuns(); loadHealth();
+    const [ss, st] = ended;
     if (st.status === "success") render(st);
     else showError(st, drug, ss);
+  };
+  const pump = setInterval(() => {
+    if (current !== runId || !$("#log")) return clearInterval(pump);
+    if (queue.length) show(queue.splice(0, paced ? Math.max(1, Math.ceil(total / 250)) : queue.length));
+    if (!queue.length && ended) { clearInterval(pump); finish(); }
+  }, 100);
+  const markReplay = () => {
+    replay = paced = true;
+    $("#run-state").textContent = "Replaying a recorded run";
+    $(".elapsed").outerHTML = `<span class="elapsed" title="Progress lines of the replay shown so far; the page plays them at a readable pace">
+      <span class="sq live"></span><b id="replay-n">0 of 0</b> lines replayed <button type="button" class="link skip" id="skip">Skip to the result</button></span>`;
+    $("#skip").onclick = () => { paced = false; show(queue.splice(0)); };  // the rest at once, and later lines as they come
+  };
+  const fetchLines = async () => {
+    const [es, ev] = await api(`/runs/${encodeURIComponent(runId)}/events?after=${after}`);
+    if (es !== 200) return;
+    if (fromId == null && after === 0 && Date.parse(ev.events[0]?.ts)) { started = Date.parse(ev.events[0].ts); clock(); }
+    after = ev.last_seq;
+    if (!replay && ev.events.some((x) => x.sample_mode)) markReplay();
+    queue.push(...ev.events);
+    total += ev.events.length;
+  };
+  const tick = async () => {
+    if (current !== runId) return;
+    clock();
+    await fetchLines();
+    const [ss, st] = await api(`/runs/${encodeURIComponent(runId)}`);
+    if (st.status === "running") { pollTimer = setTimeout(tick, replay ? 700 : 2000); return; }  // a replay is short: check often
+    await fetchLines();  // any lines written between the two calls
+    ended = [ss, st];    // the pump shows the result once every line is out
   };
   tick();
 }
@@ -900,7 +1139,7 @@ async function openRun(runId) {
   $("#main").innerHTML = `<p class="loading">Opening ${esc(runId)}…</p>`;
   const [status, out] = await api(`/runs/${encodeURIComponent(runId)}`);
   if (current !== runId) return;
-  if (out.status === "running") return follow(runId, null);
+  if (out.status === "running") return follow(runId, health?.current_run === runId ? capital(health.current_drug || "") || null : null);
   if (out.status === "success") return render(out);
   showError(out, null, status);
 }
@@ -912,6 +1151,7 @@ function showError(out, drug, status) {
   $("#main").innerHTML = `
     <header class="masthead"><h1 class="title">${esc(drug || (e.type === "RunNotFound" ? "No such run" : "Run failed"))}</h1>
       ${drug ? `<div class="facts"><span><b>Investigation stopped</b></span></div>` : ""}</header>
+    ${drug ? `<div class="stopped">${sprite("orchestrator", "concerned")}</div>` : ""}
     <p class="notice error"><b>${esc(e.type || "Error")}</b>${status ? ` (HTTP ${esc(status)})` : ""}: ${esc(e.message || "The run failed.")}
     ${e.recoverable ? "<br>This can be retried once the service is back." : ""}
     ${out.log_file ? `<br><span class="muted">Trace: <span class="mono">${esc(out.log_file)}</span></span>` : ""}</p>`;
@@ -936,7 +1176,7 @@ function reasonText(s) {
   return capital(s);
 }
 
-// Why an item needs a decision.
+// Why an item needs a person.
 function needReasons(x) {
   const r = (x.manual_review?.needed ? x.manual_review.reasons || [] : []).map(reasonText);
   if (!r.length && reviewNext(x)) r.push("Vigil ranks it review next");
@@ -999,15 +1239,14 @@ async function render(res) {
   const out = res.output, d = out.dossier, c = d.counts, data = d.data || {};
   const sm = d.sample_mode, rt = d.run_time || {};
   shown = {res, d};
-  decisions = {};
+  seenRun(d.run_id);
   openRows = new Set();
-  drafts = {};
   filter = null;
   const h = [];
 
   h.push(`<header class="masthead">
     <div class="mast-row"><h1 class="title">${esc(d.drug)}</h1>
-      <div class="actions"><button class="btn-plain" id="export">Export decisions (CSV)</button><button class="btn-plain" id="dl">Download dossier</button><button class="btn-plain" id="copy-id" title="${esc(d.run_id)}">Copy run ID</button></div></div>
+      <div class="actions"><button class="btn-plain" id="export">Export queue (CSV)</button><button class="btn-plain" id="dl">Download dossier</button><button class="btn-plain" id="copy-id" title="${esc(d.run_id)}">Copy run ID</button></div></div>
     <div class="facts">
       <span>Investigated <b>${esc(when(d.run_id, true))}</b></span>
       <span>Label effective <b>${esc(fmtDate(data.label_effective))}</b></span>
@@ -1033,18 +1272,17 @@ async function render(res) {
 
   // The queue comes straight after the figures, so its first rows are on the first screen; what changed since the last run follows it.
   h.push(`<section class="section" id="queue-section"><h2>Review queue</h2>
-    <p class="sec-lede">Ranked by the pipeline. Open an item for the evidence, the agents' exchange and your decision.</p>
+    <p class="sec-lede">Ranked by the pipeline. Open an item for the evidence and the agents' exchange.</p>
     <p class="legend"><span>${COMPUTED} from openFDA data in Zetaris; model claims about it are re-checked in code</span><span><span class="src m">Written by a model</span>: Nemotron Ultra, through Meterless Nightshift; the Analyst's text is checked by the Reviewer</span></p>
-    <div class="qbar"><div class="tabs" id="tabs" role="tablist"></div><input class="search" type="search" id="q-search" placeholder="Search reactions" aria-label="Search reactions"></div>
+    <div class="qbar"><div class="tabs" id="tabs" role="tablist"></div><label class="search-box"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><input class="search" type="search" id="q-search" placeholder="Search reactions" aria-label="Search reactions"></label></div>
     <div class="table-wrap" id="queue-panel" role="tabpanel"><table class="queue" id="queue"></table></div></section>`);
 
   h.push(sinceLastRun(d));
 
-  // The summary and how the agents got there: one column, side by side on wide screens so the page fills the width.
-  h.push(`<div class="pair">`);
-  if (d.analyst_summary) h.push(`<section class="section"><h2>The Analyst's summary</h2><p class="sec-lede">${MODEL("Analyst")} after the last review round.</p><p class="prose">${esc(d.analyst_summary)}</p></section>`);
+  // The summary, then how the agents got there, one under the other at every width.
+  if (d.analyst_summary) h.push(`<section class="section"><h2>The Analyst's summary</h2><p class="sec-lede">${MODEL("Analyst")} after the last review round.</p><p class="prose summary">${esc(d.analyst_summary)}</p></section>`);
   h.push(`<section class="section"><h2>How the agents got here</h2>
-    <p class="sec-lede">The Reviewer's objections go back to the Analyst; the Skeptic's challenges go back to the Reviewer.</p>${proceedings(d)}</section></div>`);
+    <p class="sec-lede">The Reviewer's objections go back to the Analyst; the Skeptic's challenges go back to the Reviewer.</p>${proceedings(d)}</section>`);
 
   h.push(`<section class="section">`);
   h.push(safetyNet(d.safety_net));
@@ -1067,10 +1305,6 @@ async function render(res) {
   renderQueue();
   drawProgress();
   window.scrollTo({top: 0});
-
-  const [ds, body] = await api(`/runs/${encodeURIComponent(d.run_id)}/decisions`);
-  if (shown?.d !== d) return;
-  if (ds === 200) { decisions = body.decisions || {}; renderQueue(); drawProgress(); }
 }
 
 function fig(v, k, s, key) { return `<div class="fig${key ? " key" : ""}"><div class="v">${v}</div><div class="k">${esc(k)}</div><div class="s">${esc(s)}</div></div>`; }
@@ -1079,11 +1313,23 @@ function drawProgress() {
   const el = $("#progress");
   if (!el || !shown) return;
   const q = shown.d.review_queue || [], c = shown.d.counts;
-  const need = q.filter(toDecide), done = need.filter((x) => decisions[x.reaction]);
-  const others = Object.keys(decisions).filter((r) => !need.some((x) => x.reaction === r)).length;
-  el.innerHTML = `<span>Your review: <b>${done.length}</b> of <b>${need.length}</b> items that need a decision${others ? `, and ${others} other${others === 1 ? "" : "s"}` : ""}</span>
-    <div class="bar" role="progressbar" aria-label="Your review progress" aria-valuemin="0" aria-valuemax="${need.length}" aria-valuenow="${done.length}"><div style="width:${need.length ? 100 * done.length / need.length : 0}%"></div></div>
-    <span class="rest"><span><b>${num(c.unresolved)}</b> unresolved</span><span><b>${num(c.pending)}</b> not reached</span><span><b>${num(c.skeptic_challenged)}</b> challenged by the Skeptic</span></span>`;
+  // The run's open questions as figures: what needs the analyst first, then what Vigil left open. A figure with a queue
+  // tab of its own opens that tab; a zero is greyed.
+  const need = q.filter(toDecide).length;
+  const figs = [["needs", need, need === 1 ? "item needs you" : "items need you", "lead"], [null, c.unresolved, "unresolved"],
+                ["pending", c.pending, "not reached"], [null, c.skeptic_challenged, "challenged by the Skeptic"]];
+  el.innerHTML = figs.map(([tab, n, what, cls = ""]) => {
+    const go = tab && TABS.some(([k, , f]) => k === tab && q.some(f)) && n;
+    const inner = `<b>${num(n)}</b><span>${what}</span>${go ? CHEV : ""}`;
+    return go ? `<button type="button" class="pg ${cls}" data-go="${tab}" title="Show them in the queue">${inner}</button>`
+              : `<span class="pg ${cls}${n ? "" : " zero"}">${inner}</span>`;
+  }).join("");
+  el.onclick = (e) => {
+    const b = e.target.closest("[data-go]");
+    if (!b) return;
+    filter = b.dataset.go; renderQueue();
+    $(".qbar")?.scrollIntoView({behavior: "smooth", block: "start"});
+  };
 }
 
 function sinceLastRun(d) {
@@ -1109,19 +1355,19 @@ function sinceLastRun(d) {
 
 function proceedings(d) {
   const c = d.counts, rows = [];
-  rows.push(["Data Clerk", `Registered the openFDA counts and the current label in Zetaris; ${num(c.passing_evans)} of ${num(c.reactions_screened)} reactions pass the screen.`]);
-  rows.push(["Analyst", `Shown the ${num(c.shown_to_analyst)} strongest, picked ${num(c.picked_by_analyst)}; ${num(c.decided_by_rule)} settled by code rules.`]);
+  rows.push(["data_clerk", "Data Clerk", `Registered the openFDA counts and the current label in Zetaris; ${num(c.passing_evans)} of ${num(c.reactions_screened)} reactions pass the screen.`]);
+  rows.push(["analyst", "Analyst", `Shown the ${num(c.shown_to_analyst)} strongest, picked ${num(c.picked_by_analyst)}; ${num(c.decided_by_rule)} settled by code rules.`]);
   for (const r of d.rounds || []) {
-    if (r.round === "skeptic") rows.push(["Skeptic", `Checked ${num(r.checked)} against co-reported drugs; ${num(r.challenged)} challenged, ${num(r.priority_changed)} changed priority.`]);
-    else rows.push([`Reviewer, round ${r.round}`, `${num(r.reviewed)} accepted, ${num(r.rejected)} rejected, ${num(r.unresolved)} unresolved${r.missing ? `; named ${num(r.missing)} more to assess` : ""}.`]);
+    if (r.round === "skeptic") rows.push(["skeptic", "Skeptic", `Checked ${num(r.checked)} against co-reported drugs; ${num(r.challenged)} challenged, ${num(r.priority_changed)} changed priority.`]);
+    else rows.push(["reviewer", `Reviewer, round ${r.round}`, `${num(r.reviewed)} accepted, ${num(r.rejected)} rejected, ${num(r.unresolved)} unresolved${r.missing ? `; named ${num(r.missing)} more to assess` : ""}.`]);
   }
-  rows.push(["World Model", `${num(d.world_model?.decisions_recorded)} verdicts recorded against this label version; ${num((d.world_model?.reopened || []).length)} reopened.`]);
-  return `<ol class="proc">${rows.map(([w, t]) => `<li><span class="who">${esc(w)}</span><span class="what">${esc(t)}</span></li>`).join("")}</ol>`;
+  rows.push(["world_model", "World Model", `${num(d.world_model?.decisions_recorded)} verdicts recorded against this label version; ${num((d.world_model?.reopened || []).length)} reopened.`]);
+  return `<ol class="proc with-crew">${rows.map(([k, w, t]) => `<li><span class="who">${sprite(k)}${esc(w)}</span><span class="what">${esc(t)}</span></li>`).join("")}</ol>`;
 }
 
 // ---------- queue ----------
 const TABS = [
-  ["needs", "To decide", toDecide],
+  ["needs", "Needs you", toDecide],
   ["review_next", "Review next", reviewNext],
   ["aside", "Set aside by Vigil", setAside],
   ["pending", "Not reached", (q) => ["pending", "not_reviewed", "failed"].includes(q.workflow_status)],
@@ -1146,46 +1392,15 @@ function renderQueue() {
   };
   const rows = visibleRows();
   const hi = Math.max(4, ...rows.map(([x]) => x.uncertainty?.prr_ci95?.[1] ?? x.prr ?? 0));
-  $("#queue").innerHTML = `<thead><tr><th class="tw"></th><th class="rank">No.</th><th>Reaction</th><th>Vigil's call</th><th class="r hide-sm">Reports</th><th class="r">PRR, 95% CI</th><th>Your decision</th></tr></thead>
-    <tbody>${rows.map(([x, i]) => queueRow(x, i, hi) + (openRows.has(i) ? detailRow(x, i) : "")).join("") || `<tr><td colspan="7" class="empty" style="padding:24px 10px">Nothing in this view.</td></tr>`}</tbody>`;
+  $("#queue").innerHTML = `<thead><tr><th class="tw"></th><th class="rank">No.</th><th>Reaction</th><th>Vigil's call</th><th class="r hide-sm">Reports</th><th class="r">PRR, 95% CI</th></tr></thead>
+    <tbody>${rows.map(([x, i]) => queueRow(x, i, hi) + (openRows.has(i) ? detailRow(x, i) : "")).join("") || `<tr><td colspan="6" class="empty" style="padding:24px 10px">Nothing in this view.</td></tr>`}</tbody>`;
   $("#queue").onclick = onQueueClick;
-  $("#queue").oninput = (e) => { if (e.target.matches(".decide textarea, .decide .row2 input")) syncSave(e.target.closest(".decide")); };
-  $("#queue").onkeydown = (e) => { if (e.target.matches(".opts [role=radio]")) radioKeys(e); };
 }
-
-// The decision options are one radio group: arrow keys move the choice, and only the chosen option is in the tab order.
-function choose(opt) {
-  opt.parentElement.querySelectorAll("[role=radio]").forEach((b) => {
-    b.setAttribute("aria-checked", String(b === opt));
-    b.tabIndex = b === opt ? 0 : -1;
-  });
-}
-function radioKeys(e) {
-  const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
-  if (!step && e.key !== " ") return;
-  e.preventDefault();
-  const all = [...e.target.parentElement.querySelectorAll("[role=radio]")];
-  const opt = step ? all[(all.indexOf(e.target) + step + all.length) % all.length] : e.target;
-  choose(opt);
-  opt.focus();
-  const panel = opt.closest(".decide");
-  if (panel) syncSave(panel);
-}
-const radios = (opts, chosen) => opts.map(([k, name], n) =>
-  `<button type="button" role="radio" data-d="${k}" aria-checked="${k === chosen}" tabindex="${k === chosen || (!chosen && n === 0) ? 0 : -1}">${name}</button>`).join("");
 
 // The current tab's items, in queue order, as [item, queue index].
 function visibleRows() {
   const f = TABS.find(([k]) => k === filter)[2];
   return (shown.d.review_queue || []).map((x, i) => [x, i]).filter(([x]) => f(x) && (!qSearch || (x.reaction || "").toLowerCase().includes(qSearch)));
-}
-
-// The next item in the current tab that still needs a decision, after queue index i and wrapping round; -1 if none.
-function nextUndecided(i) {
-  const rows = visibleRows(), at = rows.findIndex(([, j]) => j === i);
-  const order = [...rows.slice(at + 1), ...rows.slice(0, Math.max(at, 0))];
-  const next = order.find(([x, j]) => j !== i && toDecide(x) && !decisions[x.reaction]);
-  return next ? next[1] : -1;
 }
 
 // One item is open at a time: opening an item closes the one before.
@@ -1209,19 +1424,8 @@ function toggle(tr) {
 function onQueueClick(e) {
   const qb = e.target.closest("[data-q]");
   if (qb) return showQuery(qb);
-  const jump = e.target.closest("[data-jump]");
-  if (jump) {
-    const panel = jump.closest(".doc").querySelector(".decide");
-    panel.scrollIntoView({block: "start"});
-    return $(".opts [tabindex='0']", panel).focus({preventScroll: true});
-  }
-  const opt = e.target.closest(".opts [role=radio]");
-  if (opt) {
-    choose(opt);
-    return syncSave(opt.closest(".decide"));
-  }
-  const save = e.target.closest(".decide .save");
-  if (save) return saveDecision(save.closest(".decide"));
+  const tab = e.target.closest(".dtab");
+  if (tab) return showTab(tab.closest(".doc"), tab.dataset.tab);
   if (e.target.closest("tr.detail")) return;
   const tr = e.target.closest("tr.row");
   if (tr) toggle(tr);
@@ -1253,16 +1457,14 @@ function forest(x, hi, w = 110) {
 }
 
 function queueRow(x, i, hi) {
-  const ci = x.uncertainty?.prr_ci95, call = callOf(x), dec = decisions[x.reaction];
+  const ci = x.uncertainty?.prr_ci95, call = callOf(x);
   return `<tr class="row${openRows.has(i) ? " open" : ""}" data-i="${i}">
     <td class="tw">${CHEV}</td>
     <td class="rank">${String(i + 1).padStart(2, "0")}</td>
     <td class="rx"><button type="button" class="rowbtn" aria-expanded="${openRows.has(i)}" aria-controls="detail-${i}">${esc(x.reaction)}</button>${x.context && x.context !== "clinical_event" ? `<span class="ctx">${capital(label(x.context))}</span>` : ""}<div class="why">${whyLines(x).join("")}</div></td>
     <td class="callc"><span class="call"><span class="st ${esc(call)}">${capital(label(call))}</span>${x.label_coverage ? `<small class="cov ${esc(x.label_coverage)}">Label: ${label(x.label_coverage)}</small>` : ""}</span></td>
     <td class="r hide-sm">${num(x.a)}</td>
-    <td class="r prrc"><div class="forest" title="${ci ? `95% CI ${ci[0]} to ${ci[1]}` : ""}">${forest(x, hi)}<span class="v">${x.prr ?? "–"}</span></div></td>
-    <td class="yours">${dec ? `<span class="dec ${esc(dec.decision)}">${DONE[dec.decision] || label(dec.decision)}</span><small>${dec.by ? `${esc(dec.by)}, ` : ""}${esc(fmtTs(dec.decided_at))}</small>`
-                            : toDecide(x) ? `<span class="todo">To decide</span>` : `<span class="muted">–</span>`}${drafts[x.reaction] ? `<small class="draft">Unsaved draft</small>` : ""}</td></tr>`;
+    <td class="r prrc"><div class="forest" title="${ci ? `95% CI ${ci[0]} to ${ci[1]}` : ""}">${forest(x, hi)}<span class="v">${x.prr ?? "–"}</span></div></td></tr>`;
 }
 
 // An item's case in brief: why it was set aside or needs you, the figures for it, and the strongest reason to doubt it.
@@ -1275,7 +1477,7 @@ function whyLines(x) {
   // An item the agents did not reach has its status here, not a reason against it.
   const notReached = ["pending", "not_reviewed", "failed"].includes(x.workflow_status) && x.status_note;
   if (ag) lines.push(`<div class="against"><span class="lbl">${notReached ? "Status" : "Against"}</span><span class="t${ag[1] ? " model-text" : ""}" ${ag[1] ? 'title="The Reviewer\'s objection, written by a model"' : ""}>${ag[0]}</span></div>`);
-  // Why it is to decide, unless the line above already says it or the call column does ("review next", "pending").
+  // Why it needs you, unless the line above already says it or the call column does ("review next", "pending").
   const need = toDecide(x) ? needReasons(x).filter((r) => esc(r) !== ag?.[0] && r !== "Vigil ranks it review next"
                                                          && !(notReached && r === "Not reached by the agents in this run")) : [];
   if (need.length) lines.splice(setAside(x) ? 1 : 0, 0, `<div class="need"><span class="lbl">Needs you</span><span class="t">${esc(need[0])}${need.length > 1 ? ` <span class="more">+${need.length - 1} more</span>` : ""}</span></div>`);
@@ -1290,9 +1492,7 @@ function threadHtml(x) {
       ${h.objection && h.objection !== x.strongest_objection ? `<div><i>Objection:</i> <span class="model-text">${esc(h.objection)}</span></div>` : ""}</div></li>`).join("");
 }
 
-function detailRow(x, i) { return `<tr class="detail" id="detail-${i}"><td colspan="7">${detail(x, i, shown.d)}</td></tr>`; }
-
-function blk(title, body, aside) { return `<div class="blk"><h3 class="bh"><span>${title}</span>${aside ? `<span class="aside">${aside}</span>` : ""}</h3>${body}</div>`; }
+function detailRow(x, i) { return `<tr class="detail" id="detail-${i}"><td colspan="6">${detail(x, i, shown.d)}</td></tr>`; }
 
 function roundName(r) {
   return typeof r === "number" ? `Round ${r}` : r === "skeptic" ? "After the Skeptic's challenge" : r === "skeptic_revision" ? "Revision after the challenge" : capital(label(r));
@@ -1307,78 +1507,18 @@ const qlinks = (i, ids) => {
   return ids.length ? `<button class="link qlink" data-q="${esc(ids.join(" "))}" data-i="${i}" title="${esc(ids.join(", "))}">${ids.length === 1 ? "Its SQL" : `Its ${ids.length} SQL queries`}</button>` : "";
 };
 
-// What a decision means for this kind of item.
-function decideWhat(x) {
-  if (x.workflow_status === "unresolved") return "The Reviewer left the dispute with the Analyst unresolved, so Vigil made no call to agree with.";
-  if (noCall(x)) return "The agents did not reach this item in this run, so Vigil made no call to agree with.";
-  if (setAside(x)) return `Vigil set this aside: ${asideReason(x).replace(/^./, (c) => c.toLowerCase())}. It was flagged for you anyway; Agree keeps it set aside.`;
-  if (reviewNext(x)) return "Vigil ranks this for a closer look. Agree to confirm, close it, or escalate it for assessment.";
-  return "";
+function showTab(doc, key) {
+  doc.querySelectorAll(".dtab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === key)));
+  doc.querySelectorAll(".dpanel").forEach((p) => { p.hidden = p.dataset.panel !== key; });
 }
 
-function decidePanel(x, i) {
-  const dec = decisions[x.reaction], what = decideWhat(x), opts = DECIDE.filter(([k]) => k !== "agree" || !noCall(x));
-  const dr = drafts[x.reaction] || {};
-  return `<div class="decide" data-reaction="${esc(x.reaction)}" data-i="${i}">
-    <div class="dh"><b>Your decision</b><span>Vigil's call: ${capital(label(callOf(x)))}${x.label_coverage ? `, label ${label(x.label_coverage)}` : ""}</span></div>
-    ${what ? `<p class="what">${what}</p>` : ""}
-    ${dec ? `<p class="was"><span class="dec ${esc(dec.decision)}">${DONE[dec.decision]}</span> · ${dec.by ? `${esc(dec.by)}, ` : ""}${esc(fmtTs(dec.decided_at))}${dec.times_decided > 1 ? ` · changed ${dec.times_decided - 1} time${dec.times_decided === 2 ? "" : "s"}, every version kept` : ""}<br>${esc(dec.note)}</p>` : ""}
-    <div class="opts" role="radiogroup" aria-label="Your decision on ${esc(x.reaction)}">${radios(opts, dr.d)}</div>
-    <label class="field-label" for="note-${i}">Why? <span class="req">(required, saved with the decision for the audit trail)</span></label>
-    <div class="noterow"><textarea id="note-${i}" placeholder="Your reason">${esc(dr.note)}</textarea>
-    <div class="row2"><input type="text" aria-label="Your name" placeholder="Your name (optional)" value="${esc(dr.by ?? reviewer)}" maxlength="80">
-      <button type="button" class="save"${dr.d && dr.note?.trim() ? "" : " disabled"}>${nextUndecided(i) >= 0 ? "Save and open next" : dec ? "Save new decision" : "Save decision"}</button><span class="msg" role="status"></span></div></div>
-  </div>`;
-}
-
-// Save needs a choice and a note. Whatever is entered is kept as the item's draft until it is saved.
-function syncSave(panel) {
-  const chosen = $(".opts [aria-checked='true']", panel), note = $("textarea", panel).value;
-  $(".save", panel).disabled = !chosen || !note.trim();
-  const r = panel.dataset.reaction, had = !!drafts[r];
-  if (chosen || note.trim()) drafts[r] = {d: chosen?.dataset.d, note, by: $(".row2 input", panel).value};
-  else delete drafts[r];
-  const yours = $(`#queue tr.row[data-i="${panel.dataset.i}"] .yours`);
-  if (!yours || had === !!drafts[r]) return;
-  if (drafts[r]) yours.insertAdjacentHTML("beforeend", `<small class="draft">Unsaved draft</small>`);
-  else yours.querySelector(".draft")?.remove();
-}
-
-async function saveDecision(panel) {
-  const chosen = $(".opts [aria-checked='true']", panel), note = $("textarea", panel).value.trim();
-  const by = $(".row2 input", panel).value.trim(), msg = $(".msg", panel);
-  if (!chosen) return;
-  if (!note) { msg.className = "msg err"; msg.textContent = "Add a note: a decision has to say why."; $("textarea", panel).focus(); return; }
-  try { localStorage.setItem("vigil-reviewer", by); } catch (e) { /* not remembered */ }
-  reviewer = by;
-  $(".save", panel).disabled = true;
-  msg.className = "msg"; msg.textContent = "Saving…";
-  const [status, out] = await api(`/runs/${encodeURIComponent(shown.d.run_id)}/decisions`, {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({reaction: panel.dataset.reaction, decision: chosen.dataset.d, note, by})});
-  if (status !== 201) { msg.className = "msg err"; msg.textContent = out.error?.message || "Not saved."; $(".save", panel).disabled = false; return; }
-  const prev = decisions[panel.dataset.reaction];
-  decisions[panel.dataset.reaction] = {...out.decision, times_decided: (prev?.times_decided || 0) + 1};
-  delete drafts[panel.dataset.reaction];
-  // Advance to the next undecided item in this tab, or close the item when none is left.
-  const next = nextUndecided(+panel.dataset.i);
-  openRows = new Set(next >= 0 ? [next] : []);
-  renderQueue();
-  drawProgress();
-  const saved = `${DONE[chosen.dataset.d]}: ${panel.dataset.reaction}.`;
-  if (next >= 0) {
-    toast(saved);
-    $(`#queue tr.detail .opts [tabindex="0"]`)?.focus({preventScroll: true});
-    $(`#queue tr.row[data-i="${next}"]`)?.scrollIntoView({block: "start"});
-    return;
-  }
-  const need = shown.d.review_queue.filter(toDecide), left = need.filter((x) => !decisions[x.reaction]).length;
-  toast(left ? `${saved} Nothing left to decide in this view; ${left} more under To decide.`
-             : `${saved} All ${need.length} decided. Export decisions (CSV) is at the top of the page.`, 6000);
-}
-
+// An SQL link opens what hides its queries first: their tab, or the folds around them.
 function showQuery(btn) {
   const dets = btn.dataset.q.split(" ").map((q) => document.getElementById(`ev-${btn.dataset.i}-${q}`)).filter(Boolean);
   if (!dets.length) return;
+  const panel = dets[0].closest(".dpanel");
+  if (panel) showTab(panel.closest(".doc"), panel.dataset.panel);
+  for (let f = dets[0].parentElement.closest("details"); f; f = f.parentElement.closest("details")) f.open = true;
   for (const det of dets) {
     det.open = true;
     det.classList.add("flash");
@@ -1387,9 +1527,12 @@ function showQuery(btn) {
   dets[0].scrollIntoView({behavior: "smooth", block: "center"});
 }
 
+// An open item: what stays in view (status, the strongest objection, why it needs you, the key figures), then one tab
+// at a time. A tab's note gives its outcome in a line where it has one; its aside carries the source marks and SQL links.
 function detail(x, i, d) {
-  // Reading order: why it is here and the strongest doubt, then the evidence, then the decision, which closes the item.
-  const main = [], side = [], head = [`<button type="button" class="link jump" data-jump="${i}">Go to your decision</button>`];
+  // Reading order: why it is here and the strongest doubt, then the evidence.
+  const head = [], tabs = [];
+  const tab = (key, name, body, aside = "", note = "") => tabs.push({key, name, body, aside, note});
   if (x.status_note) head.push(`<p class="statusline">${esc(capital(x.status_note))}</p>`);
   if (x.strongest_objection) head.push(objectionHtml(x));
   const need = toDecide(x) ? needReasons(x) : [];
@@ -1398,64 +1541,81 @@ function detail(x, i, d) {
   const why = [];
   if (x.reasoning) why.push(`<p class="reading">${esc(x.reasoning)}</p>`);
   if (x.next_check) why.push(`<p class="reading"><b>Next check.</b> ${esc(x.next_check)}</p>`);
-  main.push(blk("Analyst's assessment", why.join("") || `<p class="muted small">No assessment.</p>`,
-    (x.classification ? `<span>${capital(label(x.classification))}${x.decided_by ? `, by ${label(x.decided_by)}` : ""}</span>` : "") + (x.decided_by === "rule" ? COMPUTED : MODEL("Analyst"))));
+  tab("assess", "Assessment", why.join("") || `<p class="muted small">No assessment.</p>`,
+    (x.classification ? `<span>${capital(label(x.classification))}${x.decided_by ? `, by ${label(x.decided_by)}` : ""}</span>` : "") + (x.decided_by === "rule" ? COMPUTED : MODEL("Analyst")));
 
   const thread = threadHtml(x);
-  main.push(blk("The exchange", thread ? `<ol class="thread">${thread}</ol>` : (x.reviewer ? `<p class="small">${esc(x.reviewer)}</p>` : `<p class="muted small">Not reviewed.</p>`),
-    thread ? MODEL("Reviewer") : ""));
+  tab("exchange", "Exchange", thread ? `<ol class="thread">${thread}</ol>` : (x.reviewer ? `<p class="small">${esc(x.reviewer)}</p>` : `<p class="muted small">Not reviewed.</p>`),
+    thread ? MODEL("Reviewer") : "");
 
   const src = [];
   if (x.report_sources?.summary) src.push(`<p class="small">${esc(x.report_sources.summary)}</p>`);
   // The cluster's reasons repeat the country shares the summary above already gives, so only its note and meaning follow.
   const rc = x.reporting_cluster;
   if (rc?.needed) src.push(`<div class="cluster"><b>${esc(capital(rc.note))}.</b> ${x.report_sources?.summary ? "" : `${esc(capital((rc.reasons || []).join("; ")))}. `}${esc(rc.why)}</div>`);
-  if (src.length) main.push(blk("Who reported it", src.join(""), COMPUTED + qlinks(i, x.report_sources?.query_ids || [])));
+  if (src.length) tab("reporters", "Reporters", src.join(""), COMPUTED + qlinks(i, x.report_sources?.query_ids || []));
 
   const co = x.co_reported_drugs;
   if (co) {
     const pairs = (co.pairs || []).map((p) => `<tr><td style="text-transform:capitalize">${esc(p.co_drug)}</td><td class="r">${pct(p.share)}</td><td class="r">${p.co_drug_prr ?? "–"}</td><td class="r"><b>${p.adjusted_prr ?? "–"}</b></td><td>${p.possible_interaction ? "possible" : "–"}</td></tr>`).join("");
-    main.push(blk(`Skeptic: ${skepticOutcome(co)}`,`${pairs ? `<div class="table-wrap"><table class="small-table"><thead><tr><th>Co-reported drug</th><th class="r">On reports</th><th class="r">Its own PRR</th><th class="r">PRR adjusted for it</th><th>Interaction</th></tr></thead><tbody>${pairs}</tbody></table></div>` : ""}
-      <details class="sub"><summary>The Skeptic's working</summary><p class="small" style="margin-top:6px">${esc(co.summary)}</p></details>`, COMPUTED));
+    tab("skeptic", "Skeptic", `${pairs ? `<div class="table-wrap"><table class="small-table"><thead><tr><th>Co-reported drug</th><th class="r">On reports</th><th class="r">Its own PRR</th><th class="r">PRR adjusted for it</th><th>Interaction</th></tr></thead><tbody>${pairs}</tbody></table></div>` : ""}
+      <details class="sub"><summary>The Skeptic's working</summary><p class="small" style="margin-top:6px">${esc(co.summary)}</p></details>`, COMPUTED,
+      capital(skepticOutcome(co)));
   }
-
-  const u = x.uncertainty || {}, se = x.seriousness || {};
-  side.push(blk("Disproportionality", `<dl class="facts-list">
-    <dt>Reports with the drug</dt><dd>${num(x.a)}</dd>
-    <dt>Expected</dt><dd>${num(u.expected)}</dd>
-    <dt>PRR</dt><dd><b>${x.prr ?? "–"}</b>${u.prr_ci95 ? `, 95% CI ${u.prr_ci95[0]} to ${u.prr_ci95[1]}` : ""}</dd>
-    <dt>Chi-squared</dt><dd>${num(x.chi2)}</dd>
-    <dt title="Information component: log2 of observed over expected reports">IC</dt><dd>${u.ic ?? "–"}</dd>
-    <dt>IC, lower 95% bound</dt><dd>${u.ic025 ?? "–"}</dd>
-    <dt>Serious</dt><dd>${num(se.serious)} (${pct(se.serious_share)})</dd>
-    <dt>Fatal</dt><dd>${num(se.death)} (${pct(se.death_share)})</dd>
-    ${u.thin_evidence ? `<dt>Thin evidence</dt><dd>${esc((u.thin_reasons || []).join("; "))}</dd>` : ""}</dl>`,
-    COMPUTED + qlinks(i, [qid(d, "disproportionality screen"), d.data?.seriousness_query])));
 
   const lab = [];
   if (x.label_quote) lab.push(`<p class="quote">“${esc(x.label_quote)}”</p><p class="quote-src">${capital(label(x.label_section))}, matched on “${esc(x.label_term)}”. The quote is taken from the label text by code.</p>`);
   else if (x.label_search?.summary) lab.push(`<p class="small">${esc(x.label_search.summary)}</p>`);
-  side.push(blk(`Label${x.label_coverage ? `: ${label(x.label_coverage)}` : ""}`, lab.join("") || `<p class="muted small">No label search recorded.</p>`,
-    COMPUTED + qlinks(i, [qid(d, "label text")])));
+  tab("label", "Label", lab.join("") || `<p class="muted small">No label search recorded.</p>`, COMPUTED + qlinks(i, [qid(d, "label text")]),
+    x.label_coverage ? capital(label(x.label_coverage)) : "");
+
+  const u = x.uncertainty || {}, se = x.seriousness || {};
+  // The figures in three groups, each a short ruled list: the screen's own numbers (with the PRR's CI drawn against the
+  // threshold), the information component, and seriousness. A thin-evidence warning follows them.
+  const fgroup = (title, rows, foot = "") => `<section class="fgroup"><h4>${title}</h4><dl>${rows.map(([k, v, t]) =>
+    `<div><dt${t ? ` title="${t}"` : ""}>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>${foot}</section>`;
+  const fci = u.prr_ci95;
+  tab("numbers", "Figures", `<div class="figs">
+    ${fgroup("Disproportionality", [["Reports with the drug", num(x.a)], ["Expected", num(u.expected)],
+      ["PRR", `<b>${x.prr ?? "–"}</b>`, "Proportional reporting ratio"], ["95% CI", fci ? `${fci[0]} to ${fci[1]}` : "–"], ["Chi-squared", num(x.chi2)]],
+      x.prr != null ? `<div class="fplot">${forest(x, Math.max(4, fci?.[1] ?? x.prr), 200)}<small>The tick is the screen's threshold, PRR 2</small></div>` : "")}
+    ${fgroup("Information component", [["IC", u.ic ?? "–"], ["IC, lower 95% bound", u.ic025 ?? "–"]],
+      `<p class="fnote">Log2 of observed over expected reports. A lower bound above 0 means more reports than expected, allowing for chance.</p>`)}
+    ${fgroup("Seriousness", [["Serious", `${num(se.serious)} <small>${pct(se.serious_share)}</small>`], ["Fatal", `${num(se.death)} <small>${pct(se.death_share)}</small>`]])}
+    </div>${u.thin_evidence ? `<p class="fwarn"><b>Thin evidence.</b> ${esc(capital((u.thin_reasons || []).join("; ")))}</p>` : ""}`,
+    COMPUTED + qlinks(i, [qid(d, "disproportionality screen"), d.data?.seriousness_query]));
 
   const url = shown.res.output.case_reports?.[x.reaction];
-  if (url) side.push(blk("The case reports", `<p class="cases"><a href="${esc(url)}" target="_blank" rel="noopener">Open the matching FAERS reports on openFDA</a></p>
-    <p class="small muted">The first 10 reports, as openFDA's JSON. Its <span class="mono">meta.results.total</span> is the number of matching reports, which can differ slightly from the count above as openFDA updates.</p>`));
+  if (url) tab("cases", "Case reports", `<p class="cases"><a href="${esc(url)}" target="_blank" rel="noopener">Open the matching FAERS reports on openFDA</a></p>
+    <p class="small muted">The first 10 reports, as openFDA's JSON. Its <span class="mono">meta.results.total</span> is the number of matching reports, which can differ slightly from the count above as openFDA updates.</p>`);
 
   const sl = x.since_last_run;
-  if (sl) side.push(blk(`Since the last run: ${label(sl.status)}`, `<p class="small">${esc(sl.why)}</p>${(sl.changed || []).length ? `<ul class="list">${sl.changed.map((c) => `<li>${capital(label(c.field))}: ${label(c.earlier)} → <b>${label(c.now)}</b></li>`).join("")}</ul>` : ""}`, COMPUTED));
+  if (sl) tab("since", "Since last run", `<p class="small">${esc(sl.why)}</p>${(sl.changed || []).length ? `<ul class="list">${sl.changed.map((c) => `<li>${capital(label(c.field))}: ${label(c.earlier)} → <b>${label(c.now)}</b></li>`).join("")}</ul>` : ""}`, COMPUTED,
+    capital(label(sl.status)));
 
   const ids = [...new Set([...(x.evidence || []), qid(d, "disproportionality screen"), d.data?.seriousness_query, qid(d, "label text"),
                            ...(x.report_sources?.query_ids || []), ...(co?.query_ids || [])].filter(Boolean))];
-  let ev = "";
   if (ids.length) {
     const eq = d.evidence_queries || {};
-    ev = blk("Evidence", `<div class="queries">${ids.map((id) => eq[id]
+    tab("sql", "SQL", `<div class="queries">${ids.map((id) => eq[id]
       ? `<details id="ev-${i}-${esc(id)}"><summary><span class="mono">${esc(id)}</span><span>${esc(capital(eq[id].purpose))}</span></summary><pre>${esc(eq[id].sql)}</pre></details>`
-      : `<div class="mono muted" style="padding:6px 0">${esc(id)}</div>`).join("")}</div>`, `${ids.length} Zetaris queries`);
+      : `<div class="mono muted" style="padding:6px 0">${esc(id)}</div>`).join("")}</div>`, "", `${ids.length} Zetaris queries`);
   }
-  return `<div class="doc">${head.join("")}<div class="doc-cols"><div>${main.join("")}</div><div>${side.join("")}</div></div>${ev}${decidePanel(x, i)}</div>`;
+
+  const ci = u.prr_ci95, stats = [
+    ["PRR", x.prr != null ? `<b>${x.prr}</b>${ci ? `<small>95% CI ${ci[0]} to ${ci[1]}</small>` : ""}` : "–"],
+    ["Reports", `<b>${num(x.a)}</b><small>${num(u.expected)} expected</small>`],
+    ["Serious", `<b>${pct(se.serious_share)}</b><small>${num(se.serious)} reports</small>`],
+    ["Fatal", `<b>${pct(se.death_share)}</b><small>${num(se.death)} reports</small>`],
+    ["Label", `<b class="cov ${esc(x.label_coverage || "")}">${capital(label(x.label_coverage))}</b>${x.label_section ? `<small>${capital(label(x.label_section))}</small>` : ""}`]];
+  return `<div class="doc">${head.join("")}<dl class="dstats">${stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
+    <div class="dtabs" role="tablist">${tabs.map((t, j) => `<button type="button" role="tab" class="dtab" data-tab="${t.key}" aria-selected="${j === 0}">${t.name}</button>`).join("")}</div>
+    ${tabs.map((t, j) => `<section class="dpanel" data-panel="${t.key}" role="tabpanel"${j ? " hidden" : ""}>
+      ${t.note || t.aside ? `<div class="dhead">${t.note ? `<p class="dnote">${t.note}</p>` : ""}<span class="aside">${t.aside}</span></div>` : ""}${t.body}</section>`).join("")}</div>`;
 }
+
+
+
 
 // ---------- export ----------
 function download(name, text, type) {
@@ -1471,19 +1631,19 @@ function exportCsv() {
   const cols = ["run_id", "drug", "label_effective", "faers_data_to", "replay_of", "rank", "reaction", "vigil_call", "label_coverage", "context",
                 "classification", "decided_by", "reports", "prr", "prr_ci_low", "prr_ci_high", "serious_share", "needs_you_reasons",
                 "reporting_cluster", "skeptic_outcome", "strongest_objection", "analyst_reasoning", "next_check",
-                "your_decision", "your_note", "decided_by_person", "decided_at", "times_decided", "zetaris_queries", "openfda_reports"];
+                "zetaris_queries", "openfda_reports"];
   const rows = (d.review_queue || []).map((x, i) => {
-    const dec = decisions[x.reaction] || {}, ci = x.uncertainty?.prr_ci95 || [];
+    const ci = x.uncertainty?.prr_ci95 || [];
     return [d.run_id, d.drug, d.data?.label_effective, d.data?.data_last_updated, d.sample_mode?.replayed_from_run, i + 1, x.reaction,
             callOf(x), x.label_coverage, x.context, x.classification, x.decided_by, x.a, x.prr, ci[0], ci[1], x.seriousness?.serious_share,
             (x.manual_review?.reasons || []).join("; "), (x.reporting_cluster?.needed ? (x.reporting_cluster.reasons || []).join("; ") : ""),
             x.co_reported_drugs?.outcome, x.strongest_objection, x.reasoning, x.next_check,
-            dec.decision, dec.note, dec.by, dec.decided_at, dec.times_decided, (x.evidence || []).join(" "), cases[x.reaction]];
+            (x.evidence || []).join(" "), cases[x.reaction]];
   });
   const cell = (v) => { v = v == null ? "" : String(v); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
   const csv = "﻿" + [cols, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
-  download(`vigil-${d.drug}-${d.run_id}-decisions.csv`, csv, "text/csv;charset=utf-8");
-  toast(`Exported ${rows.length} items, ${Object.keys(decisions).length} with your decision`);
+  download(`vigil-${d.drug}-${d.run_id}-queue.csv`, csv, "text/csv;charset=utf-8");
+  toast(`Exported ${rows.length} items`);
 }
 
 // ---------- appendices ----------
@@ -1519,7 +1679,7 @@ function worldModel(wm) {
 // and the drug form as its one action. With no finished investigation yet, the pieces are left out.
 function setLanding(on) { $(".layout").classList.toggle("landing-mode", on); document.body.classList.toggle("landing", on); }
 
-// The item the landing page shows: the newest finished run's first review-next item that went through review, else its first item to decide.
+// The item the landing page shows: the newest finished run's first review-next item that went through review, else its first item that needs you.
 // Before this machine has finished any run, the item comes from GET /example: a replay of a recorded live run that the
 // server makes once, outside the run list (example is then true).
 async function landingItem() {
@@ -1538,16 +1698,15 @@ async function intro() {
   setSide(false);
   const samples = health?.samples || [];
   const live = !sampleMode;
-  const recent = runs.filter((r) => r.status === "success").slice(0, 6);
   $("#main").innerHTML = `<div class="lp">
     <section class="lp-hero">
       <div class="lp-hero-text">
         <h1>Drug reactions worth a closer look</h1>
         <p class="lp-lead">Give Vigil a drug. It screens every reaction reported with it in openFDA's adverse-event data, has agents argue
-          over the strongest, and hands you a ranked queue with the evidence and the objections. You make the call.</p>
+          over the strongest, and hands you a ranked queue with the evidence and the objections behind each item.</p>
         <form class="lp-form" id="hero-form" autocomplete="off">
           <label class="field-label" for="hero-drug">Drug, by generic name</label>
-          <div class="lp-form-row"><input class="input" type="text" id="hero-drug" placeholder="montelukast" list="samples" required spellcheck="false">
+          <div class="lp-form-row"><input class="input" type="text" id="hero-drug" placeholder="E.g. montelukast" list="samples" required spellcheck="false">
             <button class="lp-go" type="submit"${health?.busy ? " disabled" : ""}>${live ? "Start investigation" : "Replay investigation"}</button></div>
           <p class="hint">${health?.busy ? "An investigation is running; one at a time." : live ? "About 5 to 10 minutes: openFDA data is registered in Zetaris and the agents run on Nemotron through Nightshift."
             : "Replays a recorded live run in a few seconds, with no Zetaris, Nightshift or network."}</p>
@@ -1557,11 +1716,8 @@ async function intro() {
       <div class="lp-hero-fig" id="lp-hero-fig"></div>
     </section>
     <div id="lp-proof"></div>
-    ${recent.length ? `<section class="lp-recent"><h2>Recent investigations</h2>
-      <ul>${recent.map((r) => `<li><button type="button" data-run="${esc(r.run_id)}"><span class="drug">${esc(r.drug)}</span>
-        <span class="when">${esc(when(r.run_id, true))}${r.sample_mode ? " · replay" : ""}</span>
-        <span class="n"><b>${num(r.review_next)}</b> to review next</span></button></li>`).join("")}</ul></section>` : ""}
-    <footer class="lp-close"><p class="lp-word" aria-hidden="true">Vigil</p>
+    <footer class="lp-close"><div class="lp-sign" aria-hidden="true"><p class="lp-word">Vigil</p>
+      <div class="lp-crew">${["orchestrator", "data_clerk", "analyst", "reviewer", "skeptic"].map((k, i) => idle(k, i * 3)).join("")}</div></div>
       <p>Drug reaction review. Counts and labels from openFDA FAERS, registered in Zetaris; the Analyst and Reviewer run on Nemotron Ultra
         through Meterless Nightshift.</p>
       <p>FAERS reports show an association between a drug and a reported event, not that the drug caused it. This is not medical advice.</p></footer>
@@ -1577,10 +1733,7 @@ async function intro() {
     if (s) { $("#hero-drug").value = s.dataset.drug; $("#hero-drug").focus(); return; }
     const r = e.target.closest("[data-run]");
     if (r) return openRun(r.dataset.run);
-    const opt = e.target.closest(".lp-decide .opts [role=radio]");
-    if (opt) choose(opt);
   });
-  lp.addEventListener("keydown", (e) => { if (e.target.matches(".lp-decide [role=radio]")) radioKeys(e); });
 
   const got = await landingItem();
   if (!got || lp !== $(".lp")) return;  // nothing finished yet, or the visitor has already moved on
@@ -1611,7 +1764,7 @@ async function intro() {
         <dt>Serious</dt><dd>${num(se.serious)} (${pct(se.serious_share)})</dd>
         <dt>Label</dt><dd>${capital(label(x.label_coverage))}${x.label_section ? `, ${label(x.label_section)}` : ""}</dd></dl>
       ${x.label_quote ? `<p class="quote">“${esc(x.label_quote)}”</p>` : ""}</div>
-    <figcaption>The same item, as the Reviewer's code sees it.</figcaption></figure></section>`);
+    <figcaption>Item ${i + 1}, as the Reviewer's code sees it.</figcaption></figure></section>`);
 
   const thread = threadHtml(x);
   if (thread || x.strongest_objection) rows.push(`<section class="lp-row"><div class="lp-say"><h2>The agents argue before you see it</h2>
@@ -1620,28 +1773,16 @@ async function intro() {
     <figure class="lp-stage"><div class="lp-frag" data-ui>
       ${x.strongest_objection ? objectionHtml(x) : ""}
       ${thread ? `<ol class="thread">${thread}</ol>` : ""}</div>
-    <figcaption>The same item: the Reviewer's objection and each round of the exchange.</figcaption></figure></section>`);
+    <figcaption>Item ${i + 1}: the Reviewer's objection and each round of the exchange.</figcaption></figure></section>`);
 
-  const what = decideWhat(x), opts = DECIDE.filter(([k]) => k !== "agree" || !noCall(x));
-  rows.push(`<section class="lp-row lp-field"><div class="lp-say"><h2>You make the call, on the record</h2>
-      <p>Each item says why it needs you and what Vigil's call was. A decision needs a reason, every version is kept, and the whole review
-        exports to CSV with the evidence behind each item.</p></div>
-    <figure class="lp-stage lp-narrow"><div class="lp-frag lp-decide" data-ui>
-      <div class="dh"><b>Your decision</b><span>Vigil's call: ${capital(label(callOf(x)))}</span></div>
-      ${what ? `<p class="what">${what}</p>` : ""}
-      <div class="opts" role="radiogroup" aria-label="Decision (try it; nothing is saved here)">${radios(opts)}</div>
-    </div><figcaption>Try the choice; nothing is saved here.</figcaption></figure></section>`);
   $("#lp-proof").innerHTML = rows.join("");
 
   // Each section rises in as it scrolls into view; without the observer, or with reduced motion, everything is simply shown.
   if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
     const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("seen"); io.unobserve(e.target); } }), {rootMargin: "0px 0px -12% 0px"});
-    lp.querySelectorAll(".lp-row, .lp-recent").forEach((el) => { el.classList.add("rise"); io.observe(el); });
+    lp.querySelectorAll(".lp-row").forEach((el) => { el.classList.add("rise"); io.observe(el); });
   }
 }
-
-// Drafts live only in this page, so leaving it with one unsaved asks first.
-window.addEventListener("beforeunload", (e) => { if (Object.keys(drafts).length) e.preventDefault(); });
 
 // Back to the address without a run ID shows the landing page, not the last investigation under it.
 window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== current) openRun(id); else if (!id && current) goHome(); });

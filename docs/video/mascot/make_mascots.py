@@ -2,7 +2,7 @@
 Run: python -I docs/video/mascot/make_mascots.py
 
 Writes transparent PNG sprites to sprites/ for the video, plus vigil-mascots.svg, a sheet
-of every sprite. All sprites share one 20 x 18 pixel canvas, so they line up when swapped
+of every sprite, and 1x copies to app/static/mascots/ for the investigation page. All sprites share one 20 x 18 pixel canvas, so they line up when swapped
 frame to frame. Colours come from the Vigil logo in docs/logo.
 """
 from pathlib import Path
@@ -109,14 +109,14 @@ def build(who, expression=None, pose="stand", bob=False):
     return g
 
 
-def to_png(g, path):
+def to_png(g, path, scale=PNG_SCALE):
     img = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
     for y, row in enumerate(g):
         for x, c in enumerate(row):
             if c != ".":
                 h = COLOURS[c].lstrip("#")
                 img.putpixel((x, y), tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (255,))
-    img.resize((CANVAS_W * PNG_SCALE, CANVAS_H * PNG_SCALE), Image.NEAREST).save(path)
+    img.resize((CANVAS_W * scale, CANVAS_H * scale), Image.NEAREST).save(path)
 
 
 def svg_sprite(g, cx, bottom, px):
@@ -181,6 +181,14 @@ if __name__ == "__main__":
     for pose, expr in (("wave", "happy"), ("point", "look"), ("cheer", "happy")):
         to_png(build("vigil", expr, pose), sprites / f"vigil-{pose}.png")
         count += 1
+
+    # The investigation page's copies: one pixel per canvas pixel, scaled up in CSS (image-rendering: pixelated).
+    page = here.parents[2] / "app" / "static" / "mascots"
+    page.mkdir(exist_ok=True)
+    for who in CAST:
+        for expr in EXPRESSIONS:
+            to_png(build(who, expr), page / f"{who}-{expr}.png", 1)
+        to_png(build(who, bob=True), page / f"{who}-bob.png", 1)
 
     hero = [(e, build("vigil", e)) for e in ("neutral", "happy", "alert", "concerned", "blink")]
     hero += [(p, build("vigil", e, p)) for p, e in (("wave", "happy"), ("point", "look"), ("cheer", "happy"))]

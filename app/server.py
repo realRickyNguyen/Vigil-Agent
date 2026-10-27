@@ -36,6 +36,8 @@ MAX_BODY = 64 * 1024
 PAGE = Path(__file__).parent / "static" / "index.html"
 FONTS = Path(__file__).parent / "static" / "fonts"  # the page's fonts, served locally so it works offline
 FONT_FILE = re.compile(r"^[a-z0-9-]+\.woff2$")  # a bare file name, so no path can leave FONTS
+MASCOTS = Path(__file__).parent / "static" / "mascots"  # the agents' pixel sprites (docs/video/mascot/make_mascots.py)
+MASCOT_FILE = re.compile(r"^[a-z]+-[a-z]+\.png$")
 
 AGENTS = [
     {"name": "Data Clerk", "role": "Registers openFDA FAERS counts and the current label in Zetaris and computes "
@@ -166,6 +168,8 @@ class Runner:
         self._lock = threading.Lock()
         self._busy = threading.Lock()
         self.current: str | None = None
+        self.current_drug: str | None = None  # the run in progress, for the page's top bar and run list
+        self.current_sample = False
         self.results: dict[str, dict] = {}
         self._example_lock = threading.Lock()
         self._example: dict | None = None
@@ -198,6 +202,7 @@ class Runner:
             self._busy.release()
             raise
         self.current = tracer.run_id
+        self.current_drug, self.current_sample = request["drug"], settings.sample_mode
         with self._lock:
             self.results[tracer.run_id] = {"run_id": tracer.run_id, "status": "running",
                                            "log_file": f"logs/{tracer.path.name}"}
@@ -219,7 +224,7 @@ class Runner:
             with self._lock:
                 self.results[tracer.run_id] = out
         finally:
-            self.current = None
+            self.current = self.current_drug = None
             self._busy.release()
 
     def run(self, body: dict) -> tuple[int, dict]:
@@ -252,7 +257,8 @@ class Runner:
         """GET /runs: the run in progress, then every dossier in logs/, newest first."""
         runs = []
         if self.current:
-            runs.append({"run_id": self.current, "status": "running"})
+            runs.append({"run_id": self.current, "status": "running", "drug": self.current_drug,
+                         "sample_mode": self.current_sample})
         for f in sorted(self.settings.logs_dir.glob("dossier-*.json"), reverse=True):
             try:
                 d = json.loads(f.read_text(encoding="utf-8"))
@@ -323,6 +329,7 @@ class Runner:
     def health(self) -> dict:
         s = self.settings
         return {"status": "ok", "busy": self.current is not None, "current_run": self.current,
+                "current_drug": self.current_drug, "current_sample_mode": self.current_sample,
                 "sample_mode": s.sample_mode, "samples": sample_mode.available(s),
                 "analyst_model": s.analyst_model, "reviewer_model": s.reviewer_model,
                 # Addresses only, no keys: shows whether a container reaches the host's services.
@@ -361,6 +368,11 @@ def make_handler(runner: Runner):
                 if FONT_FILE.match(name) and (FONTS / name).is_file():
                     return self._file(FONTS / name, "font/woff2", "max-age=86400")
                 return self._send(404, error_body(None, "NotFound", f"no font {name}", False))
+            if path.startswith("/mascots/"):
+                name = path[len("/mascots/"):]
+                if MASCOT_FILE.match(name) and (MASCOTS / name).is_file():
+                    return self._file(MASCOTS / name, "image/png", "max-age=86400")
+                return self._send(404, error_body(None, "NotFound", f"no mascot {name}", False))
             if path == "/health":
                 return self._send(200, runner.health())
             if path == "/runs":

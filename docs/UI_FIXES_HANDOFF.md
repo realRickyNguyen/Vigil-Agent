@@ -1,5 +1,7 @@
 # Handoff: investigation page UI fixes (26 Oct 2026)
 
+> **Historical.** This is the 26 Oct session log. For what the page does now, read **`docs/UI_GUIDE.md`**, which is kept current. Some of what follows has since changed: analyst decisions were removed, and the summary no longer sits beside the agents' rounds.
+
 Continue the UI work on `app/static/index.html`, the investigation page served at `GET /`. Read `CLAUDE.md`, then this file.
 
 ## Current state (26 Oct, evening): read this first

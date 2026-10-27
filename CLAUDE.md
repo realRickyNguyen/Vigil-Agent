@@ -51,6 +51,7 @@ Built: `run.py` (no arguments: the API in `app/server.py`), `Dockerfile`, `app/`
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
 - `docs/ideas/VIGIL.md`: the design and its reasons.
 - `docs/HACKATHON_KNOWLEDGE.md`: confirmed rules, stack behaviour, Zetaris and Nightshift findings.
+- `docs/UI_GUIDE.md`: every feature of the web UI (`app/static/index.html`), where its code is, and the rules it follows.
 ## Working notes for Claude
 - Mark confirmed facts, proposals and unknowns separately; do not invent organiser details that are placeholders.
 - Check ideas against the three tests: removal (would it work without Zetaris/Meterless?), collaboration (does one agent change another's work?), hardcoding (does a new input still give a real answer?).
@@ -59,3 +60,4 @@ Built: `run.py` (no arguments: the API in `app/server.py`), `Dockerfile`, `app/`
 - Run agents only one investigation at a time: parallel runs compete for the NVIDIA per-minute cap. Python must run with `-I`.
 - Never weaken the Reviewer's code checks or the gold set to make a run look better. Gold labels were made by an AI and need a person's review before any accuracy number is quoted publicly.
 - Update `docs/HANDOFF.md` when the state changes, so the next session or a teammate can pick up the work.
+- Any change to the web UI also updates `docs/UI_GUIDE.md` (the matching section and its change log) in the same change.

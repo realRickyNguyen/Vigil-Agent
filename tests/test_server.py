@@ -107,6 +107,9 @@ def test_one_run_at_a_time_and_polling(tmp_path):
     status, busy = runner.run({"drug": "metformin"})
     assert status == 409 and busy["error"]["type"] == "Busy" and busy["error"]["recoverable"] is True
     assert runner.health()["busy"] and runner.health()["current_run"] == "first"
+    assert runner.health()["current_drug"] == "montelukast"  # named the busy run, not the refused metformin request
+    assert runner.list_runs()[0] == {"run_id": "first", "status": "running", "drug": "montelukast",
+                                     "sample_mode": runner.health()["current_sample_mode"]}
     release.set()
     for _ in range(50):
         if runner.status("first")[1]["status"] != "running":
@@ -114,6 +117,7 @@ def test_one_run_at_a_time_and_polling(tmp_path):
         threading.Event().wait(0.05)
     status, done = runner.status("first")
     assert status == 200 and done["status"] == "success" and not runner.health()["busy"]
+    assert runner.health()["current_drug"] is None
     # A finished run is also found from its dossier after a restart.
     assert Runner(settings(tmp_path), slow).status("first")[1]["status"] == "success"
     assert Runner(settings(tmp_path), slow).status("nope")[0] == 404
@@ -194,6 +198,10 @@ def test_http_round_trip(tmp_path):
         with urllib.request.urlopen(base + "/fonts/publicsans.woff2", timeout=10) as r:
             assert r.headers["Content-Type"] == "font/woff2" and r.read(4) == b"wOF2"
         for bad in ("/fonts/nope.woff2", "/fonts/..%2Fserver.py", "/fonts/OFL-newsreader.txt"):
+            assert call(bad)[0] == 404
+        with urllib.request.urlopen(base + "/mascots/reviewer-squint.png", timeout=10) as r:
+            assert r.headers["Content-Type"] == "image/png" and r.read(4) == b"\x89PNG"
+        for bad in ("/mascots/nope-nope.png", "/mascots/..%2Fserver.py", "/mascots/reviewer-squint.svg"):
             assert call(bad)[0] == 404
         status, out = call("/run", b"{not json")
         assert status == 400 and out["error"]["type"] == "InvalidInput"
