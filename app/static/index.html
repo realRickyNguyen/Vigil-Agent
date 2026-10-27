@@ -614,6 +614,34 @@ ol.proc .ag-hist ol.tl.only li:not(.key) { display: none; }
   ol.tl .l { grid-column: 2; }
 }
 .stopped .mascot { width: 60px; height: 54px; display: block; margin: 18px 0 4px; }
+/* A stopped run: Vigil's frowning sprite beside a ruled summary, how far the agents got, and what to do next. */
+.st-stopped { display: inline-flex; align-items: center; gap: 7px; }
+.st-stopped b { color: var(--signal); font-weight: 600; }
+.sr { display: grid; grid-template-columns: 120px minmax(0, 720px); gap: 32px; padding: 32px 0 8px; }
+.sr-fig { padding-top: 4px; }
+.sr-fig .mascot { width: 112px; height: 100px; display: block; }
+.sr-body h2 { font: 600 24px/1.25 var(--serif); margin: 0 0 8px; }
+.sr-lede { margin: 0 0 22px; color: var(--ink-2); font-size: 15px; line-height: 1.55; }
+dl.sr-facts { border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule); padding: 14px 0; gap: 8px 28px; }
+dl.sr-facts dd { color: var(--ink); }
+.sr-h { font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 24px 0 10px; }
+ol.sr-crew { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--rule); }
+ol.sr-crew li { display: grid; justify-items: start; gap: 2px; padding: 12px 10px 12px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
+ol.sr-crew .mascot { width: 40px; height: 36px; margin-bottom: 4px; }
+ol.sr-crew .nm { font-weight: 600; }
+ol.sr-crew .st { font-size: 12px; color: var(--muted); }
+ol.sr-crew li.at .st { color: var(--signal); font-weight: 600; }
+ol.sr-crew li.pending .mascot { opacity: .35; filter: grayscale(1); }
+ol.sr-crew li.pending .nm { color: var(--muted); font-weight: 500; }
+.sr-actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 28px; }
+.sr-again { padding: 9px 16px; border-radius: 2px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: 600 13px var(--sans); cursor: pointer; }
+.sr-again:hover { filter: brightness(1.15); }
+.sr-actions .link { font-size: 13px; }
+@media (max-width: 640px) {
+  .sr { grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 22px; }
+  .sr-fig .mascot { width: 72px; height: 64px; }
+  ol.sr-crew { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 900px) {
   .crew .fig { height: 72px; }
   .crew li::before { top: 71px; }
@@ -693,6 +721,19 @@ body.floating .layout.side-open .sidebar > * { animation: blind-content .42s cub
 .lp { --lp-gap: 64px; }
 .lp-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--lp-gap); align-items: center; padding: 48px 0 0; min-height: calc(100vh - 160px); }
 .lp h1 { font: 600 clamp(38px, 4.4vw, 104px)/1.02 var(--serif); letter-spacing: -.03em; margin: 0; max-width: 20ch; }
+/* The Analyst's magnifier, drawn larger in the crew's pixel style (prop-magnifier.png, 14 x 14), after the title's last
+   word and kept on its line. It tilts now and then, in pixel steps like the logo's dance; still with reduced motion. */
+.lp h1 .lp-last { white-space: nowrap; }
+.lp-mag { display: inline-block; width: .78em; height: .78em; margin-left: .14em; vertical-align: -.04em; transform-origin: 30% 30%;
+  animation: lp-scan 4.2s steps(1) infinite; }
+@keyframes lp-scan {
+  0%, 62% { transform: none; }
+  66% { transform: rotate(-10deg) translate(-.02em, .02em); }
+  74% { transform: rotate(8deg) translate(.03em, -.02em); }
+  82% { transform: rotate(-4deg); }
+  88%, 100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .lp-mag { animation: none; } }
 .lp-lead { font: 19px/1.55 var(--serif-text); color: var(--ink); margin: 32px 0 40px; max-width: 34em; }
 .lp-form .field-label { font-size: 13px; }
 .lp-form-row { display: flex; gap: 8px; max-width: 520px; }
@@ -1294,16 +1335,7 @@ function showError(out, drug, status) {
   setLanding(false);
   shown = null;
   const e = out.error || {};
-  // A run someone stopped is not a failure: it says so plainly, without an HTTP status.
-  if (e.type === "Stopped") {
-    $("#main").innerHTML = `
-      <header class="masthead"><h1 class="title">${esc(drug || "Investigation stopped")}</h1>
-        <div class="facts"><span><b>Stopped before it finished</b></span>${out.run_id ? `<span>Run <span class="mono">${esc(out.run_id)}</span></span>` : ""}</div></header>
-      <div class="stopped">${sprite("orchestrator", "concerned")}</div>
-      <p class="notice">This run was stopped${out.execution_time_seconds != null ? ` after ${num(Math.round(out.execution_time_seconds))} s` : ""}. No results were kept, so it is not in the list of investigations.
-      ${out.log_file ? `<br><span class="muted">Its trace up to the stop: <span class="mono">${esc(out.log_file)}</span></span>` : ""}</p>`;
-    return;
-  }
+  if (e.type === "Stopped") return stoppedView(out, drug);
   $("#main").innerHTML = `
     <header class="masthead"><h1 class="title">${esc(drug || (e.type === "RunNotFound" ? "No such run" : "Run failed"))}</h1>
       ${drug ? `<div class="facts"><span><b>Investigation stopped</b></span></div>` : ""}</header>
@@ -1311,6 +1343,49 @@ function showError(out, drug, status) {
     <p class="notice error"><b>${esc(e.type || "Error")}</b>${status ? ` (HTTP ${esc(status)})` : ""}: ${esc(e.message || "The run failed.")}
     ${e.recoverable ? "<br>This can be retried once the service is back." : ""}
     ${out.log_file ? `<br><span class="muted">Trace: <span class="mono">${esc(out.log_file)}</span></span>` : ""}</p>`;
+}
+
+// A run someone stopped is not a failure, so it gets its own page: what was kept (nothing), how far the agents got and
+// the last thing done before the stop, both read from the run's trace, and a way to start the drug again.
+async function stoppedView(out, drug) {
+  const id = out.run_id, name = capital(drug || out.drug || "");
+  const secs = out.execution_time_seconds != null ? `${num(Math.round(out.execution_time_seconds))} s` : "–";
+  $("#main").innerHTML = `
+    <header class="masthead"><h1 class="title">${esc(name || "Investigation")}</h1>
+      <div class="facts"><span class="st-stopped"><span class="sq bad"></span><b>Stopped</b></span><span>Ran for <b>${secs}</b></span>${id ? `<span>Run <span class="mono">${esc(id)}</span></span>` : ""}</div></header>
+    <section class="sr">
+      <div class="sr-fig">${sprite("orchestrator", "concerned")}</div>
+      <div class="sr-body">
+        <h2>Stopped before it finished</h2>
+        <p class="sr-lede">This investigation was stopped while it was running. Nothing from it was kept: there is no review queue for it, and it is not in the list of investigations.</p>
+        <dl class="facts-list sr-facts" id="sr-facts">
+          <dt>Stopped at</dt><dd id="sr-at">–</dd>
+          <dt>Last step</dt><dd id="sr-last" class="muted">Reading the trace…</dd>
+          ${out.log_file ? `<dt>Trace</dt><dd class="mono">${esc(out.log_file)}</dd>` : ""}
+        </dl>
+        <h3 class="sr-h">How far the agents got</h3>
+        <ol class="sr-crew" id="sr-crew">${STAGES.map(([k, n]) => `<li class="pending"><span class="fig">${sprite(k)}</span><span class="nm">${esc(n)}</span><span class="st">–</span></li>`).join("")}</ol>
+        <div class="sr-actions">${name ? `<button type="button" class="sr-again" id="sr-again">Run ${esc(name)} again</button>` : ""}<button type="button" class="link" id="sr-home">Back to the start</button></div>
+      </div>
+    </section>`;
+  $("#sr-home").onclick = () => { history.replaceState(null, "", location.pathname); goHome(); };
+  if (name) $("#sr-again").onclick = () => { goHome(); $("#drug").value = drug || out.drug; $("#run-form").requestSubmit(); };
+  if (!id) return;
+  seenRun(id);  // the header chip for this run goes once its page has been seen, as for a finished run
+  const [s, ev] = await api(`/runs/${encodeURIComponent(id)}/events?after=0`);
+  if (current !== id && location.hash.slice(1) !== id || !$("#sr-crew")) return;
+  if (s !== 200) { $("#sr-last").textContent = "The trace is not available on this server."; return; }
+  const lines = ev.events || [], stop = lines.findIndex((x) => x.event === "stop_requested");
+  const before = stop < 0 ? lines : lines.slice(0, stop);
+  const last = before.filter((x) => STAGES.some(([k]) => k === x.agent)).at(-1);
+  if (stop >= 0) $("#sr-at").textContent = clockTime(lines[stop].ts);
+  $("#sr-last").classList.toggle("muted", !last);
+  $("#sr-last").textContent = last ? last.line : "No agent had started.";
+  const reached = new Set(before.map((x) => x.agent));
+  $("#sr-crew").innerHTML = STAGES.map(([k, n]) => {
+    const r = reached.has(k), at = last?.agent === k;
+    return `<li class="${r ? (at ? "at" : "") : "pending"}"><span class="fig">${sprite(k)}</span><span class="nm">${esc(n)}</span><span class="st">${at ? "Working at the stop" : r ? "Had started" : "Not reached"}</span></li>`;
+  }).join("");
 }
 
 // ---------- what Vigil said about an item ----------
@@ -2037,7 +2112,7 @@ async function intro() {
   $("#main").innerHTML = `<div class="lp">
     <section class="lp-hero">
       <div class="lp-hero-text">
-        <h1>Drug reactions worth a closer look</h1>
+        <h1>Drug reactions worth a closer <span class="lp-last">look<img class="mascot lp-mag" src="/mascots/prop-magnifier.png" alt="" width="14" height="14"></span></h1>
         <p class="lp-lead">Give Vigil a drug. It screens every reaction reported with it in openFDA's adverse-event data, has agents argue
           over the strongest, and hands you a ranked queue with the evidence and the objections behind each item.</p>
         <form class="lp-form" id="hero-form" autocomplete="off">

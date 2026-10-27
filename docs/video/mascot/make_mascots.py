@@ -74,6 +74,25 @@ PROPS = {
                  (16, 5, "K")],
 }
 
+# Standalone props, drawn on their own canvas in the crew's palette: the magnifier beside the landing page's title is
+# the Analyst's, larger (navy rim, pale lens with a white glint, slate collar, orange handle).
+MAGNIFIER = """
+...NNNN.......
+.NNLLLLNN.....
+.NWWLLLLN.....
+NWLLLLLLLN....
+NWLLLLLLLN....
+NLLLLLLLLN....
+NLLLLLLLLN....
+.NLLLLLLN.....
+.NNLLLLNN.....
+...NNNNSS.....
+........SOO...
+.........OOO..
+..........OOO.
+...........OO.
+"""
+
 # name: (top, bottom, eye colour, prop, default expression, one-line role)
 CAST = {
     "vigil":    ("T", "O", "K", None, "neutral", "The product"),
@@ -110,13 +129,14 @@ def build(who, expression=None, pose="stand", bob=False):
 
 
 def to_png(g, path, scale=PNG_SCALE):
-    img = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    w, h = len(g[0]), len(g)  # the crew's 20 x 18 canvas, or a prop's own
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     for y, row in enumerate(g):
         for x, c in enumerate(row):
             if c != ".":
-                h = COLOURS[c].lstrip("#")
-                img.putpixel((x, y), tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (255,))
-    img.resize((CANVAS_W * scale, CANVAS_H * scale), Image.NEAREST).save(path)
+                hx = COLOURS[c].lstrip("#")
+                img.putpixel((x, y), tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4)) + (255,))
+    img.resize((w * scale, h * scale), Image.NEAREST).save(path)
 
 
 def svg_sprite(g, cx, bottom, px):
@@ -189,6 +209,9 @@ if __name__ == "__main__":
         for expr in EXPRESSIONS:
             to_png(build(who, expr), page / f"{who}-{expr}.png", 1)
         to_png(build(who, bob=True), page / f"{who}-bob.png", 1)
+    magnifier = [list(r) for r in MAGNIFIER.strip("\n").split("\n")]
+    to_png(magnifier, sprites / "prop-magnifier.png")
+    to_png(magnifier, page / "prop-magnifier.png", 1)
 
     hero = [(e, build("vigil", e)) for e in ("neutral", "happy", "alert", "concerned", "blink")]
     hero += [(p, build("vigil", e, p)) for p, e in (("wave", "happy"), ("point", "look"), ("cheer", "happy"))]

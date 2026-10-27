@@ -118,7 +118,7 @@ The `#sidebar` element: the form to start a run, and past investigations.
 
 Built by `intro()`. It is full width, with no sidebar.
 
-1. **Hero:** "Drug reactions worth a closer look", a lead paragraph, and the drug form. The field hint is "E.g. montelukast". The button reads "Start investigation" or "Replay investigation" in sample mode. Recorded replays are listed as quick picks.
+1. **Hero:** "Drug reactions worth a closer look", ending in a pixel magnifier (`.lp-mag`, `prop-magnifier.png`) kept on the last word's line, which tilts now and then in pixel steps (still with reduced motion); then a lead paragraph, and the drug form. The field hint is "E.g. montelukast". The button reads "Start investigation" or "Replay investigation" in sample mode. Recorded replays are listed as quick picks.
 2. **Hero figure:** one real queue item ("Needs you / For / Against" lines and the PRR's CI plot) from the newest finished run (`landingItem()`). It is captioned "Item N of the <drug> investigation, <time>. Open it". Before this machine has a run, it comes from `GET /example`, captioned as an example.
 3. **"Numbers from SQL, not from a model":** the same item's figures as the Reviewer's code sees them, captioned "Item N, as the Reviewer's code sees it."
 4. **"The agents argue before you see it":** the same item's objection and exchange, captioned "Item N: the Reviewer's objection and each round of the exchange." Sections 3 and 4 show only this machine's own runs, never the example.
@@ -131,7 +131,14 @@ Sections rise in as they scroll into view (not with reduced motion). The old "Re
 Built by `follow()`.
 
 - **Masthead:** the drug, "In progress", the run ID, and the clock **"■ 0:04 elapsed"** (live square, 21 px mono figures, then the word). The clock counts from the run's start, taken from the run ID's UTC time, and ticks each second.
-- **Stop** (`drawStop()` in `follow()`), beside the clock, for a live run only. A click asks inline, "Stop this run? No results are kept. [Stop] Keep running". Confirming sends `POST /runs/<id>/stop`; the button becomes "Stopping…" and the state "Stopping: waiting for the calls under way", since a model call or query already sent finishes first (often seconds, at most about a minute). The page then shows the stopped view: "Stopped before it finished", how long it ran, that no results were kept, and the trace file. The button goes when the run ends, and replays never show it (they have finished on the server before the page plays them).
+- **Stop** (`drawStop()` in `follow()`), beside the clock, for a live run only. A click asks inline, "Stop this run? No results are kept. [Stop] Keep running". Confirming sends `POST /runs/<id>/stop`; the button becomes "Stopping…" and the state "Stopping: waiting for the calls under way", since a model call or query already sent finishes first (often seconds, at most about a minute). The page then shows the **stopped page** (`stoppedView()`):
+  - masthead: the drug, a red "■ Stopped", "Ran for N s" and the run ID;
+  - Vigil's frowning sprite beside "Stopped before it finished" and a line saying nothing was kept (no review queue, not in the list);
+  - a ruled list: "Stopped at" (local time), "Last step" (the last agent line before the stop) and the trace file, all read from `GET /runs/<id>/events`;
+  - "How far the agents got": the five agents, each "Working at the stop" (red), "Had started" or "Not reached" (grey);
+  - "Run <drug> again" (starts it through the landing form) and "Back to the start".
+  
+  Seeing the page clears the run's header chip. A stopped result lives in the server's memory, so after a server restart its link answers "No such run" (its trace stays in `logs/`). The button goes when the run ends, and replays never show it (they have finished on the server before the page plays them).
 - **Crew stage:** the five agents (Data Clerk, Analyst, Reviewer, Skeptic, and Vigil standing for the World Model) on a centred track.
   - **Waiting:** grey, faded.
   - **Working:** drawn larger, moving, with a navy "WORKING" pill.
@@ -248,6 +255,8 @@ Built by `detail()`. What stays in view, then one tab at a time.
 | Reviewer | orange / navy | tick |
 | Skeptic | slate / orange | question mark |
 
+**Props on their own:** the magnifier beside the landing title is the Analyst's, drawn larger on its own 14 × 14 canvas in the same palette (navy rim, pale lens with a white glint, slate collar, orange handle). `make_mascots.py` writes it as `prop-magnifier.png`, next to the sprites.
+
 Colours come only from the Vigil logo. The design rules are in `docs/video/mascot/HANDOFF.md`.
 
 **Sprites.** `python -I docs/video/mascot/make_mascots.py` writes the video sprites (32×) and the page's copies (1×) to `app/static/mascots/`. The script needs Pillow, which on Ricky's laptop is in Inkscape's Python. The page names them `<who>-<face>.png`:
@@ -359,6 +368,8 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** a pixel magnifier, the Analyst's prop drawn larger in the crew's style, after the landing title.
+- **27 Oct:** the stopped page redesigned: frowning Vigil beside a ruled summary (stopped at, last step, trace), how far each agent got, and "Run again". A stopped run's result now names its drug.
 - **27 Oct:** a Stop button beside the clock on a live run (asks inline, then "Stopping…"), with a stopped view; the server's `POST /runs/<id>/stop`.
 - **27 Oct:** each agent in "How the agents got here" opens its history: its exchanges with the other agents (dossier) and its lines from the run's trace. Reviewer rows now say "N reviewed: M accepted". The safety net, World Model and Limits sections show they open (arrow, hover, "Show details").
 - **27 Oct:** the orange "Replay mode" label removed from the header.

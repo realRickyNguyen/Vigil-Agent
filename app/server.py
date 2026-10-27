@@ -222,7 +222,8 @@ class Runner:
                 seconds = time.monotonic() - t0
                 tracer.event("orchestrator", "run_stopped", seconds=round(seconds))
                 out = {**error_body(tracer.run_id, "Stopped", "the run was stopped before it finished; no results "
-                                    "were kept", False, seconds, f"logs/{tracer.path.name}"), "http_status": 409}
+                                    "were kept", False, seconds, f"logs/{tracer.path.name}"),
+                       "drug": request["drug"], "http_status": 409}
             except Exception as e:  # every failure becomes a structured error, never a dropped connection
                 kind, status, recoverable = classify_error(e)
                 tracer.event("orchestrator", "run_error", error_type=kind, error=f"{type(e).__name__}: {e}"[:500])

@@ -264,7 +264,7 @@ def test_a_stopped_run_ends_as_stopped_and_keeps_no_results(tmp_path):
     assert status == 202 and out["status"] == "stopping"
     status, out = until_done(runner, "stop-1")
     assert status == 409 and out["status"] == "error" and out["error"]["type"] == "Stopped"
-    assert out["log_file"] == "logs/trace-stop-1.jsonl"
+    assert out["log_file"] == "logs/trace-stop-1.jsonl" and out["drug"] == "montelukast"
     assert not (tmp_path / "dossier-stop-1.json").exists()
     kinds = [json.loads(line)["event"] for line in (tmp_path / "trace-stop-1.jsonl").read_text(encoding="utf-8").splitlines()]
     assert "stop_requested" in kinds and kinds[-1] == "run_stopped"
