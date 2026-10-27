@@ -343,7 +343,7 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dtab:hover { color: var(--ink); }
 .dtab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
 /* Big screens: the tabs share the width equally, each label centred over its share. */
-@media (min-width: 1200px) { .dtabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; } .dtab { text-align: center; padding-left: 6px; padding-right: 6px; } }
+@media (min-width: 1200px) { .dtabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(max-content, 1fr); gap: 0; } .dtab { text-align: center; padding-left: 6px; padding-right: 6px; } }
 /* An open item fills the width it has: the panels, the objection and the reasons run full width, and the Figures list
    wraps its label-and-value pairs into as many columns as fit (one pair per row on a phone). */
 .dpanel { max-width: none; }
@@ -422,10 +422,20 @@ ul.list li { margin-bottom: 4px; }
 .queries details { border-bottom: 1px dotted var(--rule-strong); }
 .queries details:last-child { border-bottom: 0; }
 .queries details.flash > summary { background: var(--accent-tint); }
-.queries summary { cursor: pointer; padding: 6px 0; display: grid; grid-template-columns: 96px 1fr; gap: 10px; color: var(--ink-2); list-style: none; }
+/* Each query is a row that opens: an arrow that turns, and a "Show SQL" link that becomes "Hide SQL". */
+.queries summary { cursor: pointer; padding: 7px 4px; display: grid; grid-template-columns: 14px 96px minmax(0, 1fr) auto; gap: 10px; align-items: baseline;
+  color: var(--ink-2); list-style: none; }
 .queries summary::-webkit-details-marker { display: none; }
-.queries summary:hover { color: var(--ink); }
+.queries summary:hover { color: var(--ink); background: var(--hover); }
+.queries summary:hover .purpose { text-decoration: underline; text-underline-offset: 2px; }
+.queries summary svg { align-self: center; color: var(--muted); transition: transform .15s; }
+.queries details[open] > summary svg { transform: rotate(90deg); color: var(--ink); }
 .queries summary .mono { color: var(--accent); }
+.queries summary .show { font-size: 12px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.queries summary .show::before { content: "Show SQL"; }
+.queries details[open] > summary .show::before { content: "Hide SQL"; }
+.queries pre { margin: 2px 0 10px 28px; }
+@media (max-width: 640px) { .queries summary { grid-template-columns: 14px minmax(0, 1fr) auto; } .queries summary .mono { display: none; } }
 pre { font: 12px/1.5 var(--mono); background: var(--paper); border: 1px solid var(--rule); padding: 10px 12px; white-space: pre-wrap;
   word-break: break-word; margin: 0 0 10px; max-height: 320px; overflow: auto; color: var(--ink); }
 .qlink { font-size: 12px; }
@@ -823,10 +833,13 @@ async function loadHealth() {
   }
   health = h;
   const s = [];
-  if (h.busy && bar.id !== h.current_run)  // a new run starts the chip afresh, replacing a finished one
+  // Replays get no chip: they finish in seconds, and the page plays their progress itself. A live run starts the chip
+  // afresh, replacing a finished one; a chip kept from a replay before this rule is dropped.
+  if (bar.id && bar.sample) { bar.id = null; bar.done = null; saveBar(); }
+  if (h.busy && !h.current_sample_mode && bar.id !== h.current_run)
     Object.assign(bar, {id: h.current_run, drug: h.current_drug, sample: h.current_sample_mode, after: 0, agent: null,
                         started: runStart(h.current_run), lastTs: null, done: null});
-  if (h.busy) saveBar();
+  if (h.busy && !h.current_sample_mode) saveBar();
   if (bar.id) {
     s.push(runChip());
     if (!bar.done) followBar(bar.id);  // follows the run, or settles the outcome of one that ended unfollowed
@@ -1598,8 +1611,8 @@ function detail(x, i, d) {
   if (ids.length) {
     const eq = d.evidence_queries || {};
     tab("sql", "SQL", `<div class="queries">${ids.map((id) => eq[id]
-      ? `<details id="ev-${i}-${esc(id)}"><summary><span class="mono">${esc(id)}</span><span>${esc(capital(eq[id].purpose))}</span></summary><pre>${esc(eq[id].sql)}</pre></details>`
-      : `<div class="mono muted" style="padding:6px 0">${esc(id)}</div>`).join("")}</div>`, "", `${ids.length} Zetaris queries`);
+      ? `<details id="ev-${i}-${esc(id)}"><summary>${CHEV}<span class="mono">${esc(id)}</span><span class="purpose">${esc(capital(eq[id].purpose))}</span><span class="show" aria-hidden="true"></span></summary><pre>${esc(eq[id].sql)}</pre></details>`
+      : `<div class="mono muted" style="padding:6px 0 6px 24px">${esc(id)}</div>`).join("")}</div>`, "", `${ids.length} Zetaris queries · open one to see its SQL`);
   }
 
   const ci = u.prr_ci95, stats = [

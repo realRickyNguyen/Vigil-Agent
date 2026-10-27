@@ -90,18 +90,17 @@ Sticky at the top of every view.
 
 ### Header chip
 
-A small box for the run in progress or the one just finished (`runChip()`, `followBar()`, the `bar` object).
+A small box for the live run in progress or the one just finished (`runChip()`, `followBar()`, the `bar` object). **Replays get no chip:** they finish in seconds, and the run page plays their progress itself. A chip kept from a replay before that rule is dropped.
 
-- **While running:** the moving mascot of the agent at work, the drug, "<Agent> working" (or "Starting"), "· replay" for a replay, and the time since the run started, ticking each second. `followBar()` reads the run's progress lines every 3 s itself, so the chip is current on every view.
+- **While running:** the moving mascot of the agent at work, the drug, "<Agent> working" (or "Starting"), and the time since the run started, ticking each second. `followBar()` reads the run's progress lines every 3 s itself, so the chip is current on every view.
 - **When it ends:** a green square and "Finished", or a red square and "Stopped" when the outcome is an error. The time freezes at the last progress line. "Stopped" is shown only when the server says `error`. The chip waits up to 5 s for the outcome while the server still says `running`.
 - **Click:** opens that run. **×** (a small round icon button) dismisses it.
 - **Lifetime:** kept in `localStorage` under `vigil-runchip`, so it survives a reload and other pages of the app. It goes when:
   - the visitor opens that run's results, from the chip, the panel, a link, or by being on the run's page when it finishes (`seenRun()`, called from `render()` and after the outcome settles);
   - the visitor dismisses it;
-  - a new run starts.
+  - a new live run starts.
 
   Without storage (private windows, blocked storage) it lasts as long as the page.
-- The chip follows the server, not the page. During a paced replay it can say "Finished" while the page is still playing the lines.
 
 ## 5. Investigations panel
 
@@ -210,7 +209,7 @@ Built by `detail()`. What stays in view, then one tab at a time.
 - **Why it needs you**, the pipeline's reasons, for items in Needs you;
 - the **key figures strip** (`.dstats`): PRR (with its 95% CI), reports (with expected), % serious, % fatal, label coverage (with its section). It is a 2-column grid on phones.
 
-**Tabs** (`.dtabs`; only those with content appear). On screens from 1200 px they share the width equally; on phones they are one row that scrolls sideways. Each panel opens with a short note of its outcome where it has one, and its source marks and SQL links (`.dhead`).
+**Tabs** (`.dtabs`; only those with content appear). On screens from 1200 px they share the width equally, each at least as wide as its label; on phones they are one row that scrolls sideways. Each panel opens with a short note of its outcome where it has one, and its source marks and SQL links (`.dhead`).
 
 | Tab | Content | Note |
 |---|---|---|
@@ -222,7 +221,7 @@ Built by `detail()`. What stays in view, then one tab at a time.
 | Figures | Three groups side by side as room allows: **Disproportionality** (reports, expected, PRR, 95% CI, chi-squared, and the CI plot against the threshold); **Information component** (IC and its lower bound, with a one-line explanation); **Seriousness** (serious and fatal, with shares). A thin-evidence warning follows in a tinted note. | – |
 | Case reports | A link to the matching FAERS reports on openFDA, and what its count means. | – |
 | Since last run | Why it changed or not, and the changed fields. | The status, e.g. "Unchanged". |
-| SQL | Every Zetaris query behind the item, folded, with its SQL. | "N Zetaris queries". |
+| SQL | Every Zetaris query behind the item as a row that opens: an arrow that turns, the query ID and purpose (underlined on hover), and a "Show SQL" / "Hide SQL" link. The SQL opens indented under its row. On phones the ID is hidden. | "N Zetaris queries · open one to see its SQL". |
 
 **SQL links** ("Its SQL", "Its N SQL queries") switch to the SQL tab, open those queries and flash them (`showQuery()`, `showTab()`).
 
@@ -340,8 +339,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 ## 18. Known gaps and ideas
 
-- The chip and the page can disagree for a few seconds during a paced replay (see [Header chip](#header-chip)).
-- The red "Stopped" chip has not been seen in the browser; no replay fails.
+- The chip (finished or stopped) has not been seen on a live run in the browser: the preview server runs in sample mode, and replays get no chip.
 - The finished chip is per browser (`localStorage`), not per server.
 - From the 26 Oct critiques, still open: a glossary for PRR, IC and reporting cluster, and the third critique. The analyst decision feature was built on 26 Oct and **removed on 27 Oct** at the user's request (page and API).
 - The investigation page has not yet been checked on a live (non-replay) run end to end.
@@ -350,6 +348,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** SQL rows show they open (arrow, "Show SQL" link, underline on hover). No header chip for replays. Item tabs keep their labels on one line.
 - **27 Oct:** this guide written. Item tabs share the width equally from 1200 px. The Figures tab regrouped into Disproportionality, Information component and Seriousness, with the CI plot and a thin-evidence note.
 - **27 Oct:**
   - **Replays:** paced on the run page, with a line count and "Skip to the result".
