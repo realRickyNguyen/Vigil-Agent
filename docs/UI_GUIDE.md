@@ -353,7 +353,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 ## 17. Checking a change
 
-1. Tests: `.venv\Scripts\python.exe -I -m pytest -q tests` (316 pass as of 27 Oct). Plain `python` on Ricky's laptop is Inkscape's Python, which has no pytest.
+1. Tests: `.venv\Scripts\python.exe -I -m pytest -q tests` (317 pass as of 27 Oct). Plain `python` on Ricky's laptop is Inkscape's Python, which has no pytest.
 2. Start sample mode (the `vigil-sample` preview, port 8000) and look at the change at about 1440 px, 1800 px and 375 px wide.
 3. To inspect the running view, replace `window.api` in the console to answer `{status: "running"}` for `/runs/<id>`. That holds the view on screen. Restore it afterwards.
 4. Check for sideways scrolling at 375 px, and that every new value goes through `esc()`.

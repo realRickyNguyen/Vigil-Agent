@@ -375,7 +375,7 @@ You can also open one by URL, for example http://localhost:8000/#20261027T040644
 
 ### m. Running without services
 - **Where:** top bar (Zetaris and Nightshift faded); the landing hint "Replays a recorded live run in a few seconds, with no Zetaris, Nightshift or network"; the "Recorded replay" notice on results.
-- **How a judge runs it:** `SAMPLE_MODE=true python -I run.py`, then open http://localhost:8000/, or `docker run --rm -p 8000:8000 -e SAMPLE_MODE=true vigil` (README, "Without Zetaris, Nightshift or a network").
+- **How a judge runs it:** `SAMPLE_MODE=true python -I run.py`, then open http://localhost:8000/, or `docker run --rm -p 8000:8000 -e SAMPLE_MODE=true vigil` (README, "1. A quick look with no setup (sample mode)").
 - **Say:** "A judge with no Zetaris, no Nightshift and no network can replay the three recorded live runs, clearly labelled as replays."
 - **Note:** the **Case reports** tab needs a network; without one it shows "Could not reach openFDA…". Everything else works offline.
 
@@ -483,12 +483,11 @@ Total about 3 min 40 s. To cut to 3 minutes, drop shots 9, 10 and 15.
 Nothing below was changed in this task.
 
 1. **README says no case-level data reaches the app, but the Case reports tab shows case-level reports.**
-   - **Where:** `README.md:304` "All data is public: openFDA adverse-event aggregates and drug labels. No case-level or personal data reaches the app or the model."; `README.md:294` "**Aggregate data only:** no case-level review…"; `README.md:185` "Vigil works on aggregate counts…".
+   - **Where** (line numbers after `main`'s 27 Oct README rewrite was merged): `README.md:286` "All data is public: openFDA adverse-event aggregates and drug labels. No case-level or personal data reaches the app or the model."; `README.md:276` "**Aggregate data only:** no case-level review…".
    - **What is true:** the agents and the model use only aggregate counts and label text. The Case reports tab (`app/static/index.html`, `loadCases()` and `caseCard()`) fetches the first 10 matching FAERS reports **from the browser straight to openFDA**. The server and the model never see them. They are public and de-identified, but case-level: report number, date, country, reporter type, patient sex, age, weight, drugs and reactions.
    - **Fix:**
-     - Line 304 needs changing, for example: "The agents and the model use only aggregate counts and label text. The page's Case reports tab shows up to 10 public, de-identified FAERS case reports per item, fetched by the viewer's browser from openFDA; they never reach the server or the model."
-     - Line 294 should say the *analysis* is aggregate-only.
-     - Line 185 is fine as written.
+     - Line 286 needs changing, for example: "The agents and the model use only aggregate counts and label text. The page's Case reports tab shows up to 10 public, de-identified FAERS case reports per item, fetched by the viewer's browser from openFDA; they never reach the server or the model."
+     - Line 276 should say the *analysis* is aggregate-only.
 
 2. **The "Computed" mark promises more checking than happens for some blocks.**
    - **Wording:** the mark's tooltip reads "Computed from openFDA data in Zetaris SQL or by code. The Reviewer's code re-checks every count, PRR and label quote a model cites." The queue legend reads "Computed from openFDA data in Zetaris; model claims about it are re-checked in code".

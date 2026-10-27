@@ -12,15 +12,21 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
 
 ## Where things stand
 
-- **Branch:** `feature/investigation-page`. Nothing is pushed. Ask before pushing.
+- **Branch:** `feature/investigation-page`, with `origin/main` merged in on 27 Oct (main's README rewrite, public-release clean-up, Zetaris USL). Ask before pushing.
 - **Commits from this session** (oldest first):
   - `5a9bf0c` Remove analyst decisions from the API, settings, tests and docs. This was another session's work, separated out.
   - `22408ae` Investigation page: agent mascots, run chip, paced replays, tabbed items and a UI guide. It also removes the page's decision controls; that removal was interleaved with the rest in `index.html`.
   - `905084b` SQL rows show they open, no header chip for replays, tab labels on one line.
-  - The commit that adds this file: case reports as readable cards fetched live from openFDA, the "Since last run" tab removed, the logo dances, run warnings folded into one clickable bar, with the UI guide and `docs/HANDOFF.md` updated.
-- **Working tree:** clean apart from the local folders below. Tests: 316 pass.
+  - `4963087` case reports as readable cards fetched live from openFDA, the "Since last run" tab removed, the logo dances, run warnings folded into one clickable bar, and this file.
+  - `335a079` a case report's extra reactions open in place.
+  - `206817f` a plain header chip for replays; no "Replay mode" label; preview on port 8000.
+  - `0720fa4` agent histories in "How the agents got here"; folded sections show they open.
+  - `7d32299` a Stop button beside the run clock, with `POST /runs/<run_id>/stop`.
+  - `e8ff11b` the stopped page redesigned; a pixel magnifier after the landing title.
+  - `9aa8609` stopped runs listed as "stopped"; several queue items open at once; `docs/UI_DEMO_MAP.md`.
+  - Then the merge of `origin/main`.
+- **Working tree:** clean apart from the local folders below. Tests: 317 pass.
 - **Never commit** `.claude/` (the local preview config), `.impeccable/` or `.taste-skill/` (local design tools). Stage files by path.
-- **The user's last message had an empty item 6.** Ask what it was meant to be.
 
 ## How to work on it
 
@@ -54,9 +60,9 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
 
 ## Open items and ideas
 
-- The empty item 6 (ask).
-- The header chip has not been seen on a **live** run in the browser: the preview server only replays, and replays get no chip. The red "Stopped" state is unseen.
-- The page has not been checked end to end on a live run (it needs Zetaris and Nightshift up: "lets begin" in `CLAUDE.md`).
+- **Problems listed in `docs/UI_DEMO_MAP.md` section 8**, none fixed yet: two README privacy lines (the Case reports tab shows case-level reports), the Computed mark's wording, code-check rejections marked as model text, the Reviewer's re-check query missing from an item's SQL tab, "0 s" timings in replays, and "New this run" counting items that were only unsettled.
+- The live header chip while an agent works has not been seen in the browser (its "Stopped" state has, on 27 Oct).
+- The page has not been followed end to end on a live run (it needs Zetaris and Nightshift up: "lets begin" in `CLAUDE.md`); live runs have been opened after they finished, and one was stopped live.
 - From the 26 Oct critiques, still open: a glossary for PRR, IC and reporting cluster.
 - The landing hero and the README could mention the readable case reports.
 - `docs/HANDOFF.md`'s investigation-page row now also lists the later changes and points here.
