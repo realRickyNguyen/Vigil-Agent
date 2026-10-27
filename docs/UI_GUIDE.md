@@ -39,7 +39,7 @@ This is the reference for the web UI: what every part does, where its code is, a
 
 **Run it.** `python -I run.py` with no arguments starts the API and the page on `PORT` (default 8000). Open http://localhost:8000/.
 
-**Sample mode (no Zetaris, Nightshift or network).** Set `SAMPLE_MODE=true` to replay the recorded runs in `samples/` (montelukast, isotretinoin, metformin). Each replay takes about 5 s on the server. The Claude Code preview uses `.claude/launch.json` (untracked), which starts sample mode on port 8010 with the project's `.venv`.
+**Sample mode (no Zetaris, Nightshift or network).** Set `SAMPLE_MODE=true` to replay the recorded runs in `samples/` (montelukast, isotretinoin, metformin). Each replay takes about 5 s on the server. The Claude Code preview uses `.claude/launch.json` (untracked), which starts sample mode on port 8000 with the project's `.venv`.
 
 **API the page uses** (all JSON; errors are `{status: "error", error: {type, message, recoverable}}`):
 
@@ -81,24 +81,24 @@ Sticky at the top of every view.
 - **Investigations button:** opens the Investigations panel (see [5](#5-investigations-panel)) on the landing page and on narrower screens.
 - **Status area** (`#status`, built by `loadHealth()`):
   - the **header chip** (below), when there is one;
-  - **"Replay mode"**, when the server runs with `SAMPLE_MODE=true`;
   - one bordered **model and services group**: "Nemotron 3 Ultra | ■ Zetaris | ■ Nightshift".
     - The model name is the ID with its size tokens removed. The full ID is in the tooltip. It is hidden below 720 px.
     - A square only says whether the key or token is **set**, not whether the service answers. The tooltip says so, with the address.
     - A missing key turns that part light red with "no key" or "no token".
-    - In replay mode both services are faded, with "not used" in the tooltip.
+    - In replay mode (`SAMPLE_MODE=true`) both services are faded, with "not used" in the tooltip. The header has no separate "Replay mode" label: the form, the chip and the run page say it.
 
 ### Header chip
 
-A small box for the live run in progress or the one just finished (`runChip()`, `followBar()`, the `bar` object). **Replays get no chip:** they finish in seconds, and the run page plays their progress itself. A chip kept from a replay before that rule is dropped.
+A small box for the run in progress or the one just finished (`runChip()`, `followBar()`, the `bar` object).
 
+- **Replays** get a plainer chip (class `rc-replay`): a square, the drug and "Investigation replay", then "· finished" (green) or "· stopped" (red) with **×**. No agent and no clock: a replay's few seconds on the server mean nothing to the viewer, and the run page plays its progress itself. On phones its label stays visible.
 - **While running:** the moving mascot of the agent at work, the drug, "<Agent> working" (or "Starting"), and the time since the run started, ticking each second. `followBar()` reads the run's progress lines every 3 s itself, so the chip is current on every view.
 - **When it ends:** a green square and "Finished", or a red square and "Stopped" when the outcome is an error. The time freezes at the last progress line. "Stopped" is shown only when the server says `error`. The chip waits up to 5 s for the outcome while the server still says `running`.
 - **Click:** opens that run. **×** (a small round icon button) dismisses it.
 - **Lifetime:** kept in `localStorage` under `vigil-runchip`, so it survives a reload and other pages of the app. It goes when:
   - the visitor opens that run's results, from the chip, the panel, a link, or by being on the run's page when it finishes (`seenRun()`, called from `render()` and after the outcome settles);
   - the visitor dismisses it;
-  - a new live run starts.
+  - a new run (live or replay) starts.
 
   Without storage (private windows, blocked storage) it lasts as long as the page.
 
@@ -310,7 +310,7 @@ These come from `CLAUDE.md`. Don't break them.
 
 - No made-up numbers or results. Everything shown comes from the API, apart from the Case reports tab, which shows openFDA's own reports, fetched live and labelled as not part of the run. The landing example is a real replay, captioned as an example.
 - Computed figures are marked apart from model-written text, and model text is labelled with the agent that wrote it.
-- Replays are always labelled ("Replay mode", "[replay]", "Recorded replay", "Replaying a recorded run", "replay" in lists and the chip). A paced replay changes only the pace, never the lines.
+- Replays are always labelled ("Recorded replay" and "Replay investigation" in the form, "[replay]", "Recorded replay", "Replaying a recorded run", "replay" in lists and the chip). A paced replay changes only the pace, never the lines.
 - Service squares claim only what is known (a key is set), not that a service works.
 - "Stopped" only on a real error. An agent is never shown as "done" while it could work again.
 - FAERS shows association, not causation. The caveat stays on the results and the landing page.
@@ -327,14 +327,14 @@ These come from `CLAUDE.md`. Don't break them.
 ## 17. Checking a change
 
 1. Tests: `.venv\Scripts\python.exe -I -m pytest -q tests` (313 pass as of 27 Oct). Plain `python` on Ricky's laptop is Inkscape's Python, which has no pytest.
-2. Start sample mode (the `vigil-sample` preview, port 8010) and look at the change at about 1440 px, 1800 px and 375 px wide.
+2. Start sample mode (the `vigil-sample` preview, port 8000) and look at the change at about 1440 px, 1800 px and 375 px wide.
 3. To inspect the running view, replace `window.api` in the console to answer `{status: "running"}` for `/runs/<id>`. That holds the view on screen. Restore it afterwards.
 4. Check for sideways scrolling at 375 px, and that every new value goes through `esc()`.
 5. Update this guide and its change log.
 
 ## 18. Known gaps and ideas
 
-- The chip (finished or stopped) has not been seen on a live run in the browser: the preview server runs in sample mode, and replays get no chip.
+- The live chip (agent at work, clock, finished or stopped) has not been seen on a live run in the browser: the preview server runs in sample mode, which shows only the replay chip.
 - The finished chip is per browser (`localStorage`), not per server.
 - From the 26 Oct critiques, still open: a glossary for PRR, IC and reporting cluster, and the third critique. The analyst decision feature was built on 26 Oct and **removed on 27 Oct** at the user's request (page and API).
 - The investigation page has not yet been checked on a live (non-replay) run end to end.
@@ -343,6 +343,8 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** the orange "Replay mode" label removed from the header.
+- **27 Oct:** replays get a header chip again, a plain one: the drug and "Investigation replay" (then "· finished" or "· stopped"), with no agent or clock.
 - **27 Oct:** a case report's extra reactions open in place, on the same lines, instead of in a new list below.
 - **27 Oct:** Case reports shown as readable cards fetched from openFDA. "Since last run" tab removed (the run's "Since the last run" section stays). Logo dances. Run warnings folded into one clickable bar.
 - **27 Oct:** SQL rows show they open (arrow, "Show SQL" link, underline on hover). No header chip for replays. Item tabs keep their labels on one line.

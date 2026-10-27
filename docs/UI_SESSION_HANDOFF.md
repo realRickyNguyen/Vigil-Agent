@@ -26,7 +26,7 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
 
 - **The page:** `app/static/index.html`, one file of HTML, CSS and JS, no build step. The server is `app/server.py`.
 - **Tests:** `.venv\Scripts\python.exe -I -m pytest -q tests`. Plain `python` here is Inkscape's Python, which has no pytest but does have Pillow, which `make_mascots.py` needs. `C:\Program Files\Python312\python.exe` is a plain Python.
-- **Preview:** the `vigil-sample` entry in `.claude/launch.json` starts the server in sample mode on port **8010** with the `.venv` Python. Port 8000 is taken by another process on this laptop. Sample mode has three recordings: montelukast, isotretinoin and metformin. There are also two live runs in `logs/` that carry warnings: `20261027T043153Z-b59273` (metformin) and `20261027T052457Z-3b77ad`.
+- **Preview:** the `vigil-sample` entry in `.claude/launch.json` starts the server in sample mode on port **8000** with the `.venv` Python (moved from 8010 on 27 Oct; a live server started by hand also defaults to 8000, so only one can run at a time). Sample mode has three recordings: montelukast, isotretinoin and metformin. There are also two live runs in `logs/` that carry warnings: `20261027T043153Z-b59273` (metformin) and `20261027T052457Z-3b77ad`.
 - **Inspecting the running view:** a replay ends in about 5 s on the server; the page then plays it over 15 to 20 s. To hold the view, replace `window.api` in the console so `/runs/<id>` answers `{status: "running"}`, then restore it.
 - **Starting a run without leaving the current view:** `fetch("/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({drug: "metformin", options: {wait: false, sample_mode: true}})})`, then `loadHealth()`.
 - **Checks to repeat after a change:**
@@ -47,7 +47,7 @@ Deadline: submissions close **Tue 27 Oct 23:45 UTC (Wed 28 Oct 10:45 Sydney)**.
 - **Mascots:** Vigil and the four agents, animated, used throughout. Cheerful faces only sparingly (drug-safety tone).
 - **Honesty:**
   - no "done" for an agent that may work again;
-  - replays clearly labelled, and no header chip for them;
+  - replays clearly labelled; their header chip says only "Investigation replay" (no agent, no clock);
   - nothing claimed beyond what is known (key set, not "connected").
 - **Design choices:** for bigger design questions, the user liked being shown several real screenshot options to pick from. They chose layout A (tabs) for an open item.
 - **Workflow:** the user reviews before committing, and asks for commits explicitly. Times in Sydney and UTC.
