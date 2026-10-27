@@ -160,6 +160,27 @@ def success_body(d: dict, settings: Settings, seconds: float) -> dict:
     }
 
 
+def stopped_run(trace: Path) -> dict | None:
+    """The Stopped result of a run a person stopped, read back from its trace (it leaves no dossier): its last event is
+    run_stopped and its first is run_start. None for any other trace. Only the first and last lines are read."""
+    try:
+        with trace.open("rb") as f:
+            first = f.readline()
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 4096))
+            last = f.read().rstrip().rsplit(b"\n", 1)[-1]
+        end, start = json.loads(last), json.loads(first)
+    except (OSError, ValueError):
+        return None
+    if end.get("event") != "run_stopped" or start.get("event") != "run_start":
+        return None
+    run_id = end.get("run_id") or trace.stem[len("trace-"):]
+    return {**error_body(run_id, "Stopped", "the run was stopped before it finished; no results were kept", False,
+                         end.get("seconds"), f"logs/{trace.name}"),
+            "drug": (start.get("request") or {}).get("drug"), "sample_mode": bool(start.get("sample_mode")),
+            "http_status": 409}
+
+
 class Runner:
     """Runs investigations one at a time and remembers recent results for GET /runs/<run_id>."""
 
@@ -271,25 +292,34 @@ class Runner:
         if dossier.exists():
             d = json.loads(dossier.read_text(encoding="utf-8"))
             return 200, success_body(d, self.settings, (d.get("run_time") or {}).get("seconds") or 0)
+        stopped = stopped_run(self.settings.logs_dir / f"trace-{run_id}.jsonl")  # stopped before this server started
+        if stopped is not None:
+            return stopped.pop("http_status"), stopped
         return 404, error_body(run_id, "RunNotFound", f"no run {run_id} in this server or in logs/", False)
 
     def list_runs(self) -> list[dict]:
-        """GET /runs: the run in progress, then every dossier in logs/, newest first."""
-        runs = []
+        """GET /runs: the run in progress, then every finished run (a dossier in logs/) and every run a person stopped
+        (a trace that ends with run_stopped), newest first."""
+        runs, done = [], []
         if self.current:
             runs.append({"run_id": self.current, "status": "running", "drug": self.current_drug,
                          "sample_mode": self.current_sample})
+        for f in self.settings.logs_dir.glob("trace-*.jsonl"):
+            if (s := stopped_run(f)) is not None:
+                done.append({"run_id": s["run_id"], "status": "stopped", "drug": s["drug"],
+                             "seconds": s["execution_time_seconds"], "sample_mode": s["sample_mode"]})
         for f in sorted(self.settings.logs_dir.glob("dossier-*.json"), reverse=True):
             try:
                 d = json.loads(f.read_text(encoding="utf-8"))
-                runs.append({"run_id": d["run_id"], "status": "success", "drug": d["drug"],
+                done.append({"run_id": d["run_id"], "status": "success", "drug": d["drug"],
                              "review_next": d["counts"].get("review_next"),
                              "unresolved": d["counts"].get("unresolved"),
                              "seconds": (d.get("run_time") or {}).get("seconds"),
                              "sample_mode": bool(d.get("sample_mode"))})
             except (ValueError, KeyError, TypeError, OSError):  # a dossier from an older or broken run
                 continue
-        return runs
+        # Run IDs start with their UTC start time, so this sorts newest first; the run in progress stays on top.
+        return runs + sorted(done, key=lambda r: r["run_id"], reverse=True)
 
     def events(self, run_id: str, after: int = 0) -> tuple[int, dict]:
         """GET /runs/<run_id>/events?after=<seq>: the readable progress lines of a run's trace after seq,

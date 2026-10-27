@@ -272,6 +272,23 @@ def test_a_stopped_run_ends_as_stopped_and_keeps_no_results(tmp_path):
     assert runner.health()["busy"] is False and runner.current is None
 
 
+def test_a_stopped_run_is_listed_as_stopped_and_still_opens_after_a_restart(tmp_path):
+    started = threading.Event()
+    runner = Runner(settings(tmp_path), endless(started))
+    runner.run({"run_id": "stop-2", "input": {"drug": "metformin"}, "options": {"wait": False}})
+    assert started.wait(5)
+    runner.stop("stop-2")
+    until_done(runner, "stop-2")
+    Runner(settings(tmp_path), fake_investigate).run({"run_id": "zz-done", "input": {"drug": "montelukast"}})
+    fresh = Runner(settings(tmp_path), fake_investigate)  # a new server process: nothing held in memory
+    listed = {r["run_id"]: r for r in fresh.list_runs()}
+    assert listed["stop-2"]["status"] == "stopped" and listed["stop-2"]["drug"] == "metformin"
+    assert listed["stop-2"]["sample_mode"] is False and listed["zz-done"]["status"] == "success"
+    status, out = fresh.status("stop-2")
+    assert status == 409 and out["error"]["type"] == "Stopped" and out["drug"] == "metformin"
+    assert out["log_file"] == "logs/trace-stop-2.jsonl"
+
+
 def test_only_the_run_in_progress_can_be_stopped(tmp_path):
     runner = Runner(settings(tmp_path), fake_investigate)
     assert runner.stop("no-such-run")[1]["error"]["type"] == "NotRunning"

@@ -180,6 +180,7 @@ main { padding: 34px 48px 80px; min-width: 0; }
 .runs .rn b { color: var(--signal); font-weight: 600; }
 .runs .meta { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
 .runs .replay { color: var(--pend); font-weight: 600; }
+.runs .stopped-tag { color: var(--signal); font-weight: 600; }
 .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
 
 /* ---------- masthead ---------- */
@@ -1114,8 +1115,8 @@ function drawRuns() {
   $("#runs").innerHTML = list.length ? list.map((r) => `
     <li><button data-run="${esc(r.run_id)}" class="${r.run_id === current ? "active" : ""}">
       <span class="drug">${esc(r.drug || "Running…")}</span>
-      <span class="rn">${r.status === "success" ? `<b>${num(r.review_next)}</b> next` : "running"}</span>
-      <span class="meta">${esc(when(r.run_id))}${r.status === "success" ? ` · ${num(r.seconds)} s` : ""}${r.sample_mode ? ' · <span class="replay">replay</span>' : ""}</span>
+      <span class="rn">${r.status === "success" ? `<b>${num(r.review_next)}</b> next` : r.status === "stopped" ? "" : "running"}</span>
+      <span class="meta">${esc(when(r.run_id))}${r.status !== "running" && r.seconds != null ? ` · ${num(Math.round(r.seconds))} s` : ""}${r.sample_mode ? ' · <span class="replay">replay</span>' : ""}${r.status === "stopped" ? ' · <span class="stopped-tag">stopped</span>' : ""}</span>
     </button></li>`).join("") : `<li class="empty">${runs.length ? "No match." : "None yet."}</li>`;
 }
 
@@ -1357,7 +1358,7 @@ async function stoppedView(out, drug) {
       <div class="sr-fig">${sprite("orchestrator", "concerned")}</div>
       <div class="sr-body">
         <h2>Stopped before it finished</h2>
-        <p class="sr-lede">This investigation was stopped while it was running. Nothing from it was kept: there is no review queue for it, and it is not in the list of investigations.</p>
+        <p class="sr-lede">This investigation was stopped while it was running. Nothing from it was kept: there is no review queue for it, and it is listed among the investigations as stopped.</p>
         <dl class="facts-list sr-facts" id="sr-facts">
           <dt>Stopped at</dt><dd id="sr-at">–</dd>
           <dt>Last step</dt><dd id="sr-last" class="muted">Reading the trace…</dd>
@@ -1755,7 +1756,7 @@ function visibleRows() {
   return (shown.d.review_queue || []).map((x, i) => [x, i]).filter(([x]) => f(x) && (!qSearch || (x.reaction || "").toLowerCase().includes(qSearch)));
 }
 
-// One item is open at a time: opening an item closes the one before.
+// Opens or closes one item; any number can be open at once, so items can be read side by side down the queue.
 function toggle(tr) {
   const i = +tr.dataset.i, d = shown.d;
   const mark = (row, open) => { row.classList.toggle("open", open); $(".rowbtn", row).setAttribute("aria-expanded", String(open)); };
@@ -1765,9 +1766,6 @@ function toggle(tr) {
     mark(tr, false);
     return;
   }
-  openRows.clear();
-  $("#queue").querySelectorAll("tr.detail").forEach((el) => el.remove());
-  $("#queue").querySelectorAll("tr.row.open").forEach((el) => mark(el, false));
   openRows.add(i);
   mark(tr, true);
   tr.insertAdjacentHTML("afterend", detailRow(d.review_queue[i], i));
@@ -1790,14 +1788,14 @@ function onQueueClick(e) {
   if (tr) toggle(tr);
 }
 
-// "Since the last run" links: show the item in the All tab, opened.
+// "Since the last run" links: show the item in the All tab, opened, leaving any other open items open.
 function onOpenItem(e) {
   const b = e.target.closest("[data-open]");
   if (!b || !shown) return;
   const i = shown.d.review_queue.findIndex((x) => x.reaction === b.dataset.open);
   if (i < 0) return;
   filter = "all"; qSearch = ""; $("#q-search").value = "";
-  openRows = new Set([i]);
+  openRows.add(i);
   renderQueue();
   $(`#queue tr.row[data-i="${i}"]`)?.scrollIntoView({behavior: "smooth", block: "start"});
 }

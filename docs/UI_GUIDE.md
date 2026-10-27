@@ -108,7 +108,7 @@ A small box for the run in progress or the one just finished (`runChip()`, `foll
 The `#sidebar` element: the form to start a run, and past investigations.
 
 - **Form:** "Live" or "Recorded replay" mode (`setMode()`); the drug field (a datalist of the recordings); a hint that changes with the mode (`syncForm()`); quick links to the recordings in replay mode. On a sample-mode server, Live is disabled. Only one run at a time: the button is disabled while the server is busy.
-- **Past investigations** (`drawRuns()`): drug, local time, duration, "replay" and the review-next count. It has a filter box, the running run marked "running", and times labelled with the viewer's zone ("times in GMT+11").
+- **Past investigations** (`drawRuns()`): drug, local time, duration, "replay" and the review-next count; a run someone stopped shows "stopped" in red instead of a count. It has a filter box, the running run marked "running", and times labelled with the viewer's zone ("times in GMT+11").
 - **Layout:**
   - From 1100 px on a run view, it is a sticky left column.
   - On the landing page, and below 1100 px, it is a floating panel in the middle of the screen over a dimmed page (`body.floating`, `.scrim`, `role="dialog"`). It unrolls like a blind and rolls up on close.
@@ -133,12 +133,12 @@ Built by `follow()`.
 - **Masthead:** the drug, "In progress", the run ID, and the clock **"■ 0:04 elapsed"** (live square, 21 px mono figures, then the word). The clock counts from the run's start, taken from the run ID's UTC time, and ticks each second.
 - **Stop** (`drawStop()` in `follow()`), beside the clock, for a live run only. A click asks inline, "Stop this run? No results are kept. [Stop] Keep running". Confirming sends `POST /runs/<id>/stop`; the button becomes "Stopping…" and the state "Stopping: waiting for the calls under way", since a model call or query already sent finishes first (often seconds, at most about a minute). The page then shows the **stopped page** (`stoppedView()`):
   - masthead: the drug, a red "■ Stopped", "Ran for N s" and the run ID;
-  - Vigil's frowning sprite beside "Stopped before it finished" and a line saying nothing was kept (no review queue, not in the list);
+  - Vigil's frowning sprite beside "Stopped before it finished" and a line saying nothing was kept (no review queue) and that it is listed as stopped;
   - a ruled list: "Stopped at" (local time), "Last step" (the last agent line before the stop) and the trace file, all read from `GET /runs/<id>/events`;
   - "How far the agents got": the five agents, each "Working at the stop" (red), "Had started" or "Not reached" (grey);
   - "Run <drug> again" (starts it through the landing form) and "Back to the start".
   
-  Seeing the page clears the run's header chip. A stopped result lives in the server's memory, so after a server restart its link answers "No such run" (its trace stays in `logs/`). The button goes when the run ends, and replays never show it (they have finished on the server before the page plays them).
+  Seeing the page clears the run's header chip. The server finds stopped runs from their traces (`stopped_run()` in `app/server.py`: a trace whose last event is `run_stopped`), so a stopped run's link still opens after a server restart. The button goes when the run ends, and replays never show it (they have finished on the server before the page plays them).
 - **Crew stage:** the five agents (Data Clerk, Analyst, Reviewer, Skeptic, and Vigil standing for the World Model) on a centred track.
   - **Waiting:** grey, faded.
   - **Working:** drawn larger, moving, with a navy "WORKING" pill.
@@ -220,6 +220,8 @@ Built by `render()`, in this order:
 ## 10. An open item
 
 Built by `detail()`. What stays in view, then one tab at a time.
+
+**Several items can be open at once** (`toggle()`, the `openRows` set). Clicking a reaction name opens or closes only that item, and each open item keeps its own tab. Open items stay open across queue tabs and searches while they are in view, and a "Since the last run" link adds its item to the open ones.
 
 **Always shown:**
 
@@ -368,6 +370,9 @@ These come from `CLAUDE.md`. Don't break them.
 
 Newest first. One line per change, with the date (Sydney).
 
+- **27 Oct:** stopped runs are listed in Past investigations as "stopped" (red, like "replay"), with how long they ran; read from their traces, so they survive a server restart.
+
+- **27 Oct:** several queue items can be open at once; opening one no longer closes the others.
 - **27 Oct:** a pixel magnifier, the Analyst's prop drawn larger in the crew's style, after the landing title.
 - **27 Oct:** the stopped page redesigned: frowning Vigil beside a ruled summary (stopped at, last step, trace), how far each agent got, and "Run again". A stopped run's result now names its drug.
 - **27 Oct:** a Stop button beside the clock on a live run (asks inline, then "Stopping…"), with a stopped view; the server's `POST /runs/<id>/stop`.
