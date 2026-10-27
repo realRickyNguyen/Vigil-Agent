@@ -116,7 +116,7 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
 | `app/engines/world_model.py` | Meterless World Model engine (Python port of the reference) plus decisions that reopen when a fact they rest on changes |
 | `app/schemas.py` | `Finding` (contract v2), `Verdict`, `Signal`, status constants |
 | `app/tracing.py` | Append-only JSONL trace, thread-safe |
-| `scripts/zetaris/` | Baseline SQL and a runner that sends `.sql` files through the REST API |
+| `scripts/zetaris/` | Baseline SQL and a runner that sends `.sql` files through the REST API; `vigil_usl.sql`, a standalone USL over FAERS, labels and RxNav that the app does not read; `handcoded_prr.py`, the screen without Zetaris, for comparison. Both are for [ZETARIS_USL.md](ZETARIS_USL.md) |
 | `eval/` | Gold set, labelling rules, scorer, runner, backtest feasibility notes |
 | `tests/` | Offline tests: app logic, scorer and World Model conformance |
 ## Rules to keep (from the hackathon and from what broke)
@@ -176,6 +176,8 @@ python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
    ```
    The first and third commands are the final version (RF, `8ae141c`), the second and fourth its `main` control (R2'). Every other phase used the same form, with its run IDs from `scores[].run_id` in its `eval/reports/reeval-*.json` and that file's `gold` swapped for its `_reviewed` version. Each command's report has the same content as the committed `eval/reports/reeval-*-reviewed.md` and `.json`. The README's "Results so far" now has the re-scored figures, and the sentence saying they predate the review is removed. The newer-drug set is reviewed only for its 15 hidden serious terms, so its figures stay "against an AI-drafted reference". No comparison's conclusion changed ([eval/reports/reeval-26oct-rescore-reviewed-gold.md](../eval/reports/reeval-26oct-rescore-reviewed-gold.md)).
 2. **Finish the agent system** with bug fixes only (Ricky's freeze, 26 Oct). After any change to agent behaviour, re-record the three samples with Zetaris and Nightshift running (`python -I run.py --drug <drug> --record`, montelukast, isotretinoin and metformin, about 6 minutes each). Then check `python -I -m pytest tests`: `tests/test_sample_mode.py` replays montelukast against `output_examples/montelukast/`.
+
+**Zetaris evaluation criteria (27 Oct).** Zetaris scores a USL build (1a to 1c) and three write-ups (2a to 2c). Written up in [ZETARIS_USL.md](ZETARIS_USL.md). `scripts/zetaris/vigil_usl.sql` ran in full on 27 Oct (57 statements; the USL activations needed `COALESCE` on `NOT NULL` columns), and its "First run" section records the results. Still open: the team's own check of 2b ("our work") and of the 2a judgement. No agent code changed.
 
 **Ricky (packaging):** the investigation page; making the repo public (secret scan of every file in all history, PR branches and the compressed samples done 26 Oct, clean; Apache-2.0 LICENSE and NOTICE added; organisers' guides and laptop notes taken out of the repo, so pull them from HackOS if you need them); the deck, video and sponsor explanation; the HackOS submission.
 

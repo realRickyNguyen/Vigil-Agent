@@ -3,6 +3,9 @@ Stops at the first error, except "already exists", which is reported as SKIP so 
 Never prints secrets. Reads .env in the project root.
 
 Run:  python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql --stop-before "Part B"
+
+A statement that holds ';' itself, such as a multi-table COMPILE USL, goes between the comment lines
+"-- begin one statement" and "-- end one statement" and is sent whole.
 """
 import argparse, json, os, sys, uuid, urllib.request, urllib.error
 from pathlib import Path
@@ -15,14 +18,37 @@ if env_file.exists():
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-def statements(text, stop_before=None):
-    """Split on ';' at line end, ignoring '--' comment lines. Assumes no ';' inside strings."""
+def statements(text, stop_before=None, start_at=None):
+    """Split on ';', ignoring '--' comment lines, except inside a begin/end one statement block.
+    Assumes no ';' inside strings."""
+    lines = text.splitlines()
+
+    def heading(l, mark):  # a comment line that starts with mark, so a mention inside a sentence does not count
+        return l.startswith("--") and l.lstrip("- ").startswith(mark)
+
+    if start_at:
+        lines = lines[next((i for i, l in enumerate(lines) if heading(l, start_at)), len(lines)):]
     if stop_before:
-        lines = text.splitlines()
-        cut = next((i for i, l in enumerate(lines) if l.startswith("--") and stop_before in l), len(lines))
-        text = "\n".join(lines[:cut])
-    body = "\n".join(l for l in text.splitlines() if not l.strip().startswith("--"))
-    return [s.strip() for s in body.split(";") if s.strip()]
+        lines = lines[:next((i for i, l in enumerate(lines) if heading(l, stop_before)), len(lines))]
+    out, chunk, whole = [], [], None
+    for l in lines:
+        mark = l.strip().lower()
+        if mark == "-- begin one statement":
+            whole = []
+        elif mark == "-- end one statement":
+            out.append("\n".join(whole).strip().rstrip(";").strip())
+            whole = None
+        elif mark.startswith("--"):
+            continue
+        elif whole is not None:
+            whole.append(l)
+        else:
+            chunk.append(l)
+            if l.rstrip().endswith(";"):
+                out += [s.strip() for s in "\n".join(chunk).split(";") if s.strip()]
+                chunk = []
+    out += [s.strip() for s in "\n".join(chunk).split(";") if s.strip()]
+    return [s for s in out if s]
 
 def run(sql, timeout):
     url = os.environ["ZETARIS_REST_URL"] + "/sql-editor/sqls/run"
@@ -38,11 +64,13 @@ def run(sql, timeout):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sql_file")
-    ap.add_argument("--stop-before", help="stop at the first comment line containing this text")
+    ap.add_argument("--stop-before", help="stop at the first comment line that starts with this text")
+    ap.add_argument("--start-at", help="start at the first comment line that starts with this text")
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--show", type=int, default=1500, help="characters of each result to print")
     args = ap.parse_args()
 
-    stmts = statements(Path(args.sql_file).read_text(encoding="utf-8"), args.stop_before)
+    stmts = statements(Path(args.sql_file).read_text(encoding="utf-8"), args.stop_before, args.start_at)
     for n, sql in enumerate(stmts, 1):
         label = f"[{n}/{len(stmts)}] {sql.splitlines()[0][:90]}"
         try:
@@ -55,8 +83,8 @@ def main():
         except Exception as e:
             print("FAIL", label, "-", type(e).__name__, str(e)[:300]); sys.exit(1)
         print("OK  ", label)
-        if sql.upper().startswith("SELECT"):
-            print("     ", json.dumps(j.get("data", j), default=str)[:1500])
+        if sql.upper().startswith(("SELECT", "RUN DQ", "SHOW", "LIST")):
+            print("     ", json.dumps(j.get("data", j), default=str)[:args.show])
     print(f"Done: {len(stmts)} statements.")
 
 if __name__ == "__main__":
