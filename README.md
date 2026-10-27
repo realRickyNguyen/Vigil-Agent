@@ -12,7 +12,44 @@ Vigil helps drug-safety analysts decide which reported drug-reaction patterns de
 
 ## Run it
 
-Needs Python 3.11+, plus a local Zetaris and Meterless Nightshift; the hackathon requires both to run on your own machine. Full setup: [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md).
+```bash
+git clone https://github.com/realRickyNguyen/Vigil-Agent.git
+```
+
+```bash
+cd Vigil-Agent
+```
+
+Needs Python 3.11+. The app uses only the standard library; `requirements.txt` adds pytest for the tests.
+
+### 1. A quick look with no setup (sample mode)
+
+Three live runs (montelukast, isotretinoin, metformin, 26 Oct) were recorded: every Zetaris query result and every Nemotron reply each run received is in [samples/](samples/). Sample mode replays them through the same pipeline, so without Zetaris or Nightshift you still see a real run, its agents' disagreements and its dossier. It needs no `.env` and no network.
+
+```bash
+SAMPLE_MODE=true python -I run.py --drug montelukast
+```
+
+Or with Docker, as an API:
+
+```bash
+docker build -t vigil .
+```
+
+```bash
+docker run --rm -p 8000:8000 -e SAMPLE_MODE=true vigil
+```
+
+```bash
+curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @input_examples/example_1.json
+```
+
+- The three sample inputs are [input_examples/example_1.json](input_examples/example_1.json) to `example_3.json` (montelukast, isotretinoin, metformin). Their recorded outputs are in [output_examples/](output_examples/).
+- A replay takes about 5 s and gives the recorded run's queue, rounds and counts (checked by `tests/test_sample_mode.py`). Checked again on 27 Oct from a fresh clone, in a container with `--network none` and no `.env`.
+- It is labelled: every trace event carries `"sample_mode": true`, the console prefixes `[SAMPLE]`, and the dossier and the API response name the recorded run. Run IDs, times and timings are the replay's own. A replay keeps its own World Model (`logs/sample-world-model.json`), so a second replay of a drug shows its verdicts as unchanged.
+- `POST /run` can also ask for it per request with `"options": {"sample_mode": true}`. Any other drug returns `NoSampleRecording` with the list of drugs that can be replayed; a new drug needs a live run.
+
+### 2. Tests (no services needed)
 
 ```bash
 python -m pip install -r requirements.txt
@@ -22,34 +59,45 @@ python -m pip install -r requirements.txt
 python -I -m pytest tests -q
 ```
 
-The offline tests need no services.
+The Meterless World Model engine's own tests are `tests/test_world_model.py` and `tests/test_world_model_reads.py` (see [Sponsor technology](#sponsor-technology)).
 
-```bash
-cp .env.example .env
-```
+### 3. A live run
 
-Fill in the Zetaris and Nightshift values. The NVIDIA key goes into Nightshift, not `.env`.
+A live run needs Zetaris and Meterless Nightshift running on your own machine, set up as in the organisers' Participant Setup Guide (Resource Center on HackOS).
 
-Set up Nightshift before the first run. Vigil was tested on Windows with Nightshift 1.2.1 and 1.2.7. Nightshift 1.2.1 ignores the model an app asks for and routes each call by its own settings (not yet checked on 1.2.7), so leave it only the model Vigil uses.
-- one lane running `nvidia/nemotron-3-ultra-550b-a55b`, with every other lane stopped
-- Setup › Preferences › race width 1
-- Setup › Preferences › Quality track: answer fusion, answer judging, best-of-N, the quality race and the reasoning scaffold all off. Leave the cloud first-token limit at 45 s and NVIDIA thinking at default. Then restart Nightshift.
+1. **Zetaris.** Start the platform (`docker compose up -d` in the platform bundle), then create an API key in the Zetaris web interface (Management › API Tokens).
+2. **Nightshift.** Put your NVIDIA key into Nightshift (Setup › Providers), never into `.env`. Vigil was tested on Windows with Nightshift 1.2.1 and 1.2.7. Nightshift 1.2.1 ignores the model an app asks for and routes each call by its own settings (not yet checked on 1.2.7), so leave it only the model Vigil uses:
+   - one lane running `nvidia/nemotron-3-ultra-550b-a55b`, with every other lane stopped
+   - Setup › Preferences › race width 1
+   - Setup › Preferences › Quality track: answer fusion, answer judging, best-of-N, the quality race and the reasoning scaffold all off. Leave the cloud first-token limit at 45 s and NVIDIA thinking at default. Then restart Nightshift, and check the lanes again, because a restart can bring stopped lanes back.
 
-The 1.2.7 settings page can show its own defaults (race width 6, the Quality track options on auto) instead of the saved settings, so set these values once by hand, even if they were set before an update.
+   The 1.2.7 settings page can show its own defaults (race width 6, the Quality track options on auto) instead of the saved settings, so set these values by hand once. Without these settings, calls can go to other models, and about half are answered unstreamed and cut off at 45 s. Each run checks this and warns, in the console and in the dossier's `nightshift_warnings`, when a call was served by another model or with the scaffold on.
+3. **Settings.** Copy the example file:
 
-Without these, calls can go to other models, and about half are answered unstreamed and cut off at 45 s. Each run checks this and warns, in the console and in the dossier's `nightshift_warnings`, when a call was served by another model or with the scaffold on.
+   ```bash
+   cp .env.example .env
+   ```
 
-```bash
-python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
-```
+   Fill in `ZETARIS_API_KEY`, and the Nightshift Runtime token (shown in the Nightshift Console) as both `METERLESS_RUNTIME_TOKEN` and `MODEL_API_KEY` (the smoke test reads the second). Change `ZETARIS_ORG_ID` and the two service addresses only if yours differ.
+4. **Zetaris baseline**, once per Zetaris install:
 
-This registers the shared Zetaris baseline, once per Zetaris install.
+   ```bash
+   python -I scripts/zetaris/run_sql.py scripts/zetaris/openfda_baseline.sql
+   ```
 
-```bash
-python -I run.py --drug montelukast
-```
+5. **Check the connections.** Expect 3 PASS (Zetaris web interface, a Zetaris SQL query, a model reply through Nightshift):
 
-Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.jsonl` (every query and model call).
+   ```bash
+   python -I scripts/smoke_test.py
+   ```
+
+6. **Run one drug:**
+
+   ```bash
+   python -I run.py --drug montelukast
+   ```
+
+   A run takes about 5 to 10 minutes; most of it is Nemotron Ultra's replies. Results: `logs/dossier-<run>.json` (the review queue) and `logs/trace-<run>.jsonl` (every query and model call). Progress lines go to the console.
 
 ### As an API
 
@@ -80,26 +128,7 @@ docker run --rm -p 8000:8000 --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pw
 
 Zetaris and Nightshift keep running on the host. Inside the container, `localhost` and `127.0.0.1` in the settings become `host.docker.internal` (set `DOCKER_HOST_REWRITE=false` to turn that off), so the same `.env` works. The `logs/` mount keeps traces and dossiers; the `state/` mount keeps the World Model between runs. Progress lines appear in `docker logs`. The image holds no secrets: `.env` is excluded at build time and read at `docker run`.
 
-### Without Zetaris, Nightshift or a network (sample mode)
-
-Three live runs (montelukast, isotretinoin, metformin, 26 Oct) were recorded: every Zetaris query result and every Nemotron reply each run received is in [samples/](samples/). Sample mode replays them through the same pipeline, so a judge without Zetaris or Nightshift still sees a real run, its agents' disagreements and its dossier. It needs no `.env`.
-
-```bash
-SAMPLE_MODE=true python -I run.py --drug montelukast
-```
-
-```bash
-docker run --rm -p 8000:8000 -e SAMPLE_MODE=true vigil
-```
-
-```bash
-curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d @input_examples/example_2.json
-```
-
-- A replay takes about 5 s and gives the recorded run's queue, rounds and counts (checked by `tests/test_sample_mode.py`). Checked on 26 Oct in a container with `--network none` and Zetaris and Nightshift stopped.
-- It is labelled: every trace event carries `"sample_mode": true`, the console prefixes `[SAMPLE]`, and the dossier and the API response name the recorded run. Run IDs, times and timings are the replay's own. A replay keeps its own World Model (`logs/sample-world-model.json`), so a second replay of a drug shows its verdicts as unchanged.
-- `POST /run` can also ask for it per request with `"options": {"sample_mode": true}`. A drug with no recording returns `NoSampleRecording` with the list of drugs that can be replayed.
-- The recorded runs' own outputs are in [output_examples/](output_examples/). To record another drug: `python -I run.py --drug <drug> --record` (with Zetaris and Nightshift running).
+To record a new drug for sample mode: `python -I run.py --drug <drug> --record` (with Zetaris and Nightshift running).
 
 ## Why this matters
 
@@ -258,8 +287,9 @@ Named **Black Box** until 23 Oct 2026, with agents called Clerk, Hunter and Judg
 
 - [docs/HANDOFF.md](docs/HANDOFF.md): current state, code map, next steps
 - [docs/ideas/VIGIL.md](docs/ideas/VIGIL.md): design and the reasons behind it
-- [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md): teammate setup
-- [docs/CLINICAL_RELIABILITY.md](docs/CLINICAL_RELIABILITY.md): task 2, label search, evidence marks and the safety net
+- [docs/TEAM_SETUP.md](docs/TEAM_SETUP.md): notes for the team's own development machines, including run-speed troubleshooting
+- [docs/CLINICAL_RELIABILITY.md](docs/CLINICAL_RELIABILITY.md): label search, evidence marks and the safety net
+- [docs/ZETARIS_USL.md](docs/ZETARIS_USL.md): a Zetaris Unified Semantic Layer over the same sources plus NLM RxNav, built separately on 27 Oct (the app does not read it)
 - [AGENTS.md](AGENTS.md): rules for coding agents
 - [eval/](eval/): gold set, labelling rules, scorer, reports
 - [docs/PREEXISTING.md](docs/PREEXISTING.md): pre-existing work declaration

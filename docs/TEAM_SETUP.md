@@ -6,14 +6,14 @@ How a teammate gets from a fresh clone to running Vigil. Read [HANDOFF.md](HANDO
 
 You can work on most of the code and run every test without Zetaris or Nightshift.
 
-The repo is private: https://github.com/realRickyNguyen/genai_hackathon. Ask Ricky to add you as a collaborator first.
+The repo is public: https://github.com/realRickyNguyen/Vigil-Agent (formerly `genai_hackathon`; the old URL redirects). Pushing needs collaborator access; ask Ricky.
 
 ```bash
-git clone https://github.com/realRickyNguyen/genai_hackathon.git
+git clone https://github.com/realRickyNguyen/Vigil-Agent.git
 ```
 
 ```bash
-cd genai_hackathon
+cd Vigil-Agent
 ```
 
 ```bash
