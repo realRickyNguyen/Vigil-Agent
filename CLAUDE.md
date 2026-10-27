@@ -1,6 +1,6 @@
 # Open Agent Hackathon 2026: project context
 
-Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/`: the organisers' `submission-requirements.md` and `technical-execution-requirements.md` (added 24 Oct, the most current), the Meterless engine guides for World Model and H-MEM, the 19 Oct setup guide and the 03_LLM_context pack. Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md`.
+Read this first in every session, then **`docs/HANDOFF.md`** (current state, how to run, code map, next steps). Full rules and plan are in `docs/reference/` (kept on Ricky's laptop, not in the repo since 26 Oct; gitignored): the organisers' `submission-requirements.md` and `technical-execution-requirements.md` (added 24 Oct, the most current), the Meterless engine guides for World Model and H-MEM, the 19 Oct setup guide and the 03_LLM_context pack. Where those disagree, the live HackOS event page and organiser announcements win. Setup progress is tracked in `docs/SETUP_CHECKLIST.md` (local only).
 
 ## The project
 **Vigil: Drug Reaction Review** (named Black Box until 23 Oct; agents Data Clerk, Analyst, Reviewer and Skeptic were Clerk, Hunter, Judge; Track 02, "The Agent That Can Explain Why"; the HackOS challenge statement is the generic track text, confirmed by the user 24 Oct, so do not ask about it again): helps a drug-safety analyst decide which reported drug-reaction patterns deserve a closer look, with evidence and objections. openFDA FAERS counts and labels are registered in Zetaris at runtime; Analyst and Reviewer agents run on Nemotron Ultra via Nightshift. Design: `docs/ideas/VIGIL.md`. Evaluation: `eval/`. Team setup: `docs/TEAM_SETUP.md`; other agents read `AGENTS.md`. The team no longer uses Cursor (decided 23 Oct); development is done with Claude Code. Never claim Cursor did any work. Do not add Co-Authored-By trailers to commit messages.
@@ -41,7 +41,7 @@ When the user says **"we are done for today"**: `docker compose stop` (never `do
 ## Known problems and fixes
 - Docker Desktop often fails to start because `%LOCALAPPDATA%\Docker\run\userAnalyticsOtlpHttp.sock` is stale. Deleting it fails; **rename the `run` folder** (`run.old<time>`) and start again. Don't force-kill Docker Desktop; the tray Quit is the clean exit.
 - WSL commands via `wsl -d Ubuntu -- bash -c '...'` break on quotes. Write a small script file in the scratchpad and run `wsl -d Ubuntu -- bash /mnt/c/.../script.sh`.
-- WSL and Docker disk files only grow. If C: runs low, run `scripts/compact-wsl-disks.ps1` in an administrator PowerShell with Docker quit (this freed about 19 GB once).
+- WSL and Docker disk files only grow. If C: runs low, run `scripts/compact-wsl-disks.ps1` (local only) in an administrator PowerShell with Docker quit (this freed about 19 GB once).
 - Do not run an Ubuntu `docker login` against a stuck engine; if `docker version` hangs inside Ubuntu, restart Docker Desktop and WSL first.
 
 ## Layout
@@ -50,7 +50,7 @@ Built: `run.py` (no arguments: the API in `app/server.py`), `Dockerfile`, `app/`
 ## More detail
 - `docs/HANDOFF.md`: current state, run commands, code map, known issues, next steps, organiser questions.
 - `docs/ideas/VIGIL.md`: the design and its reasons.
-- `docs/HACKATHON_KNOWLEDGE.md`: confirmed rules, stack behaviour, Zetaris and Nightshift findings.
+- `docs/HACKATHON_KNOWLEDGE.md` (local only): confirmed rules, stack behaviour, Zetaris and Nightshift findings.
 - `docs/UI_GUIDE.md`: every feature of the web UI (`app/static/index.html`), where its code is, and the rules it follows.
 ## Working notes for Claude
 - Mark confirmed facts, proposals and unknowns separately; do not invent organiser details that are placeholders.

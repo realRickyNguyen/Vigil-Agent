@@ -6,14 +6,14 @@ How a teammate gets from a fresh clone to running Vigil. Read [HANDOFF.md](HANDO
 
 You can work on most of the code and run every test without Zetaris or Nightshift.
 
-The repo is private: https://github.com/realRickyNguyen/genai_hackathon. Ask Ricky to add you as a collaborator first.
+The repo is public: https://github.com/realRickyNguyen/Vigil-Agent (formerly `genai_hackathon`; the old URL redirects). Pushing needs collaborator access; ask Ricky.
 
 ```bash
-git clone https://github.com/realRickyNguyen/genai_hackathon.git
+git clone https://github.com/realRickyNguyen/Vigil-Agent.git
 ```
 
 ```bash
-cd genai_hackathon
+cd Vigil-Agent
 ```
 
 ```bash
@@ -30,7 +30,7 @@ Expect all tests to pass (311 on 26 Oct). Python 3.11 or newer.
 
 The hackathon requires Zetaris and Meterless to run on your own machine, so each teammate who runs agents needs:
 
-1. **Zetaris.** Follow section 1 of the organisers' setup guide (`docs/reference/Participant_Setup_Guide_updated_19Oct.md`):
+1. **Zetaris.** Follow section 1 of the organisers' Participant Setup Guide (Resource Center on HackOS):
    - Docker Desktop, plus WSL 2 on Windows
    - the platform bundle and registry login from your own Zetaris registration
    - `docker compose up -d`

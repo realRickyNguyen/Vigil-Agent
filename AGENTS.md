@@ -1,6 +1,6 @@
 # Instructions for coding agents
 
-Vigil is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` first: it covers the current state, run commands, code map, known issues and next steps. The design and its reasons are in `docs/ideas/VIGIL.md`. Event rules are in `docs/HACKATHON_KNOWLEDGE.md`. Teammate setup is in `docs/TEAM_SETUP.md`.
+Vigil is our Open Agent Hackathon 2026 entry (Track 02). Read `docs/HANDOFF.md` first: it covers the current state, run commands, code map, known issues and next steps. The design and its reasons are in `docs/ideas/VIGIL.md`. Event rules are in the organisers' documents on HackOS (Resource Center); they are not in this repo. Teammate setup is in `docs/TEAM_SETUP.md`.
 
 ## Rules
 

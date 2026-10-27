@@ -1,0 +1,14 @@
+Vigil: Drug Reaction Review
+Copyright 2026 the Vigil contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+app/engines/world_model.py and tests/test_world_model.py are a Python port of the
+Meterless World Model reference engine and its conformance checks
+(https://github.com/Meterless/Meterless, engines/world-model), licensed under the
+Apache License, Version 2.0. The port changes the language and adds decision
+records that depend on facts and are reopened when a fact is superseded; the
+module docstring describes what was ported and what was added.
+
+Data: openFDA (https://open.fda.gov) adverse-event and drug-label data, used through
+its public API. openFDA data is not validated for clinical use; see the README.

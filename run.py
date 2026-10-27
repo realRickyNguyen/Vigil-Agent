@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app import sample_mode  # noqa: E402
 from app.config import ROOT, for_sample_mode, get_settings  # noqa: E402
 from app.orchestration.pipeline import investigate  # noqa: E402
-from app.server import serve, success_body, summary  # noqa: E402
+from app.server import classify_error, serve, success_body, summary  # noqa: E402
 
 
 def main() -> int:
@@ -44,12 +44,25 @@ def main() -> int:
         serve(args.port, settings)
         return 0
     request = json.loads(Path(args.input).read_text()) if args.input else {"drug": args.drug}
-    if args.record:
-        if settings.sample_mode:
-            print("--record needs a live run; unset SAMPLE_MODE.", file=sys.stderr)
-            return 2
-        with sample_mode.recording(settings, request["drug"]) as rec:
+    if args.record and settings.sample_mode:
+        print("--record needs a live run; unset SAMPLE_MODE.", file=sys.stderr)
+        return 2
+    try:
+        if args.record:
+            with sample_mode.recording(settings, request["drug"]) as rec:
+                d = investigate(request, settings)
+        else:
             d = investigate(request, settings)
+    except Exception as e:
+        # Expected failures (unknown drug, no sample recording, a service down) print the type and message
+        # POST /run would return, not a traceback. A bug still raises.
+        kind, _, _ = classify_error(e)
+        if kind == "InternalError":
+            raise
+        print(f"{kind}: {e}", file=sys.stderr)
+        return 1
+
+    if args.record:
         out = ROOT / "output_examples" / sample_mode.slug(request["drug"])
         out.mkdir(parents=True, exist_ok=True)
         for name in (f"dossier-{d['run_id']}.json", d["trace"]):  # copies, never edited
@@ -61,8 +74,6 @@ def main() -> int:
         if d["run_time"]["skipped_for_time"]:
             print(f"Note: this run skipped {d['run_time']['skipped_for_time']} for time, so a replay may reach steps "
                   f"the recording does not have. Record again for a complete sample.")
-    else:
-        d = investigate(request, settings)
 
     print("\n" + summary(d))
     for q in d["review_queue"]:

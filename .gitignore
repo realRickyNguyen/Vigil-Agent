@@ -16,3 +16,9 @@ __pycache__/
 .venv/
 # World Model state persists across runs; local to each machine
 state/
+# Kept on the developer's machine, not published: the organisers' and Meterless's
+# guides, and laptop-specific working notes
+docs/reference/
+docs/SETUP_CHECKLIST.md
+docs/HACKATHON_KNOWLEDGE.md
+scripts/compact-wsl-disks.ps1
