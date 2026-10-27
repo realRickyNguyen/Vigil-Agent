@@ -21,8 +21,7 @@ from app.server import BadRequest, Runner, classify_error, make_handler, parse_r
 
 
 def settings(tmp_path, **kw):
-    return replace(config.get_settings(), logs_dir=tmp_path, decisions_dir=tmp_path / "decisions", sample_mode=False,
-                   **kw)
+    return replace(config.get_settings(), logs_dir=tmp_path, sample_mode=False, **kw)
 
 
 def dossier(run_id, drug):
@@ -155,28 +154,6 @@ def test_the_example_is_a_replay_made_once_outside_the_run_list(tmp_path):
     assert status == 404 and out["error"]["type"] == "NoSampleRecording"
 
 
-def test_decisions_are_appended_with_what_vigil_said_and_the_latest_wins(tmp_path):
-    runner = Runner(settings(tmp_path), fake_investigate)
-    runner.run({"run_id": "done", "input": {"drug": "montelukast"}})
-    status, out = runner.decide("done", {"reaction": "SLEEP TERROR", "decision": "escalate",
-                                         "note": "  Check the Canadian cluster first. ", "by": "Sally"})
-    assert status == 201 and out["decision"]["note"] == "Check the Canadian cluster first."
-    assert out["decision"]["vigil"]["review_priority"] == "review_next" and out["decision"]["decided_at"].endswith("Z")
-    runner.decide("done", {"reaction": "SLEEP TERROR", "decision": "agree", "note": "Cluster checked: 40 cases."})
-    latest = runner.decisions("done")[1]["decisions"]
-    assert latest["SLEEP TERROR"]["decision"] == "agree" and latest["SLEEP TERROR"]["times_decided"] == 2
-    assert latest["SLEEP TERROR"]["by"] is None
-    assert len((tmp_path / "decisions" / "done.jsonl").read_text(encoding="utf-8").splitlines()) == 2  # audit trail
-    for body, code in [({"reaction": "SLEEP TERROR", "decision": "maybe", "note": "x"}, 400),
-                       ({"reaction": "SLEEP TERROR", "decision": "agree", "note": "   "}, 400),
-                       ({"reaction": "SLEEP TERROR", "decision": "agree"}, 400),
-                       ({"reaction": "NOT IN RUN", "decision": "agree", "note": "x"}, 404),
-                       ([], 400)]:
-        assert runner.decide("done", body)[0] == code
-    assert runner.decide("never-ran", {"reaction": "X", "decision": "agree", "note": "x"})[0] == 404
-    assert runner.decisions("never-ran")[0] == 404 and runner.decisions("../x")[0] == 400
-
-
 def test_each_item_links_to_its_reports_on_openfda(tmp_path):
     out = Runner(settings(tmp_path), fake_investigate).run({"drug": "montelukast"})[1]
     url = out["output"]["case_reports"]["SLEEP TERROR"]
@@ -212,10 +189,6 @@ def test_http_round_trip(tmp_path):
         assert status == 200 and ev["events"][0]["line"].startswith("Starting run for montelukast")
         assert call(f"/runs/{out['run_id']}/events?after={ev['last_seq']}")[1]["events"] == []
         assert call("/runs/nope/events")[0] == 404
-        status, saved = call(f"/runs/{out['run_id']}/decisions",
-                             json.dumps({"reaction": "SLEEP TERROR", "decision": "dismiss", "note": "Known."}).encode())
-        assert status == 201 and saved["decision"]["decision"] == "dismiss"
-        assert call(f"/runs/{out['run_id']}/decisions")[1]["decisions"]["SLEEP TERROR"]["note"] == "Known."
         with urllib.request.urlopen(base + "/", timeout=10) as r:
             assert r.headers["Content-Type"].startswith("text/html") and b"<title>Vigil" in r.read()
         with urllib.request.urlopen(base + "/fonts/publicsans.woff2", timeout=10) as r:

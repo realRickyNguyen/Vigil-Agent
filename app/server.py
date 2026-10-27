@@ -36,11 +36,6 @@ MAX_BODY = 64 * 1024
 PAGE = Path(__file__).parent / "static" / "index.html"
 FONTS = Path(__file__).parent / "static" / "fonts"  # the page's fonts, served locally so it works offline
 FONT_FILE = re.compile(r"^[a-z0-9-]+\.woff2$")  # a bare file name, so no path can leave FONTS
-# An analyst's decision on one item: agree with Vigil's call, close it with no action, or escalate it for a full
-# signal assessment. A note is required, because a signal decision has to say why.
-DECISIONS = ("agree", "dismiss", "escalate")
-MAX_NOTE = 2000
-MAX_NAME = 80
 
 AGENTS = [
     {"name": "Data Clerk", "role": "Registers openFDA FAERS counts and the current label in Zetaris and computes "
@@ -172,7 +167,6 @@ class Runner:
         self._busy = threading.Lock()
         self.current: str | None = None
         self.results: dict[str, dict] = {}
-        self._decide = threading.Lock()  # decisions are appended to one file per run
         self._example_lock = threading.Lock()
         self._example: dict | None = None
 
@@ -299,65 +293,6 @@ class Runner:
                                   "line": text})
         return 200, {"run_id": run_id, "running": self.current == run_id, "last_seq": last, "events": lines}
 
-    def _finished(self, run_id: str) -> tuple[dict | None, tuple[int, dict] | None]:
-        """(dossier, None) for a finished run, or (None, the error response)."""
-        if not RUN_ID.match(run_id or ""):
-            return None, (400, error_body(None, "InvalidInput", "not a valid run_id", False))
-        path = self.settings.logs_dir / f"dossier-{run_id}.json"
-        if not path.exists():
-            return None, (404, error_body(run_id, "RunNotFound", f"no finished run {run_id} in logs/; decisions are "
-                                          "made on a finished run's items", False))
-        return json.loads(path.read_text(encoding="utf-8")), None
-
-    def decisions(self, run_id: str) -> tuple[int, dict]:
-        """GET /runs/<run_id>/decisions: the latest decision on each item, and how many times it was made. Every
-        decision stays in the file; a later one on the same item only supersedes it here."""
-        _, err = self._finished(run_id)
-        if err:
-            return err
-        path = self.settings.decisions_dir / f"{run_id}.jsonl"
-        latest: dict[str, dict] = {}
-        if path.exists():
-            for raw in path.read_text(encoding="utf-8").splitlines():
-                try:
-                    rec = json.loads(raw)
-                except ValueError:
-                    continue
-                rec["times_decided"] = latest.get(rec["reaction"], {}).get("times_decided", 0) + 1
-                latest[rec["reaction"]] = rec
-        return 200, {"run_id": run_id, "decisions": latest}
-
-    def decide(self, run_id: str, body) -> tuple[int, dict]:
-        """POST /runs/<run_id>/decisions: record an analyst's decision on one item of a finished run, with what
-        Vigil had said about it at the time. Appended, never rewritten, so the file is an audit trail."""
-        d, err = self._finished(run_id)
-        if err:
-            return err
-        if not isinstance(body, dict):
-            return 400, error_body(run_id, "InvalidInput", "the body must be a JSON object", False)
-        reaction, decision = body.get("reaction"), body.get("decision")
-        note, by = body.get("note"), body.get("by") or ""
-        item = next((q for q in d["review_queue"] if q["reaction"] == reaction), None)
-        problem = ("decision must be one of " + ", ".join(DECISIONS) if decision not in DECISIONS else
-                   "a note is required: say why" if not isinstance(note, str) or not note.strip() else
-                   f"the note is over {MAX_NOTE} characters" if len(note) > MAX_NOTE else
-                   f"by must be a name of up to {MAX_NAME} characters" if not isinstance(by, str) or len(by) > MAX_NAME
-                   else None)
-        if item is None:
-            return 404, error_body(run_id, "ItemNotFound", f"no item {reaction!r} in run {run_id}", False)
-        if problem:
-            return 400, error_body(run_id, "InvalidInput", problem, False)
-        rec = {"run_id": run_id, "drug": d["drug"], "reaction": reaction, "decision": decision,
-               "note": note.strip(), "by": by.strip() or None,
-               "decided_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-               "vigil": {k: item.get(k) for k in ("workflow_status", "review_priority", "label_coverage",
-                                                  "classification", "a", "prr")}}
-        with self._decide:
-            self.settings.decisions_dir.mkdir(parents=True, exist_ok=True)
-            with (self.settings.decisions_dir / f"{run_id}.jsonl").open("a", encoding="utf-8") as f:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        return 201, {"status": "saved", "decision": rec}
-
     def example(self) -> tuple[int, dict]:
         """GET /example: a finished investigation for the landing page to show before this machine has any of its
         own. It is a replay of a recorded live run (samples/), made by the same pipeline as any replay but in a
@@ -432,8 +367,6 @@ def make_handler(runner: Runner):
                 return self._send(200, {"runs": runner.list_runs()})
             if path == "/example":
                 return self._send(*runner.example())
-            if path.startswith("/runs/") and path.endswith("/decisions"):
-                return self._send(*runner.decisions(path[len("/runs/"):-len("/decisions")]))
             if path.startswith("/runs/") and path.endswith("/events"):
                 after = parse_qs(query).get("after", ["0"])[0]
                 return self._send(*runner.events(path[len("/runs/"):-len("/events")],
@@ -445,10 +378,8 @@ def make_handler(runner: Runner):
 
         def do_POST(self):
             path = self.path.split("?", 1)[0].rstrip("/")
-            decisions = path.startswith("/runs/") and path.endswith("/decisions")
-            if path != "/run" and not decisions:
-                return self._send(404, error_body(None, "NotFound", "use POST /run or POST /runs/<run_id>/decisions",
-                                                  False))
+            if path != "/run":
+                return self._send(404, error_body(None, "NotFound", "use POST /run", False))
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
                 return self._send(413, error_body(None, "InvalidInput", "request body too large", False))
@@ -456,8 +387,6 @@ def make_handler(runner: Runner):
                 body = json.loads(self.rfile.read(length) or b"null")
             except ValueError as e:
                 return self._send(400, error_body(None, "InvalidInput", f"body is not valid JSON: {e}", False))
-            if decisions:
-                return self._send(*runner.decide(path[len("/runs/"):-len("/decisions")], body))
             try:
                 self._send(*runner.run(body))
             except Exception as e:  # a failure before the run started (for example logs/ not writable)

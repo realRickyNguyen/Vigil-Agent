@@ -60,9 +60,6 @@ class Settings:
     skeptic_co_drugs: int = 3
     # Recorded live runs that SAMPLE_MODE replays (app/sample_mode.py), one samples/<drug>.json.gz per drug.
     samples_dir: Path = ROOT / "samples"
-    # An analyst's decisions on a run's items, made on the investigation page (app/server.py): one append-only
-    # <run_id>.jsonl per run. Per machine like the World Model, so it sits in state/, never in logs/.
-    decisions_dir: Path = ROOT / "state" / "decisions"
 
 
 def for_sample_mode(settings: "Settings") -> "Settings":
