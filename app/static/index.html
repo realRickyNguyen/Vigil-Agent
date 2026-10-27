@@ -403,8 +403,10 @@ table.queue { width: 100%; border-collapse: collapse; font-size: 13px; }
 .case .role.r1 { color: var(--signal); font-weight: 600; }
 .case .rx li { padding: 1px 7px; border: 1px solid var(--rule); border-radius: 2px; font-size: 12px; background: var(--sheet); }
 .case .rx li.it { border-color: var(--accent); background: var(--accent-tint); font-weight: 600; }
-.case details.more summary { cursor: pointer; font-size: 12px; color: var(--accent); margin-top: 4px; }
-.case details.more[open] summary { margin-bottom: 4px; }
+.case .rx li.extra { display: none; }
+.case .rx.all li.extra { display: list-item; }
+.case .rx li.more { border: 0; background: none; padding: 0; }
+.case .rx-more { border: 0; background: none; padding: 1px 4px; font-size: 12px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 @media (max-width: 640px) { .case dl > div { grid-template-columns: 1fr; gap: 2px; } }
 .dhead { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin: 0 0 10px; }
 .dhead .dnote { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
@@ -1490,6 +1492,13 @@ function onQueueClick(e) {
   if (qb) return showQuery(qb);
   const tab = e.target.closest(".dtab");
   if (tab) return showTab(tab.closest(".doc"), tab.dataset.tab);
+  const more = e.target.closest(".rx-more");
+  if (more) {  // a case report's hidden reactions, shown or hidden again in place
+    const all = more.closest(".rx").classList.toggle("all");
+    more.textContent = all ? "Show fewer" : `+${more.dataset.more} more`;
+    more.setAttribute("aria-expanded", String(all));
+    return;
+  }
   if (e.target.closest("tr.detail")) return;
   const tr = e.target.closest("tr.row");
   if (tr) toggle(tr);
@@ -1599,7 +1608,8 @@ function caseCard(r, reaction) {
   const reactions = [...new Set((p.reaction || []).map((x) => x.reactionmeddrapt).filter(Boolean))];
   const isIt = (n) => n.toUpperCase() === reaction.toUpperCase();
   const shown = [...reactions.filter(isIt), ...reactions.filter((n) => !isIt(n))];
-  const rx = (list) => list.map((n) => `<li${isIt(n) ? ' class="it"' : ""}>${esc(n)}</li>`).join("");
+  // One list: reactions after the twelfth are hidden until "+N more" shows them in place, on the same lines.
+  const rx = shown.map((n, j) => `<li class="${isIt(n) ? "it" : ""}${j >= 12 ? " extra" : ""}">${esc(n)}</li>`).join("");
   return `<article class="case">
     <header><b>Report ${esc(r.safetyreportid || "–")}</b><span>Received ${esc(faersDate(r.receivedate))}</span>
       <span>${esc(country(r.occurcountry || src.reportercountry || "") || "Country not given")}</span>
@@ -1607,8 +1617,8 @@ function caseCard(r, reaction) {
     <div class="flags">${r.serious === "1" ? flags || '<span class="flag">Serious</span>' : '<span class="flag quiet">Not serious</span>'}</div>
     <dl><div><dt>Patient</dt><dd>${esc(who)}</dd></div>
       <div><dt>Drugs</dt><dd><ul class="drugs">${drugs.map((x) => `<li><span class="role r${x.drugcharacterization || 0}">${ROLE[x.drugcharacterization] || "Role not given"}</span>${esc(x.medicinalproduct || "–")}</li>`).join("") || "–"}</ul></dd></div>
-      <div><dt>Reactions <small>${reactions.length}</small></dt><dd><ul class="rx">${rx(shown.slice(0, 12))}</ul>${shown.length > 12
-        ? `<details class="more"><summary>${shown.length - 12} more</summary><ul class="rx">${rx(shown.slice(12))}</ul></details>` : ""}</dd></div></dl>
+      <div><dt>Reactions <small>${reactions.length}</small></dt><dd><ul class="rx">${rx}${shown.length > 12
+        ? `<li class="more"><button type="button" class="rx-more" data-more="${shown.length - 12}" aria-expanded="false">+${shown.length - 12} more</button></li>` : ""}</ul></dd></div></dl>
   </article>`;
 }
 
